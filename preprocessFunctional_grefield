@@ -99,9 +99,12 @@ EndOfHelp
 }
 
 #Written: 5/18/2010
-#Last updated: 07/12/2012
+#Last updated: 08/02/2012
 #
 #Changelog:
+#08/02/2012
+# - make skullstrip and field map unwarp functions
+# - fm_cfg for FM unwapring
 #07/12/2012
 # - Provide -no_warp option to maintain native space.
 # - Provide -constrain_to_template option, which defaults to yes. This constrains functional voxels to the standard space anatomical (eliminates extra-brain activation).
@@ -432,6 +435,12 @@ if [ -n "${logFile}" ]; then
     echo "## Log of preprocessFunctional commands" >> "${logFile}"
 fi
 
+
+
+################################################################################
+# Setup
+################################################################################
+
 #The smoothing kernel parameter is expected to be the full width at half
 #maximum (FWHM) value (in mm). FWHM refers to the width of the Gaussian shape
 #on the x-axis at half of the maximum y value
@@ -703,6 +712,11 @@ if [[ ${despike} = [Yy] ]]; then
     fi
 fi
 
+################################################################################
+# functions for preprocessing
+################################################################################
+
+
 function runSliceTimingCorrection {
     #SLICE TIMING CORRECTION
 
@@ -750,11 +764,16 @@ function runSliceTimingCorrection {
 		
 		acqCustFile='.triotim_evenSliceNum_acquisitionOrder'
 
-		num=$detectSliceNum perl -le \
-                    'for $i (2,1){                      # for all even slices, then all odd slices
-                     $j=-2+$i; 
-                     print $j+=2 while $j<=$ENV{num}-2 # $j+=2 doesnt return as expected in condition context
-                    }' > $acqCustFile
+
+		#num=$detectSliceNum perl -le \
+                #    'for $i (2,1){                      # for all even slices, then all odd slices
+                #     $j=-2+$i; 
+                #     print $j+=2 while $j<=$ENV{num}-2 # $j+=2 doesnt return as expected in condition context
+                #    }' > $acqCustFile
+                ##same thing, but more concise 
+                # print evens(%2==0), then print odds (%2==1)
+                n=$detectSliceNum \
+                 perl -le '$,="\n"; @a=1..$ENV{n}; for $i (0,1){ print grep {$_%2==$i} @a }' > $acqCustFile
 		
 		acquisitionString="--ocustom=$acqCustFile"
 		
@@ -770,7 +789,8 @@ function runSliceTimingCorrection {
 	rel "touch .slice_timing_complete"
     fi
 }
-
+# mcFunctional needs to be global: fm unwarping will generate its own mc files if it can't find it
+mcFunctional="null"
 function runMotionCorrection {
     #MOTION CORRECTION
 
@@ -787,6 +807,7 @@ function runMotionCorrection {
     fi
 
 
+    mcFunctional=$outfile
     if [ ! -f ".motion_correction_complete" ]; then
 
         #####
@@ -795,19 +816,121 @@ function runMotionCorrection {
         #output: motion-corrected, slice-time-corrected 4D file.
         #Defaults to mean volume correction unless -refvol passed.
 
+        additionalParams="-mats -plots -meanvol -rmsrel -rmsabs"
+
 	rel "Running motion correction" c
 	if [ -z $ref_vol ]; then
         #if no reference volume specified, correct to the mean volume
 	    rel "Using mean volume for motion correction" c
 	    rel "mcflirt -in \"${infile}\" -o \"${outfile}\" -meanvol ${mcflirtSinc}"
+            if [ -n  ${fieldmap} ]; then
+              #-plots/-mat  and -meanvol are mutally excluse 
+              # need mat for field map unwarp
+              # https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=FSL;82b968f7.0708#TOP
+              # do mc twice, first to get mean and then to correct to it
+              #
+              # TODO: is a Tmean example_func approprate?
+              #
+              rel "mc -> Tmean -> mc again with Tmean ref (gen MAT for FM unwarp)" c
+              rel "fslmaths \"${outfile}\" -Tmean example_func"
+              rel "mcflirt -in \"${infile}\" -o \"${outfile}\" -reffile example_func ${mcflirtSinc} $additionalParams "
+            fi
 	else
 	    rel "Using volume number: $ref_vol for motion correction" c
-	    rel "mcflirt -in "${infile}" -o "${outfile}" -refvol $ref_vol ${mcflirtSinc}"
+	    rel "mcflirt -in "${infile}" -o "${outfile}" -refvol $ref_vol ${mcflirtSinc} $additionalParams"
+	    rel "And extract refrence as an example of the functional set" c
+            rel  "fslroi prefiltered_func_data example_func $ref_vol 1"
 	fi
 
+        #mkdir mc && mv *rms *par *mat/ $_ 
+        [ -r $prefix*rms ] && mkdir mc && mv $prefix*{rms,par,mat/} $_ 
 	rel "touch .motion_correction_complete"
     fi
 }
+
+function runFieldMapUnwarp {
+   # unwarp FieldMap
+   # prefix: u    -- hardcoded in immv and prefix= below
+   if [[ -n ${fieldmap} && ! -f ".unwarp_complete" ]]; then
+       
+       #expect:
+       # -fieldmap
+       # -fm_mag
+       # -fm_cfg
+       # does functional need to be skull stripped?!
+
+       rel "Applying fieldmap" c
+     
+       logFile=$logFile \
+        $(dirname $0)/preprocessFMUnwarp -f $prefix$funcFile -m $fm_mag -g $fieldmap -c $fm_cfg --mcFunctional $mcFunctional
+       # creates unwarp_thumbnails dirctory
+       # leaves prefiltered_func_data_unwarp.nii
+
+       immv prefiltered_func_data_unwarp.nii u$prefix$funcFile
+
+       #touch .unwarp_complete
+       date >> .unwarp_complete
+
+       # record actions in nii files
+       # addNote $prefix$funcFile  \
+       #   "$(dirname $0)/preprocessFMUnwarp -f $prefix$funcFile -m $fm_mag -g $fieldmap -c $fm_cfg"
+
+   fi
+
+   # set prefix to include unwarping given we did this
+   [ -n ${fieldmap} ] && prefix="u$prefix" 
+}
+
+#betBrain is global
+betBrain=
+function runSkullStrip {
+   #SKULL STRIPPING
+   if [ ! -f ".skull_strip_complete" ]; then
+       #####
+       #Compute the mean functional: mt_mean_func.nii.gz
+       #Used in warping subjects mean T2* to his/her T1 structural scan
+
+       rel "4. Computing mean functional" c
+       rel "fslmaths \"${prefix}${funcFile}\" -Tmean \"${prefix}mean_func\""
+
+       #####
+       #Skull strip the mean functional: kmt_mean_func.nii.gz
+
+       rel "5. Skull stripping functionals" c
+       rel "bet \"${prefix}mean_func\" \"k${prefix}mean_func\" -R -f ${betFrac} -m"
+
+       #Use the mask generated from skull stripping the mean functional to strip all functionals
+       rel "fslmaths \"${prefix}${funcFile}\" -mas \"k${prefix}mean_func_mask\" \"k${prefix}${funcFile}\""
+
+
+       #old approach commented out below.
+       #used to run -F separately on 4d functionals, which runs bet with 0.3 on first volume of 4d, dilates mask
+       #new approach is to use mask from betting mean functional, which coincides better with FEAT and allows
+       #greater control of skull stripping using -bet_frac
+       #####
+       #Skull strip the 4D functional file: kmt_$funcFile
+       #-F strips each functional using -f 0.3 with slight dilation of brain mask
+       #note that -F also generates a mask file: kmt_$funcFile_mask.nii.gz (this is never used, I think)
+       #
+       #bet "${prefix}${funcFile}" "k${prefix}${funcFile}" -F
+
+       touch ".skull_strip_complete"
+
+   fi
+
+
+
+   #store the pre-bet file for application of combined BET + intensity mask below
+   preBet="${prefix}${funcFile}"
+   prefix="k${prefix}"
+}
+
+
+
+
+################################################################################
+# EPI 
+################################################################################
 
 #determine precedence of slice timing and motion correction
 #if sequential, then 1) motion correct, 2) slice timing correct
@@ -817,89 +940,26 @@ function runMotionCorrection {
 #run for motion plots. But I don't have time to tweak the script to use the parameters from motion plots
 #as motion correction.
 
+# NOTE2: Jesper Andersson <jesper@fmrib.ox.ac.uk> (FSL mailing list)
+# In short: The correct thing is to do a 4D interpolation, but that is practically cumbersome. 
+# When doing them sequentially you start with the one that introduces the biggest variance/error,
+# and that is definitely movement.
+# My suggestion is 1) Movement+fieldmap 2) Slice timing.
+#
 if [[ $sliceAcquisition = interleaved || $st_first -eq 1 ]]; then
     runSliceTimingCorrection
     runMotionCorrection
+    runFieldMapUnwarp
 elif [[ $sliceAcquisition = "seqasc" || $sliceAcquisition = "seqdesc" ]]; then
     runMotionCorrection
+    runFieldMapUnwarp
     runSliceTimingCorrection
 fi
 
 
+runSkullStrip
 
 
-# unwarp FieldMap
-# prefix: u    -- hardcoded in immv and prefix= below
-if [[ -n ${fieldmap} && ! -f ".unwarp_complete" ]]; then
-    
-    #expect:
-    # -fieldmap
-    # -fm_mag
-    # -fm_cfg
-    # does functional need to be skull stripped?!
-
-    rel "Applying fieldmap" c
-  
-    logFile=$logFile \
-     $(dirname $0)/preprocessFMUnwarp -f $prefix$funcFile -m $fm_mag -g $fieldmap -c $fm_cfg
-    # creates unwarp_thumbnails dirctory
-    # leaves prefiltered_func_data_unwarp.nii
-
-    immv prefiltered_func_data_unwarp.nii u$prefix$funcFile
-
-    #touch .unwarp_complete
-    date >> .unwarp_complete
-
-    # record actions in nii files
-    # addNote $prefix$funcFile  \
-    #   "$(dirname $0)/preprocessFMUnwarp -f $prefix$funcFile -m $fm_mag -g $fieldmap -c $fm_cfg"
-
-fi
-
-# set prefix to include unwarping given we did this
-[ -n ${fieldmap} ] && prefix="u$prefix" 
- 
-
-
-#SKULL STRIPPING
-if [ ! -f ".skull_strip_complete" ]; then
-    #####
-    #Compute the mean functional: mt_mean_func.nii.gz
-    #Used in warping subjects mean T2* to his/her T1 structural scan
-
-    rel "4. Computing mean functional" c
-    rel "fslmaths \"${prefix}${funcFile}\" -Tmean \"${prefix}mean_func\""
-
-    #####
-    #Skull strip the mean functional: kmt_mean_func.nii.gz
-
-    rel "5. Skull stripping functionals" c
-    rel "bet \"${prefix}mean_func\" \"k${prefix}mean_func\" -R -f ${betFrac} -m"
-
-    #Use the mask generated from skull stripping the mean functional to strip all functionals
-    rel "fslmaths \"${prefix}${funcFile}\" -mas \"k${prefix}mean_func_mask\" \"k${prefix}${funcFile}\""
-
-
-    #old approach commented out below.
-    #used to run -F separately on 4d functionals, which runs bet with 0.3 on first volume of 4d, dilates mask
-    #new approach is to use mask from betting mean functional, which coincides better with FEAT and allows
-    #greater control of skull stripping using -bet_frac
-    #####
-    #Skull strip the 4D functional file: kmt_$funcFile
-    #-F strips each functional using -f 0.3 with slight dilation of brain mask
-    #note that -F also generates a mask file: kmt_$funcFile_mask.nii.gz (this is never used, I think)
-    #
-    #bet "${prefix}${funcFile}" "k${prefix}${funcFile}" -F
-
-    touch ".skull_strip_complete"
-
-fi
-
-
-
-#store the pre-bet file for application of combined BET + intensity mask below
-preBet="${prefix}${funcFile}"
-prefix="k${prefix}"
 
 #THRESHOLDING LOW INTENSITY VOXELS
 if [[ ! -f ".thresholding_complete" && $thresholdMethod = "10" ]]; then
@@ -947,7 +1007,7 @@ if [[ ! -f ".thresholding_complete" && $thresholdMethod = "10" ]]; then
 
 elif [[ ((! -f ".thresholding_complete") && $thresholdMethod = "98_2") || $smoother = "susan" || $rescalingMethod = "10000_globalmedian" ]]; then
 
-    set -x
+    #set -x
     p_2=$( fslstats "${prefix}${funcFile}" -p 2 )
     p_98=$( fslstats "${prefix}${funcFile}" -p 98 )
 

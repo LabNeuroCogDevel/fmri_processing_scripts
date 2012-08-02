@@ -56,6 +56,7 @@ while [ $# -gt 0 ];do
    -g|--field    ) grefieldmap="$2" ;      shift;;
    -m|--mag      ) gremagnitude="$2" ;     shift;;
    -c|--config   ) configfile="$2";        shift;;
+   --mcFunctional) mcFunctional="$2";          shift;;
    #### The rest should be in a config, config overides anything here
    -t|--te       ) epiTE="$2" ;            shift;;
    --tediff      ) TEdiff="$2" ;           shift;;
@@ -91,7 +92,7 @@ for fileVar in functional grefieldmap gremagnitude logFile; do
  cd $(dirname $filePath) 
  filePath=$(pwd)/$(basename $filePath) 
  printf -v $fileVar "$filePath" # eg functional=".../functional.nii.gz"
- cd -
+ cd - 1>/dev/null
 done
 
 # check fieldmap is what we think it is (slope and intercept of a fieldmap)
@@ -108,18 +109,24 @@ fslhd ${grefieldmap} |
      
 
 # make storage directories
-[ -d mc ] && rm -r mc
 [ -d unwarp ] && rm -r unwarp
+
 set -e
 
-rel "motion correction to middle volume (need MAT)" c
-## motion correct (mat here used as premat in applywarp)
 fslmaths $functional prefiltered_func_data -odt float
-midvol=$(fslhd prefiltered_func_data.nii|perl -lne 'print  int($1/2) if m/^dim4\s+(\d+)$/') # 91
-fslroi prefiltered_func_data example_func $midvol 1
-mcflirt -in prefiltered_func_data -out prefiltered_func_data_mcf -mats -plots -refvol $midvol -rmsrel -rmsabs
-mkdir mc && mv *rms *par *mat/ mc
-# creates example_func.nii  mc/  prefiltered_func_data.nii prefiltered_func_data_mcf.nii
+
+## motion correct (mat here used as premat in applywarp)
+# only doen if we don't have correction from preprocessFunctional passed in
+if [ -z "$mcFunctional" ] || [ ! -r "$mcFunctional" -a ! -r "$mcFunctional.nii" -a ! -r "$mcFunctional.nii.gz" ]; then
+ rel "WARNING: motion correction to middle volume (need MAT) -- this shouldn't need to be done" c
+ midvol=$(fslhd prefiltered_func_data.nii|perl -lne 'print  int($1/2) if m/^dim4\s+(\d+)$/') # 91
+ fslroi prefiltered_func_data example_func $midvol 1
+ mcFunctional="prefiltered_func_data_mcf"
+ mcflirt -in prefiltered_func_data -out $mcFunctional -mats -plots -refvol $midvol -rmsrel -rmsabs
+ [ -d mc ] && rm -r mc
+ mkdir mc && mv *rms *par *mat/ mc
+fi
+# creates example_func.nii  mc/  prefiltered_func_data.nii $mcFunctional.nii
 
 
 ### Field Warp
@@ -303,7 +310,7 @@ totalVolumes=$(fslhd $functional|perl -lne 'print $1 if m/^dim4\s+(\d+)$/') # 18
 for i in $(seq 0 $((($totalVolumes-1))) ); do
  pad=$(printf "%04d" $i)
  applywarp -i grot/grot$pad -o grot/grot$pad \
-           --premat=mc/prefiltered_func_data_mcf.mat/MAT_$pad \
+           --premat=mc/$mcFunctional.mat/MAT_$pad \
            -w unwarp/EF_UD_warp -r example_func --abs \
            --mask=unwarp/EF_UD_fmap_mag_brain_mask
 done
@@ -314,7 +321,7 @@ rm -r mc/
 rm unwarp/*nii*
 rm unwarp/*mat
 # rm top level tmp files
-rm example_func.nii* example_func_orig_distorted.nii* prefiltered_func_data.nii* prefiltered_func_data_mcf.nii*
+rm example_func.nii* example_func_orig_distorted.nii* prefiltered_func_data.nii* $mcFunctional.nii*
 mv unwarp unwarp_thumbnails
 
 ## fsl does slice time correction next (line 5194 of featlib.tcl, 581 if log.commented)
