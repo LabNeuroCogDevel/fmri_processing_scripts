@@ -1,0 +1,314 @@
+#!/bin/bash
+function printHelp() {
+
+set -e #stop script on error
+
+cat <<EndOfHelp
+----------------------------------------------
+preprocessMprage is a shell script that preprocesses axial mprage structural scans.
+
+It is intended to be run within an mprage directory containing raw data (or a
+  nifti of the raw data if you use the -n option).
+
+The basic pipeline is:
+  1) Convert dicom files to NIFTI
+  2) Brain extract the structural image
+  3) Warp structural to standard stereotactic space using affine (linear)
+       transformation: flirt. (Used only for warp coefficients)
+  4) Warp structural image to stereotactic space using nonlinear transformation
+       with fnirt. Affine coefficients from the linear warping are used as
+       starting values (helps optimization). In the case of MNI, uses FSL's
+       config file with optimal parameters for fnirt. In the case of Talairach,
+       use a custom settings file adapted from FSL's MNI configuration.
+
+Command line options:
+  -b: bet options. Passes value to fsl bet (brain extraction).
+        Must be quoted (e.g., -b "-f 0.7"). Defaults to "-R -f 0.5 -v"
+  -d: delete or archive DICOM files. Options are -d n ("no": leaves DICOM
+        untouched), -d y ("yes": deletes DICOM files), -d a ("archive":
+        compresses files into archive file: mprage_dicom.tar.gz. If not
+        passed, user will be prompted for action.
+  -h: print command help
+  -n: skip DICOM conversion and start with specified NIFTI file. 
+        Example: -n mprage.nii.gz (will complete bet, flirt, and
+        fnirt, but skip DICOM -> NIFTI conversion).
+  -o: output file name. The filename for the final warped mprage image.
+        Defaults to mprage_nonlinear_warp_<referenceName>.nii.gz
+  -p: file pattern for dicom MR files. Defaults to "MR*". Please enclose the pattern in quotes or it may not function properly
+  -r: reference brain. Currently supports "MNI_2mm", "MNI_FSL_2mm", "SPM_2mm", and "Tal_2mm". Default is "MNI_2mm".
+
+
+Example call: preprocessMprage -r MNI_2mm -b "-R -f 0.5 -g 0.2" -d a -o mprage_final.nii.gz
+----------------------------------------------
+EndOfHelp
+
+} #end of printHelp
+
+#Author: Michael Hallquist
+#Written: 5/2/2010
+#Last updated: 6/3/2012
+#
+#Changelog:
+#6/4/2012
+# - provide option to use SPM8 canonical MNI template
+#10/27/2011
+# - put back in 3dresample to orient to LPI. With some of Kirsten's data, warp was failing due to some orientation problem.
+#10/18/2011
+# - removed 3dresample command to orient original functional to LPI. Bug in AFNI that was flipping storage but not header.
+# - Added -f to gzip to overwrite old file.
+#08/31/2011
+# - Changed default MNI template to new nonlinear template from Vladimir Fonov
+#07/28/2011
+# - Cleaned up DICOM to NIFTI conversion sections to adopt Dimon
+# - Removed sleep commands (just used for monitoring output)
+#06/28/2011:
+# - Changed Dimon parameters used for DICOM > NIFTI conversion
+#   it was failing on a couple datasets
+#5/4/2011:
+# - Switched from using the oriented output file from dcm2nii;
+#   its usage is counterindicated (had fucked up qform/sform values)
+# - Changed the code that determines which nii.gz file to use as anatomical.
+#   now uses regex to determine correct file 
+#3/10/2011:
+# - Switched default template brain to MNI.
+# - Exit script on unrecognized template brain parameter.
+
+set -e #exit if any error occurs (stop processing)
+
+#set defaults for dicomPattern, reference, betOpts, and outputFile
+dicomPattern="MR*"
+reference="MNI_2mm"
+betOpts="-R -f 0.5 -v" #default bet options
+
+#handle command line parameters
+while getopts b:d:hn:o:p:r: option
+do
+    case "$option" in
+	b) betOpts=$OPTARG ;;
+	d) delDicom=$OPTARG ;;
+	h) printHelp; exit 0 ;;
+	p) dicomPattern=$OPTARG ;;
+	n) nifti=$OPTARG ;;
+	o) outputFile=$OPTARG ;;
+	r) reference=$OPTARG ;;
+	*) echo -e "Unrecognized option: -$OPTARG\n"
+    esac
+done
+
+case "$reference" in
+    Tal_2mm)  bettedRefBrain=$HOME/standard/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm_brain;
+	unbettedRefBrain=$HOME/standard/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm;
+	refMask=$HOME/standard/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm_brain_mask_dil;
+	fnirtConfig=$HOME/standard/fnirtTalairachSettings.cnf;;
+    MNI_2mm) bettedRefBrain=$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm;
+	unbettedRefBrain=$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_2mm;
+	refMask=$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2mm_dil;
+	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
+    MNI_FSL_2mm) bettedRefBrain=$HOME/standard/fsl_mni152/MNI152_T1_2mm_brain;
+	unbettedRefBrain=$HOME/standard/fsl_mni152/MNI152_T1_2mm;
+	refMask=$HOME/standard/fsl_mni152/MNI152_T1_2mm_brain_mask_dil;
+	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
+    SPM_2mm)  bettedRefBrain=$HOME/standard/spm8_mni/T1_brain;
+	unbettedRefBrain=$HOME/standard/spm8_mni/T1;
+	refMask=$HOME/standard/spm8_mni/brainmask_0.5thresh;
+	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
+    *) echo -e "Reference brain not recognized. Options are MNI_2mm, MNI_FSL_2mm, SPM_2mm, and Tal_2mm."; exit 1 ;;
+esac
+
+if [[ ! -f ${bettedRefBrain}.nii && ! -f ${bettedRefBrain}.nii.gz  ]]; then
+    echo -e "Skull stripped reference brain not found: $bettedRefBrain\n"
+    exit 1
+fi
+
+#if unbetted reference is set, but file does not exist, throw error
+if [[ ! -f ${unbettedRefBrain}.nii && ! -f ${unbettedRefBrain}.nii.gz ]]; then
+    echo -e "Reference brain not found: $unbettedRefBrain\n"
+    exit 1
+fi
+
+#check for the fnirt config file
+if [ ! -f $fnirtConfig ]; then
+    echo -e "FNIRT config file not found: $fnirtConfig\n"
+    exit 1
+fi
+
+#if nifti passed in (i.e., skip dicom to nifti, then verify its existence
+if [[ -n $nifti && ! -f $nifti ]]; then
+    echo -e "Instructed to start preprocessing with nifti (-n), but file not found.\nFile:${nifti}\n"
+    exit 1
+fi
+
+#if nifti undefined, assume the dicoms need to be converted
+if [ -z $nifti ]; then
+    ##############
+    #convert dicom files to NIFTI
+    echo "----------------"
+    echo "Converting DICOM files to NIFTI"
+    echo "----------------"
+
+    #check whether files exist
+    #numFiles=$( ls | grep "$dicomPattern"  | wc -l )
+    numFiles=$( ls $dicomPattern | wc -l )
+    if [ $numFiles -eq 0 ]; then
+	echo "No DICOM files found using pattern: $dicomPattern. If you have already converted DICOM to NIFTI and want to skip this step, pass in the unbetted structural image using the -n parameter. Example: preprocessMprage -n mprage.nii.gz"
+	printHelp
+	exit 1
+    fi
+
+    nifti="mprage.nii.gz" #used in bet step.
+
+    #remove mprage.nii if it exists so that Dimon doesn't bomb out
+    if [ -f mprage.nii ]; then
+	rm -f mprage.nii
+    fi
+
+    #convert dicom to nifti using Dimon
+    Dimon \
+	-infile_pattern "${dicomPattern}" \
+	-GERT_Reco \
+	-quit \
+	-dicom_org \
+	-sort_by_acq_time \
+	-gert_write_as_nifti \
+	-gert_create_dataset \
+	-gert_to3d_prefix mprage
+
+    rm -f dimon.files*
+    rm -f GERT_Reco_dicom*
+
+    #if afnirc has compressor on, then above will already generate nii.gz
+    if [ -f mprage.nii ]; then
+	gzip -f mprage.nii #use -f to force overwrite in case where mprage.nii.gz exists, but we want to replace it.
+    fi
+
+    #default to LPI
+    #hopefully the 3dresample bug is fixed:
+    #http://afni.nimh.nih.gov/afni/community/board/read.php?f=1&i=39923&t=39923
+    3dresample -overwrite -orient LPI -prefix "mprage.nii.gz" -inset "mprage.nii.gz"
+
+    #Ask user what to do with original DICOM files unless passed on command line
+
+    if [ -z $delDicom ]; then
+	until [[ "$delDicom" = [AaNnYy] ]]; do
+	    read -sn1 -p "Delete or archive original DICOM files? (y/n/a)" delDicom
+	done
+    fi
+
+    case ${delDicom} in
+	y|Y) echo -e "\nDeleting DICOM files"; rm ${dicomPattern} ;;
+	n|N) echo -e "\nKeeping DICOM files" ;;
+	a|A) echo -e "\nArchiving DICOM files (mprage_dicom.tar.gz)"; tar czf mprage_dicom.tar.gz ${dicomPattern} && rm -f ${dicomPattern} ;;
+    esac
+
+fi
+
+#this won't work if the filename contains a period (no worries for now)
+niftiBase=$( echo $nifti | cut -d . -f 1 )
+
+#need to set default after processing options and dicom import
+#to account for reference choice and filename
+if [ -z $outputFile ]; then outputFile=${niftiBase}_nonlinear_warp_${reference}; fi
+
+
+###############
+#brain extract
+#append _bet to whatever is passed in for nifti
+echo "----------------"
+echo "Running brain extraction"
+echo "bet ${niftiBase} ${niftiBase}_bet.nii.gz ${betOpts}"
+echo "----------------"
+
+bet ${niftiBase} ${niftiBase}_bet ${betOpts}
+
+##############
+#warp structural to Stereotaxic space (MNI or Talairach)
+#first conduct affine (linear) warping to get linear warp coefficients
+#note that flirt works with betted reference brain, but fnirt prefers unbetted
+flirtAffCoef="${niftiBase}_to_${reference}_affine.mat"
+
+echo "----------------"
+echo -e "Running affine (linear) warp to extract warp coefficients"
+echo -e "flirt -in ${niftiBase}_bet -ref $bettedRefBrain -omat ${flirtAffCoef} -out ${niftiBase}"_warp_linear" -v"
+echo "----------------"
+
+flirt -in ${niftiBase}_bet -ref $bettedRefBrain -omat ${flirtAffCoef} -out ${niftiBase}"_warp_linear" -v
+
+#omitting flirt parameter -out, which creates a linearly-warped brain.
+#We only need the coefficients for fnirt, created by -omat
+#see here: http://www.fmrib.ox.ac.uk/fsl/fnirt/index.html
+#-out mprage_tlrc_affine
+
+###############
+#now nonlinear warp
+#note that Robert's original mprage2tlrc_nonlinear script used the betted brain,
+#but the documentation suggests using the non-bet brain.
+
+echo "----------------"
+echo "Running nonlinear transformation to warp mprage to: ${reference}"
+echo -e "fnirt --ref=$unbettedRefBrain --refmask=$refMask --in=${niftiBase} --aff=$flirtAffCoef --iout=$outputFile --config=$fnirtConfig --logout=${niftiBase}_to_${reference}_fnirt_settings.log -v"
+echo "----------------"
+
+fnirt --ref=$unbettedRefBrain --refmask=$refMask --in=${niftiBase} --aff=$flirtAffCoef --iout=$outputFile --config=$fnirtConfig --logout=${niftiBase}_to_${reference}_fnirt_settings.log -v
+
+if [[ -f "${bettedRefBrain}.nii" && ! -h ./template_brain.nii ]]; then
+    ln -s "${bettedRefBrain}.nii" ./template_brain.nii
+elif [[ -f "${bettedRefBrain}.nii.gz" && ! -h ./template_brain.nii.gz ]]; then
+    ln -s "${bettedRefBrain}.nii.gz" ./template_brain.nii.gz
+fi
+
+
+
+######
+#LEFTOVERS
+######
+#Previous attempts at dicom to nifti conversion
+#dcm2nii abandoned because of strange behavior orienting images and creating multiple nii files.
+
+#dcm2nii ${dicomPattern}
+
+#initial dimon attempt
+#dimon -infile_pattern "${dicomPattern}" -GERT_Reco -quit -gert_write_as_nifti -gert_create_dataset -gert_to3d_prefix ${nifti}_temp
+
+#second dimon attempt
+#dimon \
+#-infile_pattern "${dicomPattern}" \
+#-GERT_Reco \
+#-quit \
+#-gert_write_as_nifti \
+#-gert_create_dataset \
+#-gert_to3d_prefix ${nifti}_temp
+
+#various unsuccessful (depending on dataset) attempts to rename and identify correct output from dcm2nii
+#dcm2nii makes a file with a funky name. Rename to mprage
+# nifti="mprage.nii.gz" #used in bet step.
+# numNifti=$( ls *.nii.gz | wc -l )
+# if [ $numNifti -gt 1 ]; then
+#     if [ -f o*.nii.gz ]; then
+#         mv o*.nii.gz $nifti
+#         echo "Using oriented nifti output from dcm2nii"
+#     else
+#         echo "Multiple nifti files present in mprage directory. Cannot determine correct target."
+#         exit 1
+#     fi
+# else
+#     mv *.nii.gz $nifti
+# fi
+
+#niftiFiles=$( ls *.nii.gz  )
+#correctNiftiFile=''
+#if [ ${#niftiFiles[@]]} -ge 1 ]; then    
+#  for niftiFile in ${niftiFiles[@]}; do
+# 	if [[ ${niftiFile} =~ ^[0-9]{8}_[0-9]{9}-[0-9]{4}-[0-9]{5}.*\.nii\.gz ]]; then
+#  		correctNiftiFile=${niftiFile}
+#  	fi
+#  done 
+#fi
+
+#if [[ ${correctNiftiFile} != ''  ]]; then
+#	echo "Using ${correctNiftiFile} as anatomical data"
+#	#mv ${correctNiftiFile} ${nifti}
+#	3dWarp -deoblique -prefix ${nifti} ${correctNiftiFile}
+#else
+#  	echo "Could not determine correct .nii.gz anatomical file. DCM2NII failed?"
+# 	exit 1
+#fi

@@ -1,0 +1,124 @@
+#!/bin/bash
+
+function printHelp() {
+
+    cat <<EndOfHelp
+-----------------------------------
+convertToPSC is designed to convert a statistics bucket image file into percent signal change.
+  To accomplish this, the sub-bricks corresponding to the baseline (intercept) coefficient
+  for each run are identified and averaged. Because 3dDeconvolve uses Legendre polynomials for
+  higher-order polort detrending coefficients, which are centered at 0, the baseline B_0 coef 
+  provides the best estimate of baseline to norm against for percent signal change. See this:
+  http://afni.nimh.nih.gov/sscc/gangc/TempNorm.html.
+  This procedure requires that the design matrix is output from 3dDeconvolve.
+  
+Three files are required for this script:
+  1) The coefficients bucket file output by -cbucket from 3dDeconvolve
+  2) The design matrix file output by -xmat from 3dDeconvolve
+  3) The statistics image containing sub-briks of interest.
+
+Command line options:
+  -bucket: The statistics bucket file from 3dDeconvolve -bucket or -iresp
+  -cbucket: The baseline and statistics coefficients file from 3dDeconvolve -cbucket
+  -outfile: The name of the output file to contain the scaled (PSC) parameters.
+  -sub_briks: A comma-delimited list (no spaces) of sub-briks containing parameters to convert to percent signal change.
+  -xmat: The design matrix file from 3dDeconvolve -x1D
+
+-----------------------------------
+EndOfHelp
+
+}
+
+
+#if no parameters are passed in, then print help and exit.
+if [ $# -eq 0 ]; then
+    printHelp
+    exit 0
+fi
+
+cbucketFile=
+xmatFile=
+bucketFile=
+subBriks=
+
+#process command line parameters
+while [ _$1 != _ ] ; do
+    if [ $1 = -bucket ]; then
+	bucketFile="${2}"
+	shift 2
+    elif [ $1 = -cbucket ] ; then
+	cbucketFile="${2}"
+	shift 2
+    elif [ $1 = -outfile ] ; then
+	outputFile="${2}"
+	shift 2
+    elif [ $1 = -sub_briks ]; then
+	subBriks="${2}"
+	shift 2
+    elif [ $1 = -xmat ]; then
+	xmatFile="${2}"
+	shift 2
+    else
+	printHelp
+	echo -e "----------------\n\n"
+	echo "Unrecognized command line parameter: ${1}"
+	exit 1
+    fi
+done
+
+if [ -z ${outputFile} ]; then
+    outputFile=PSC_${bucketFile}
+fi
+
+#turn on gzip of BRIK files
+export AFNI_AUTOGZIP=YES
+export AFNI_COMPRESSOR=GZIP
+
+if [ ! -f "baseline.nii.gz" ]; then
+    baselineBriks=$(3dinfo -verb ${cbucketFile} 2>/dev/null | grep -E "At sub-brick #[0-9]+ 'Run#[0-9]+Pol#0'" | perl -pe 's/^.*sub-brick #(\d+).*$/$1/')
+
+    meanCmd="3dMean -prefix baseline.nii.gz -overwrite"
+
+    for thisBrik in ${baselineBriks}; do
+	meanCmd="${meanCmd} ${cbucketFile}[${thisBrik}]"
+    done
+
+    echo "${meanCmd}"
+    eval "${meanCmd}" 2>/dev/null
+
+fi
+
+#scale to PSC
+
+if [ -z ${subBriks} ]; then
+    bucketParam="${bucketFile}"
+else
+    bucketParam="${bucketFile}[${subBriks}]"
+fi
+
+3dcalc -overwrite -fscale -a "baseline.nii.gz[0]" -b "${bucketParam}" -expr "100 * b/a * step(1-abs(b/a))" -prefix ${outputFile}
+
+#rm -f baseline.nii.gz
+
+#OLD 3dSynthesize approach. deprecated
+
+
+#compute estimated timecourse for baseline
+# if [ -f "baselineSynth.nii.gz" ]; then
+#     rm -f baselineSynth.nii.gz
+# fi
+
+# if [ -f "baselineMean.nii.gz" ]; then
+#     rm -f baselineMean.nii.gz
+# fi
+
+
+
+#use -select polort just to get polort baseline coefficients
+#not -select baseline, which includes motion parameters in many cases
+#also, use cenfill none to create a synth baseline dataset that only contains observed data, not excess zeros or interpolated data.
+#3dSynthesize -cbucket ${cbucketFile} -select polort -matrix ${xmatFile} -cenfill none -prefix baselineSynth.nii.gz
+
+
+#use the mean value of baseline at each voxel to scale to percent signal change
+#fslmaths baselineSynth.nii.gz -Tmean baselineMean.nii.gz

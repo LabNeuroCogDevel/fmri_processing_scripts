@@ -1,0 +1,127 @@
+#!/bin/bash
+#extractBetas
+#The extractBetas script is intended to extract particular coefficients of interest from
+#level 1 statistics files for each subject and to place the sub-brick files into a single
+#level 2 statistics directory for further analysis (e.g., 3dANOVA2).
+#
+#The program expects you to pass in a configuration file using -c that defines the directories to
+#be processed, the output directory, sub-bricks to be extracted, 
+#and naming convention for the statistics files. See the example config file.
+#
+#example call: sh extractBetas.sh -c ~/fMRIStudy1/Study1_extractBetas.cfg
+#
+#Author: Michael Hallquist
+#Written: 5/1/2010
+#Last updated: 7/25/2011
+#
+#Changelog:
+#7/25/2011:
+# - Prior version was deleting all BRIK and HEAD files in the directory to make sure that 3dcalc command succeeded.
+#     Better is to use -overwrite for 3dcalc, which preserves any needed files in the dir.
+
+#parse -c option for config file
+while getopts c: option
+do
+    case "$option" in
+	c) configfile=$OPTARG ;;
+    esac
+done
+
+if [ -z "$configfile" ]; then
+    echo "Config file not specified. Please pass using the -c parameter"
+    exit 1
+fi
+
+#check that the config file exists
+if [ ! -f $configfile ]
+then
+    echo "Config file (-c) could not be found: $configfile"
+    exit 1
+else
+    echo "Config file: $configfile"
+    . $configfile #source the config file, importing the values into this script context
+fi
+
+if [ ! -d $baseDir ]
+then
+    echo "Base directory does not exist. Quitting program."
+    exit 1
+fi
+
+if [ ! -d $outputDir ]
+then
+    echo "Output directory does not exist. Creating: $outputDir"
+    mkdir -p $outputDir #-p creates any missing parent directories
+fi
+
+#check that required arguments are defined in the config file.
+if [ -z "$statsDir" ]; then
+    echo "statsDir must be defined in the config file."
+    exit 1
+fi
+
+if [ -z "$subBricks" ]; then
+    echo "subBricks must be defined in the config file."
+    exit 1
+fi
+
+if [ -z "$statsFilePrefix" ]; then
+    echo "statsFilePrefix must be defined in the config file."
+    exit 1
+fi
+
+if [ -z "$subjectDirs" ]; then
+    echo "subjectDirs must be defined in the config file."
+    exit 1
+fi
+
+
+count=${#subjectDirs[@]}
+#echo "count = $count"
+
+#using ${subjectDirs[@]} makes the program see each element as a separate word
+#${subjectDirs[*]} treats all as the same word
+
+for subject in ${subjectDirs[@]}
+do
+    echo "Extracting sub-bricks for subject: $subject"
+    thisDir=${baseDir}/${subject}/${statsDir}
+    if [ ! -d "$thisDir" ]; then
+	echo "Subject directory does not exist: $thisDir"
+	exit 1
+    fi
+
+    cd $thisDir 
+
+    #run 3dcalc to extract sub-bricks
+
+    #Create an empty array for all possible sub-brick suffixes (for selecting the right files with mv)
+    #reinitialize to empty for each iteration (otherwise expands with each subject)
+    subBrickNames=()
+
+    #extract sub-bricks
+    #need quotes around the array to ensure that bash doesn't reinterpret
+    #the array as a flat series of words (i.e., we want to retain the pairs)
+    for subBrick in "${subBricks[@]}"
+    do
+	#echo "subBrick: $subBrick"
+	#echo "first param: $1"
+	#echo "second param: $2"
+
+    	set -- $subBrick #parse the numeric position and sub-brick names into $1 and $2, respectively
+    	3dcalc -overwrite -a "${statsFilePrefix}[$1]" -expr a -prefix ${subject}_$2
+    	subBrickNames=("${subBrickNames[@]}" "$2") #append this suffix to the list of subBrickNames
+    done
+
+    #join sub-brick names with a | to allow for alternation checking by grep
+    joinedNames=$(printf "\|%s" "${subBrickNames[@]}")
+
+    #chop off the leading \|
+    joinedNames=${joinedNames:2}
+
+    #move the extracted coefficients to the output directory
+    #grep -z to accept list separated by nulls and pass along to xargs with null (allows for spaces in filenames
+    #xargs -0 to divide arguments by null character (passed via grep -z), -I to define "{}" as the passed-in list of files
+    find ./ -type f -print0 | grep -z "${subject}_\(${joinedNames}\).*" | xargs -0 -I {} mv {} $outputDir
+
+done

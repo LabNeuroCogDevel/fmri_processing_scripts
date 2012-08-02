@@ -1,0 +1,57 @@
+#!/bin/bash
+rootdir='/Volumes/TeraByte1/Autism_Faces'
+set -e
+set -x
+
+for subjID in 119; do
+	
+	echo "---------------------------"${subjID}"----------------------"
+	if [ -d ${rootdir}/${subjID} ]; then
+		
+		if [ ! -f ${rootdir}/${subjID}/anatomical/mprage.nii.gz ]; then
+			
+			cd ${rootdir}/${subjID}/anatomical
+			
+			preprocessMprage \
+			-d n \
+			-p '*.dcm' \
+			-o mprage \
+			-r 'Tal_2mm'
+			cd ${rootdir}
+		fi
+	fi
+
+		for experi in 'experiment1' 'experiment2'; do
+			for task in 'faces_usa' 'faces_aus' 'cars'; do
+			
+			if [ -d ${rootdir}/${subjID}/${experi}/${task} ]; then
+				
+				if [ ! -f ${rootdir}/${subjID}/${experi}/${task}/nfswkmt_functional_5.nii.gz ]; then
+					cd ${rootdir}/${subjID}/${experi}/${task} 
+
+					#rm ${rootdir}/${subjID}/${experi}/${task}/*.nii.gz
+					#rm ${rootdir}/${subjID}/${experi}/${task}/*.mat
+					#rm ${rootdir}/${subjID}/${experi}/${task}/*.par
+					#rm ${rootdir}/${subjID}/${experi}/${task}/*.png
+						
+					preprocessFunctional \
+					-startover \
+					-slice_acquisition 'interleaved' \
+					-dicom '.dcm' \
+					-delete_dicom no \
+					-template_brain 'Tal_3mm' \
+					-mprage_bet ../anatomical/mprage_bet.nii.gz \
+					-warpcoef ../anatomical/mprage_warpcoef.nii.gz \
+					-rescaling_method 100_voxelmean	
+					cd ${rootdir}
+				fi
+			fi
+			
+			#else 
+				#	echo 'OH NO! Missing '${rootdir}/${subjID}/${exp}/${cond}
+
+			done
+	#fi
+		done
+#done
+done
