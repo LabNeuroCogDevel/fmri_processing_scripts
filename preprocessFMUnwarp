@@ -45,7 +45,7 @@ mkdir $tmpsdir
 # take pictures!
 [ -z "$pics" ] && pics=yes
 imgdir=$(pwd)/img
-[ -d $imgdir ] && rm $imgdir
+[ -d $imgdir ] && rm -r $imgdir
 
 globalcount=0
 function _picture {
@@ -55,7 +55,8 @@ function _picture {
    # check we have a save directory
    [ -d $imgdir ] || mkdir $imgdir 
 
-   let globalcount++
+   globalcount=$((( $globalcount+ 1))) #let ..++ can return 0 and break things with set -e 
+
    name=$(basename $(basename $1 .gz) .nii)
    num=$(printf "%04d" $globalcount)
    imgname=$imgdir/${num}_$name.png
@@ -299,7 +300,7 @@ _picture FM_UD_fmap "sub self from demeaned, apply ero. mask, add back (overwrit
 
 
 #clean up
-mv  FM_UD_fmap_tmp_fmapfilt* FM_UD_fmap_mag_brain_mask_ero* FM_UD_fmap_mag_brain_mask50* FM_UD_fmap_mag_brain_i* $tmpsdir
+mv  FM_UD_fmap_tmp_fmapfilt* FM_UD_fmap_mag_brain_mask_ero* FM_UD_fmap_mag_brain_mask50* FM_UD_fmap_mag_brain_mask_i* $tmpsdir
 
 ##########
 
@@ -472,6 +473,7 @@ mv unwarp/*nii* $tmpsdir
 mv unwarp/*mat  $tmpsdir
 mv example_func.nii* example_func_orig_distorted.nii* $tmpsdir
 #$mcFunctional.nii* 
+[ -d unwarp_thumbnails ] && rm -r unwarp_thumbnails
 mv unwarp unwarp_thumbnails
 
 [ "$savetmps" == "yes" ] || rm -r $tmpsdir

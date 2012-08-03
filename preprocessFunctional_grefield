@@ -833,7 +833,7 @@ function runMotionCorrection {
         #if no reference volume specified, correct to the mean volume
 	if [ -z "$ref_vol" ]; then
 	    rel "Using mean volume of mcplots correction for motion correction of $infile" c
-            rel "fslmaths mcplots -Tmean example_func"
+            rel "fslmaths mcOrig/mcplots -Tmean example_func"
             rel "mcflirt -in \"${infile}\" -o \"${outfile}\" -reffile example_func ${mcflirtSinc} $additionalParams "
 
         # using a reference volume
