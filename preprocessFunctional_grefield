@@ -678,9 +678,9 @@ if [ ! -f ".motion_plots_complete" ]; then
 
     rel "1. Creating subject motion plots" c
     if [ -z $ref_vol ]; then
-	rel "mcflirt -in $funcFile -o mcplots -plots -rmsabs -rmsrel"
+	rel "mcflirt -in $funcFile -o mcplots -plots -rmsabs -rmsrel -mats" # middle volume
     else
-	rel "mcflirt -in $funcFile -o mcplots -plots -rmsabs -rmsrel -refvol $ref_vol"
+	rel "mcflirt -in $funcFile -o mcplots -plots -rmsabs -rmsrel -mats -refvol $ref_vol"
     fi
 
     #rotations plot
@@ -697,7 +697,8 @@ if [ ! -f ".motion_plots_complete" ]; then
     #rel "ls -d mcplots* | grep -v mcplots.par | xargs rm -rf"
     #remove the motion-correction 1) NIFTI 2) mean abs RMS 3) mean rel RMS 4) transformation matrices
     #this should retain the abs and rel RMS vectors and the mcplots.par, which contains motion estimates
-    rel "rm -rf mcplots.nii.gz mcplots_abs_mean.rms mcplots_rel_mean.rms mcplots.mat"
+    #rel "rm -rf mcplots.nii.gz mcplots_abs_mean.rms mcplots_rel_mean.rms mcplots.mat"
+    rel "mkdir mcplotsout && mv mcplots.nii.gz mcplots_abs_mean.rms mcplots_rel_mean.rms mcplots.mat mcplotsout"
 
     rel "touch .motion_plots_complete"
 fi
@@ -812,38 +813,54 @@ function runMotionCorrection {
 
         #####
         #Motion correction.
+        #Defaults to mean volume correction unless -refvol passed.
         #input: slice-time-corrected 4D file
         #output: motion-corrected, slice-time-corrected 4D file.
-        #Defaults to mean volume correction unless -refvol passed.
+        # 
+        # if FM unwarping
+        #   * example_func
+        #   * mc/*{par,rms,mat}
+        # 
 
-        additionalParams="-mats -plots -meanvol -rmsrel -rmsabs"
+        # need rms these for field mapping
+        additionalParams=
+        [ -n "$fieldmap" ] && additionalParams="-mats -plots -rmsrel -rmsabs"
 
 	rel "Running motion correction" c
-	if [ -z $ref_vol ]; then
+
         #if no reference volume specified, correct to the mean volume
+	if [ -z "$ref_vol" ]; then
 	    rel "Using mean volume for motion correction" c
 	    rel "mcflirt -in \"${infile}\" -o \"${outfile}\" -meanvol ${mcflirtSinc}"
-            if [ -n  ${fieldmap} ]; then
+            if [ -n  "${fieldmap}" ]; then
               #-plots/-mat  and -meanvol are mutally excluse 
               # need mat for field map unwarp
               # https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=FSL;82b968f7.0708#TOP
               # do mc twice, first to get mean and then to correct to it
               #
               # TODO: is a Tmean example_func approprate?
+              #       warp coeff are made with it
               #
-              rel "mc -> Tmean -> mc again with Tmean ref (gen MAT for FM unwarp)" c
+              # use mcplots here instead of second mcfliter TODO
+              rel "Tmean of meanvol mc -> mc again with Tmean ref (gen MAT for FM unwarp)" c
               rel "fslmaths \"${outfile}\" -Tmean example_func"
               rel "mcflirt -in \"${infile}\" -o \"${outfile}\" -reffile example_func ${mcflirtSinc} $additionalParams "
             fi
+
+        # using a reference volume
 	else
+            if [ -n "${fieldmap}" ]; then
+               rel "extract reference ($ref_vol) as an example of the functional set (for FM unwarp)" c
+               rel  "fslroi $infile example_func $ref_vol 1"
+            fi
 	    rel "Using volume number: $ref_vol for motion correction" c
 	    rel "mcflirt -in "${infile}" -o "${outfile}" -refvol $ref_vol ${mcflirtSinc} $additionalParams"
-	    rel "And extract refrence as an example of the functional set" c
-            rel  "fslroi prefiltered_func_data example_func $ref_vol 1"
 	fi
 
-        #mkdir mc && mv *rms *par *mat/ $_ 
-        [ -r $prefix*rms ] && mkdir mc && mv $prefix*{rms,par,mat/} $_ 
+        
+        # move extra stuff to mc 
+        # if we've created it for fieldmap
+        [ -n "$fieldmap" ] && mkdir mc && mv $prefix*{rms,par,mat/} $_ 
 	rel "touch .motion_correction_complete"
     fi
 }
@@ -857,12 +874,12 @@ function runFieldMapUnwarp {
        # -fieldmap
        # -fm_mag
        # -fm_cfg
-       # does functional need to be skull stripped?!
+       # TODO: does functional need to be skull stripped?! (No?)
 
        rel "Applying fieldmap" c
      
-       logFile=$logFile \
-        $(dirname $0)/preprocessFMUnwarp -f $prefix$funcFile -m $fm_mag -g $fieldmap -c $fm_cfg --mcFunctional $mcFunctional
+       rel "logFile=$logFile \
+        $(dirname $0)/preprocessFMUnwarp -f $prefix$funcFile -m $fm_mag -g $fieldmap -c $fm_cfg --mcFunctional $mcFunctional"
        # creates unwarp_thumbnails dirctory
        # leaves prefiltered_func_data_unwarp.nii
 

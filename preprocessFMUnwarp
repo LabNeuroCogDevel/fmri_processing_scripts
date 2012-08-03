@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+# FM = space of fieldmap
+# EF = space of example_func
+# UD = undistorted (in any space)
+# D  = distorted (in any space)
+
+
 ### setup
 #rootdir=/Volumes/T800/CogEMOSounds/subjs
 #subj=10892
@@ -48,6 +54,19 @@ function rel() {
        echo "${cmd}" >> "${logFile}"
     fi
 }
+pics=yes
+globalcount=1
+imgdir=$(pwd)/img
+function _picture {
+   [ "$pics" == "yes" ] || continue
+   [ -d $imgdir ] || mkdir $imgdir 
+   let globalcount++
+   name=$(basename $(basename $1 .gz) .nii)
+   num=$(printf "%04d" $globalcount)
+   imgname=$imgdir/${num}_$name.png
+   slicer -u $1 -a $imgname
+   convert -scale 200% -fill white -gravity southwest -annotate 0 "$name: $2" $imgname $imgname
+}
 
 # read inputs
 while [ $# -gt 0 ];do
@@ -85,13 +104,16 @@ done
 
 # check needed files exist
 for fileVar in functional grefieldmap gremagnitude logFile; do
- filePath=${!fileVar}
+ filePath=${!fileVar} # path is the value of the variables we are iterating through
  [ ! -r "${filePath}" -a ! -r "${filePath}.nii"  -a ! -r "${filePath}.nii.gz"  ] && echo "$fileVar ($filePath[.nii[.gz]]) DNE" && exit 1
 
  # make paths absolute
  cd $(dirname $filePath) 
  filePath=$(pwd)/$(basename $filePath) 
+
+ # place absolute path back into the file variable name
  printf -v $fileVar "$filePath" # eg functional=".../functional.nii.gz"
+ # jump back to the directory we were in before setting abs path
  cd - 1>/dev/null
 done
 
@@ -113,11 +135,15 @@ fslhd ${grefieldmap} |
 
 set -e
 
-fslmaths $functional prefiltered_func_data -odt float
+
+rel "fslmaths $functional prefiltered_func_data -odt float # copy to FSL friendly name"
 
 ## motion correct (mat here used as premat in applywarp)
 # only doen if we don't have correction from preprocessFunctional passed in
 if [ -z "$mcFunctional" ] || [ ! -r "$mcFunctional" -a ! -r "$mcFunctional.nii" -a ! -r "$mcFunctional.nii.gz" ]; then
+ echo "could not find motion corrected functional image!"
+ exit 1 
+ #### Below is no longer executed"
  rel "WARNING: motion correction to middle volume (need MAT) -- this shouldn't need to be done" c
  midvol=$(fslhd prefiltered_func_data.nii|perl -lne 'print  int($1/2) if m/^dim4\s+(\d+)$/') # 91
  fslroi prefiltered_func_data example_func $midvol 1
@@ -139,7 +165,7 @@ fslmaths $grefieldmap -mul 3.141593 -div 4096 -div $TEdiff  FM_UD_fmap          
 bet $gremagnitude                                           FM_UD_fmap_mag
 fslmaths FM_UD_fmap_mag                                     FM_UD_fmap_mag_brain
 
-fslmaths FM_UD_fmap FM_UD_fmapOrigBAK
+#fslmaths FM_UD_fmap FM_UD_fmapOrigBAK
 
 # as expected when compared to old files
 ## 3dcalc -a FM_UD_fmap.nii -b ../../grefieldmap2/grefieldmap2_radpers.nii.gz -exp 'a-b' -prefix test.nii.gz -overwrite && fslstats test.nii.gz -R # == 0 0
@@ -149,62 +175,125 @@ fslmaths FM_UD_fmap FM_UD_fmapOrigBAK
 
 rel "creating masks" c
 ## Mask
+
+# create a binary mask of the non-zero voxels of the fieldmap magnitude image (which was skull-stripped above)
 fslmaths FM_UD_fmap_mag -bin FM_UD_fmap_mag_brain_mask -odt short
+_picture FM_UD_fmap_mag_brain_mask "binary mask of skullstriped fmap_mag "
 #fslmaths FM_UD_fmap_mag_brain_mask FM_UD_fmap_mag_brain_mask_origBAK
 # invert and cluster outside to patch holes
+
+# abs the original fieldmap, binarize, then mask based on the 1/0 magnitude image, invert by *-1, + 1, binarize (to be safe)
+# the result, FM_UD_fmap_mag_brain_mask_inv is the non-zero voxels of the *fieldmap* (not magnitude) inverted such that
+# brain-ish voxels are 0 and non-brain voxels are 1.
+# This may lead to a circumstance where there are brain voxels of interest that have value 0 in the fieldmap.
 fslmaths FM_UD_fmap -abs -bin -mas FM_UD_fmap_mag_brain_mask -mul -1 -add 1 -bin FM_UD_fmap_mag_brain_mask_inv
+_picture FM_UD_fmap_mag_brain_mask_inv "non brain regions"
+
+# To handle the scenario of 0-valued voxels in fieldmap, use cluster to obtain the largest cluster of non-zero (non-brain) voxels in the above mask
+# output is mask image with integer-valued segments for each spatial cluster
 cluster -i FM_UD_fmap_mag_brain_mask_inv -t 0.5 --no_table -o FM_UD_fmap_mag_brain_mask_idx
-outsideIdx=$(fslstats FM_UD_fmap_mag_brain_mask_idx -R | awk '{print  $2}') # 69
+_picture FM_UD_fmap_mag_brain_mask_inv "non brain regions, clustered"
+
+# This will grab the largest spatial cluster (the max of the range, -R), which refers to the biggest non-brain cluster
+outsideIdx=$(fslstats FM_UD_fmap_mag_brain_mask_idx -R | awk '{print  $2}')
+
 # overwrite mag_brain_mask
+# Now take the clusters image, zero everything below the max (where max contains the biggest non-brain cluster),
+# binarize the image, re-invert (*-1 + 1), binarize again, then mask by the skull-stripped magnitude image.
 fslmaths FM_UD_fmap_mag_brain_mask_idx -thr $outsideIdx -bin -mul -1 -add 1 -bin -mas FM_UD_fmap_mag_brain_mask FM_UD_fmap_mag_brain_mask
+_picture FM_UD_fmap_mag_brain_mask "new brain_mask (inverted biggest nonbrain region masked by old self)"
+
+
 #fslmaths FM_UD_fmap_mag_brain_mask FM_UD_fmap_mag_brain_mask_afterInvBAK
-
-
 
 ### Refine Mask
 
 rel "refining masks" c
 ## demean
-medVal=$(fslstats FM_UD_fmap -k FM_UD_fmap_mag_brain_mask -P 50|sed 's/ //g') # 112.242508
+# compute median of non-zero voxels in fieldmap, masking by the useful voxels (from mask steps above)
+medVal=$(fslstats FM_UD_fmap -k FM_UD_fmap_mag_brain_mask -P 50 | sed 's/ //g') # 112.242508
 # overwrite fmap
+# subtract off the median from all fieldmap voxels within the relevant mask
 fslmaths FM_UD_fmap -sub $medVal  -mas FM_UD_fmap_mag_brain_mask FM_UD_fmap
-fslmaths FM_UD_fmap FM_UD_fmap_afterMaskBAK
+_picture FM_UD_fmap "overwrite by demedian-ing ( - $medVal, overwrite)"
+
+#fslmaths FM_UD_fmap FM_UD_fmap_afterMaskBAK
 
 ## Refine
-almostHalfMax=$(fslstats FM_UD_fmap_mag_brain -P 98|awk '{print $1/2}') # 563.5
+# From skull-stripped magnitude image, compute 98th pctile of nonzero voxels, divide by 2
+almostHalfMax=$(fslstats FM_UD_fmap_mag_brain -P 98 | awk '{print $1/2}') # 563.5
+
 # refine mask (remove edge voxels where signal is poor)
+# Zero all non-zero voxels in the skull-stripped magnitude image that fall below half of 98th pctile
+# These will typically be near the edge
 fslmaths FM_UD_fmap_mag_brain -thr $almostHalfMax -bin FM_UD_fmap_mag_brain_mask50
+_picture FM_UD_fmap_mag_brain_mask50 "mag (masked) >$almostHalfMax (all high intensity)"
+
+# Erode once to shave off a layer of all edges
 fslmaths FM_UD_fmap_mag_brain_mask -ero FM_UD_fmap_mag_brain_mask_ero
+_picture FM_UD_fmap_mag_brain_mask_ero "mag (masked) eroded"
 # overwrite FM_UD_fmap_mag_brain_mask
+
+# Take the eroded magnitude mask and add back those voxels (wherever they are) that exceed the half-max (~50th pctile)
+# Then threshold those < 1 and binarize to make a magnitude mask.
+# In effect, this will bring back edge voxels lost by -ero that are > median (i.e., they have adequate signal and should be retained)
 fslmaths FM_UD_fmap_mag_brain_mask_ero -add FM_UD_fmap_mag_brain_mask50 -thr 0.5 -bin FM_UD_fmap_mag_brain_mask
+_picture FM_UD_fmap_mag_brain_mask "eroded + high intensity (overwrite)"
+
 #fslmaths FM_UD_fmap_mag_brain_mask FM_UD_fmap_mag_brain_mask_errBAK
 
-#overwrite FM_UD_fmap
+# overwrite FM_UD_fmap
+# mask the fieldmap by the magnitude mask above (where the intensities in the magnitude were used to dump poor-quality edge voxels)
 fslmaths FM_UD_fmap -mas FM_UD_fmap_mag_brain_mask FM_UD_fmap
-fslmaths FM_UD_fmap FM_UD_fmap_afterRefineBAK
+_picture FM_UD_fmap "remove low intenity (mask by brain_mask finally) (overwrite)"
+
+#fslmaths FM_UD_fmap FM_UD_fmap_afterRefineBAK
 
 
 ## Despike just edges
-# erode again, overwrite
+# Erode the magnitude mask created above
 fslmaths FM_UD_fmap_mag_brain_mask -ero FM_UD_fmap_mag_brain_mask_ero
+_picture FM_UD_fmap_mag_brain_mask_ero "erode brain_mask again (regardless of intensity)"
+
+#Apply 2D median filtering to fieldmap, apply 2D despiking filter
 fugue --loadfmap=FM_UD_fmap --savefmap=FM_UD_fmap_tmp_fmapfilt -m FM_UD_fmap_mag_brain_mask --despike --despikethreshold=2.1
+_picture FM_UD_fmap_tmp_fmapfilt "2D demeaned,despiked FM"
+
+# what is going on next? break it down
+#fslmaths FM_UD_fmap_tmp_fmapfilt -sub FM_UD_fmap -mas FM_UD_fmap_mag_brain_mask_ero  curious
+#_picture curious "sub self from demeaned, apply ero. mask"
+#rm curious*
+
+# de(mean&spike)ed - original * erroded brain mask + original
+# add what is not within the eroded mask back (not smoothed)
+# remove all fmap, zero outside the mask, add back all of teh fmap (inclued what was zeroed by the mask)
 fslmaths FM_UD_fmap_tmp_fmapfilt -sub FM_UD_fmap -mas FM_UD_fmap_mag_brain_mask_ero -add FM_UD_fmap FM_UD_fmap
-fslmaths FM_UD_fmap FM_UD_fmap_afterErodeBAK
+_picture FM_UD_fmap "sub self from demeaned, apply ero. mask, add back (overwrite)"
+
+#fslmaths FM_UD_fmap FM_UD_fmap_afterErodeBAK
 
 
 #clean up
 rm -f FM_UD_fmap_tmp_fmapfilt* FM_UD_fmap_mag_brain_mask_ero* FM_UD_fmap_mag_brain_mask50* FM_UD_fmap_mag_brain_i*
 
+##########
+
 
 rel "sigloss prep" c
-## demean
+
+## demean field map
 medVal=$(fslstats FM_UD_fmap -k FM_UD_fmap_mag_brain_mask -P 50|sed 's/ //g' ) # -0.623573
-#overwrite FM_UD_map 
+#overwrite FM_UD_map  with demdean-ed value
 fslmaths FM_UD_fmap -sub $medVal  -mas FM_UD_fmap_mag_brain_mask FM_UD_fmap
+_picture FM_UD_fmap "demedian and mask ($medVal, again?, overwrite)"
+
+
+########## fmap+mag.png 
+rel "composing fmap+mag.png" c
+# make lowest value 10 - prepair for thumbnail
 minVal=$(fslstats FM_UD_fmap -R | awk '{ print  $1}') #  -1383.077148 
 fslmaths FM_UD_fmap -sub $minVal -add 10 -mas FM_UD_fmap_mag_brain_mask grot # why subtract/add ?
-
-rel "composing fmap+mag.png" c
+_picture grot "FM_UD_fmap - $minVal + 10 (prepair for thumbnail)"
 # overlay to file "grot" to make images
 rangeAboveOne=$(fslstats grot -l 1 -p 0.1 -p 95) # 607.379578 1602.596313
 overlay 0 0 FM_UD_fmap_mag -a grot $(echo $rangeAboveOne) grot 
@@ -214,35 +303,57 @@ pngappend sla.png + slb.png + slc.png + sld.png + sle.png + slf.png + slg.png + 
 # cleanup 
 rm sl[a-l].png
 
+
+
 ### WARP FM to EPI(middle volume) and back
 rel "signal loss and initial warp" c
 # get a sigloss estimate and make a siglossed mag for forward warp
 sigloss -i FM_UD_fmap --te=$epiTE -m FM_UD_fmap_mag_brain_mask -s FM_UD_fmap_sigloss
+_picture FM_UD_fmap_sigloss "FM_UD_fmap masked sigloss (te=$epiTE)"
 
 fslmaths FM_UD_fmap_sigloss -mul FM_UD_fmap_mag_brain FM_UD_fmap_mag_brain_siglossed -odt float
+_picture FM_UD_fmap_mag_brain_siglossed "multiply sigloss by mag brain"
 
-rel "unwarp (fugue) FM_UD -> FM_D " c
+rel "forward warp siglosses fieldmaps (UnDistorted to Distorted) " c
+
+# Distort mag_brain_siglossed and fmap_sigloss by forward warp with FM_UD_warp
 # make a warped version of FM_UD_fmap_mag to match with the EPI
 # -w is forward warp applied to
 for file in FM_UD_fmap_mag_brain_siglossed FM_UD_fmap_sigloss; do
   fugue -i  $file \
         --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mag_brain_mask --dwell=$dweltime \
         -w ${file/_UD_/_D_} --nokspace --unwarpdir=$unwarpdir
-   # create FM_D_fmap_mag_brain_siglossed FM_D_fmap_sigloss
+
+   _picture ${file/_UD_/_D_} "undistorted to distored ($unwarpdir), forward warp via FM_UD_fmap"
+
+   # creates FM_D_fmap_mag_brain_siglossed FM_D_fmap_sigloss
 done
 
-rel "applying warp (EPI2FM, then FM2EPI) FM_UD -> EF_UD" c
-# threshold
-fslmaths FM_D_fmap_sigloss -thr $signallossthresh FM_D_fmap_sigloss
-# align middle epi to fieldmap, overwrite grot (now totally different)
+###################
+
+
+rel "applying warp (EPI2FM, then FM2EPI) undistorted fieldmaps warped into epi space" c
+
+# threshold by value set in cfg
+fslmaths FM_D_fmap_sigloss -thr $signallossthresh FM_D_fmap_sigloss # .9
+_picture FM_D_fmap_sigloss "threshold by $signallossthresh (overwrite)"
+
+# align middle epi (is distored) to mag fieldmap (with distortion applied)
+#    overwrite grot (now totally different, will be used for thumbnail again)
+# use distored singloss as a reference weight
 flirt -in EF_D_example_func -ref FM_D_fmap_mag_brain_siglossed -omat EF_2_FM.mat -o grot -dof 6 -refweight FM_D_fmap_sigloss
-# reverse 
+_picture grot "align FM (mag,sigloss in) to epi (ref) (make EF2FM.mat, use this image for thumbnail)"
+
+# reverse  EF->FM  to get FM->EF (to put all fieldmap stuff in epi space)
 convert_xfm -omat FM_2_EF.mat -inverse EF_2_FM.mat
-# apply warp to EPI to the FM_UDs
+
+# warp all the fieldmap images into EPI,  FM_UDs become EF_UDs
 for file in "FM_UD_fmap" "FM_UD_fmap_mag_brain" "FM_UD_fmap_mag_brain_mask" "FM_UD_fmap_sigloss"; do
   flirt -in $file  -ref EF_D_example_func -init FM_2_EF.mat -applyxfm -out ${file/FM_/EF_} 
   #creates "EF_UD_fmap" "EF_UD_fmap_mag_brain" "EF_UD_fmap_mag_brain_mask" "EF_UD_fmap_sigloss"
+  _picture ${file/FM_/EF_}  "align FM (mag,sigloss in) to epi (ref) (make EF2FM.mat)"
 done
+
 
 ## IMAGE
 rel "composing EF_UD_signloss+mag.png" c
@@ -259,15 +370,23 @@ pngappend sla.png + slb.png + slc.png + sld.png + sle.png + slf.png + slg.png + 
 rm sl[a-l].png
 
 
-## unwarp warpfieild ??
-rel "convert shift: EF_D --> EF_UD_warp" c
-# apply warp to EF_D_example_func and save unwarp-shiftmap then convert to unwarp-warpfield
+rel "warp epi space (undistort, shift)" c
+# unwarp EF_D_example_func to EF_UD_example_func (for thumbnail, compare to original, and in convertwarp to build applywarp)
+#                          and save unwarp-shiftmap then convert to unwarp-warpfield
 # -u is unwarp 
 fugue --loadfmap=EF_UD_fmap --dwell=$dweltime --mask=EF_UD_fmap_mag_brain_mask -i EF_D_example_func -u EF_UD_example_func --unwarpdir=$unwarpdir --saveshift=EF_UD_shift
-# -r is ref -s is shiftmap
-convertwarp -s EF_UD_shift -o EF_UD_warp -r EF_D_example_func --shiftdir=$unwarpdir
+_picture EF_UD_shift "pixelshift ($unwarpdir)  EF_D_example using EF_UD_fmap"
 
-## shift image
+# warp with shift map from above (undistored, shifted epi) and original epi example
+# this will be used in the finally apply warp
+convertwarp -s EF_UD_shift -o EF_UD_warp -r EF_D_example_func --shiftdir=$unwarpdir
+_picture EF_UD_warp "warped ($unwarpdir, shift w/undistored, shifted epi (with orig distored epi as ref)"
+
+
+
+################################################
+
+## shift image thumbnail
 rel "composing EF_UD_shift+mag.png" c
 # hack to to get variables (bash array of results from fslmatsh|awk)
 shiftExtrema=( $(fslstats EF_UD_shift -R -P 1 -P 99 | awk '{printf "%.1f %.1f %f %f", $1, $2, $3*-1, $4}'))
@@ -292,14 +411,18 @@ rm sl[a-l].png
 rel "unwarping all EPI" c
 # apply warping and motion correction to example_func and 4D data
 # why immv and not fslmaths? I don't know
-cd - # back to subj data
+cd - 1>/dev/null # back to subj data
+
+# copy the example func to a more verbose name (original distorted)
+# so we can name the warped version example_func
 immv example_func example_func_orig_distorted
+# warp using the already warped and undistored epi
 applywarp -i example_func_orig_distorted -o example_func -w unwarp/EF_UD_warp -r example_func_orig_distorted --abs --mask=unwarp/EF_UD_fmap_mag_brain_mask
 
 # FSL tcl script ($FSLDIR/tcl/featlib.tcl) would just apply warp to 4d funcdata if mcflirt transforms DNE
 # but they do for us, so unwarp on volume at a time
 # split the funcdata into junk name grot
-[ -d grot ] && rm grot
+[ -d grot ] && rm -r grot
 mkdir grot
 fslsplit prefiltered_func_data grot/grot
 
@@ -315,13 +438,15 @@ for i in $(seq 0 $((($totalVolumes-1))) ); do
            --mask=unwarp/EF_UD_fmap_mag_brain_mask
 done
 fslmerge -t prefiltered_func_data_unwarp grot/*
+_picture  prefiltered_func_data_unwarp "FINAL! "
+
 # clean up
 rm -r grot/
-rm -r mc/
-rm unwarp/*nii*
-rm unwarp/*mat
+#rm -r mc/
+#rm unwarp/*nii*
+#rm unwarp/*mat
 # rm top level tmp files
-rm example_func.nii* example_func_orig_distorted.nii* prefiltered_func_data.nii* $mcFunctional.nii*
+#rm example_func.nii* example_func_orig_distorted.nii* prefiltered_func_data.nii* #$mcFunctional.nii*
 mv unwarp unwarp_thumbnails
 
 ## fsl does slice time correction next (line 5194 of featlib.tcl, 581 if log.commented)
