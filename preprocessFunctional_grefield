@@ -698,7 +698,9 @@ if [ ! -f ".motion_plots_complete" ]; then
     #remove the motion-correction 1) NIFTI 2) mean abs RMS 3) mean rel RMS 4) transformation matrices
     #this should retain the abs and rel RMS vectors and the mcplots.par, which contains motion estimates
     #rel "rm -rf mcplots.nii.gz mcplots_abs_mean.rms mcplots_rel_mean.rms mcplots.mat"
-    rel "mkdir mcplotsout && mv mcplots.nii.gz mcplots_abs_mean.rms mcplots_rel_mean.rms mcplots.mat mcplotsout"
+    [ -d mcOrig ] && rm -r mcOrig
+    mkdir mcOrig
+    rel "mv mcplots.nii.gz mcplots_abs_mean.rms mcplots_rel_mean.rms mcplots.mat mcOrig"
 
     rel "touch .motion_plots_complete"
 fi
@@ -790,8 +792,8 @@ function runSliceTimingCorrection {
 	rel "touch .slice_timing_complete"
     fi
 }
-# mcFunctional needs to be global: fm unwarping will generate its own mc files if it can't find it
-mcFunctional="null"
+# mcFunctional needs to be global: runFieldMapUnwarp needs to see it
+mcFunctional=
 function runMotionCorrection {
     #MOTION CORRECTION
 
@@ -830,22 +832,9 @@ function runMotionCorrection {
 
         #if no reference volume specified, correct to the mean volume
 	if [ -z "$ref_vol" ]; then
-	    rel "Using mean volume for motion correction" c
-	    rel "mcflirt -in \"${infile}\" -o \"${outfile}\" -meanvol ${mcflirtSinc}"
-            if [ -n  "${fieldmap}" ]; then
-              #-plots/-mat  and -meanvol are mutally excluse 
-              # need mat for field map unwarp
-              # https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=FSL;82b968f7.0708#TOP
-              # do mc twice, first to get mean and then to correct to it
-              #
-              # TODO: is a Tmean example_func approprate?
-              #       warp coeff are made with it
-              #
-              # use mcplots here instead of second mcfliter TODO
-              rel "Tmean of meanvol mc -> mc again with Tmean ref (gen MAT for FM unwarp)" c
-              rel "fslmaths \"${outfile}\" -Tmean example_func"
-              rel "mcflirt -in \"${infile}\" -o \"${outfile}\" -reffile example_func ${mcflirtSinc} $additionalParams "
-            fi
+	    rel "Using mean volume of mcplots correction for motion correction of $infile" c
+            rel "fslmaths mcplots -Tmean example_func"
+            rel "mcflirt -in \"${infile}\" -o \"${outfile}\" -reffile example_func ${mcflirtSinc} $additionalParams "
 
         # using a reference volume
 	else

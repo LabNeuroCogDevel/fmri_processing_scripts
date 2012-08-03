@@ -34,6 +34,35 @@
     #in our case, just check the fieldmap header to make sure it's -4096 intercept and 2 slope
     #then proceed with onestep
 
+# save all the nii files?
+[ -z "$savetmps" ] && savetmps=yes
+
+# regardless make a tmp directory we can remove later
+tmpsdir=$(pwd)/unwarptmps
+[ -d $tmpsdir ] && rm -r $tmpsdir
+mkdir $tmpsdir
+
+# take pictures!
+[ -z "$pics" ] && pics=yes
+imgdir=$(pwd)/img
+[ -d $imgdir ] && rm $imgdir
+
+globalcount=0
+function _picture {
+   # only do this if we are told to
+   [ "$pics" == "yes" ] || return
+
+   # check we have a save directory
+   [ -d $imgdir ] || mkdir $imgdir 
+
+   let globalcount++
+   name=$(basename $(basename $1 .gz) .nii)
+   num=$(printf "%04d" $globalcount)
+   imgname=$imgdir/${num}_$name.png
+   slicer -u $1 -a $imgname
+   convert -scale 200% -fill white -gravity southwest -annotate 0 "$num $name:  $2" $imgname $imgname
+}
+
 #rel is shorthand for "run, echo, log"
 [ -z "$logFile" ] && logFile=unwarp.log
 touch $logFile # get abs path later, make sure it exists now
@@ -54,19 +83,7 @@ function rel() {
        echo "${cmd}" >> "${logFile}"
     fi
 }
-pics=yes
-globalcount=1
-imgdir=$(pwd)/img
-function _picture {
-   [ "$pics" == "yes" ] || continue
-   [ -d $imgdir ] || mkdir $imgdir 
-   let globalcount++
-   name=$(basename $(basename $1 .gz) .nii)
-   num=$(printf "%04d" $globalcount)
-   imgname=$imgdir/${num}_$name.png
-   slicer -u $1 -a $imgname
-   convert -scale 200% -fill white -gravity southwest -annotate 0 "$name: $2" $imgname $imgname
-}
+
 
 # read inputs
 while [ $# -gt 0 ];do
@@ -136,7 +153,8 @@ fslhd ${grefieldmap} |
 set -e
 
 
-rel "fslmaths $functional prefiltered_func_data -odt float # copy to FSL friendly name"
+# this takes forever, just use mcFunctional
+#rel "fslmaths $functional $mcFunctional -odt float # copy to FSL friendly name"
 
 ## motion correct (mat here used as premat in applywarp)
 # only doen if we don't have correction from preprocessFunctional passed in
@@ -145,14 +163,13 @@ if [ -z "$mcFunctional" ] || [ ! -r "$mcFunctional" -a ! -r "$mcFunctional.nii" 
  exit 1 
  #### Below is no longer executed"
  rel "WARNING: motion correction to middle volume (need MAT) -- this shouldn't need to be done" c
- midvol=$(fslhd prefiltered_func_data.nii|perl -lne 'print  int($1/2) if m/^dim4\s+(\d+)$/') # 91
- fslroi prefiltered_func_data example_func $midvol 1
+ midvol=$(fslhd $mcFunctional|perl -lne 'print  int($1/2) if m/^dim4\s+(\d+)$/') # 91
+ fslroi $mcFunctional example_func $midvol 1
  mcFunctional="prefiltered_func_data_mcf"
- mcflirt -in prefiltered_func_data -out $mcFunctional -mats -plots -refvol $midvol -rmsrel -rmsabs
+ mcflirt -in $mcFunctional -out $mcFunctional -mats -plots -refvol $midvol -rmsrel -rmsabs
  [ -d mc ] && rm -r mc
  mkdir mc && mv *rms *par *mat/ mc
 fi
-# creates example_func.nii  mc/  prefiltered_func_data.nii $mcFunctional.nii
 
 
 ### Field Warp
@@ -161,9 +178,17 @@ fi
 rel "generating rad/s fieldmap" c
 mkdir unwarp && cd $_ 
 fslmaths ../example_func                                    EF_D_example_func
-fslmaths $grefieldmap -mul 3.141593 -div 4096 -div $TEdiff  FM_UD_fmap          # already checked intercept is 4096 
+fslmaths $grefieldmap -mul 3.141593 -div 4096 -div $TEdiff  FM_UD_fmap          # already checked intercept is 4096, should go in cfg file
 bet $gremagnitude                                           FM_UD_fmap_mag
 fslmaths FM_UD_fmap_mag                                     FM_UD_fmap_mag_brain
+
+
+globalcount=-1
+_picture EF_D_example_func    "Initial"; globalcount=-1
+_picture FM_UD_fmap           "Initial"; globalcount=-1 
+_picture FM_UD_fmap_mag       "Initial"; globalcount=-1
+_picture FM_UD_fmap_mag_brain "Initial (copy of FM mag)"; 
+
 
 #fslmaths FM_UD_fmap FM_UD_fmapOrigBAK
 
@@ -274,7 +299,7 @@ _picture FM_UD_fmap "sub self from demeaned, apply ero. mask, add back (overwrit
 
 
 #clean up
-rm -f FM_UD_fmap_tmp_fmapfilt* FM_UD_fmap_mag_brain_mask_ero* FM_UD_fmap_mag_brain_mask50* FM_UD_fmap_mag_brain_i*
+mv  FM_UD_fmap_tmp_fmapfilt* FM_UD_fmap_mag_brain_mask_ero* FM_UD_fmap_mag_brain_mask50* FM_UD_fmap_mag_brain_i* $tmpsdir
 
 ##########
 
@@ -424,7 +449,7 @@ applywarp -i example_func_orig_distorted -o example_func -w unwarp/EF_UD_warp -r
 # split the funcdata into junk name grot
 [ -d grot ] && rm -r grot
 mkdir grot
-fslsplit prefiltered_func_data grot/grot
+fslsplit $mcFunctional grot/grot
 
 # get the total number of volumes in the functional
 totalVolumes=$(fslhd $functional|perl -lne 'print $1 if m/^dim4\s+(\d+)$/') # 182
@@ -442,11 +467,13 @@ _picture  prefiltered_func_data_unwarp "FINAL! "
 
 # clean up
 rm -r grot/
-#rm -r mc/
-#rm unwarp/*nii*
-#rm unwarp/*mat
-# rm top level tmp files
-#rm example_func.nii* example_func_orig_distorted.nii* prefiltered_func_data.nii* #$mcFunctional.nii*
+mv mc/          $tmpsdir
+mv unwarp/*nii* $tmpsdir
+mv unwarp/*mat  $tmpsdir
+mv example_func.nii* example_func_orig_distorted.nii* $tmpsdir
+#$mcFunctional.nii* 
 mv unwarp unwarp_thumbnails
+
+[ "$savetmps" == "yes" ] || rm -r $tmpsdir
 
 ## fsl does slice time correction next (line 5194 of featlib.tcl, 581 if log.commented)
