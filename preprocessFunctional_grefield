@@ -700,7 +700,7 @@ if [ ! -f ".motion_plots_complete" ]; then
     #rel "rm -rf mcplots.nii.gz mcplots_abs_mean.rms mcplots_rel_mean.rms mcplots.mat"
     [ -d mcOrig ] && rm -r mcOrig
     mkdir mcOrig
-    rel "mv mcplots.nii.gz mcplots_abs_mean.rms mcplots_rel_mean.rms mcplots.mat mcOrig"
+    rel "mv mcplots.nii.gz mcplots_abs_mean.rms mcplots_rel_mean.rms mcplots.mat  mcOrig"
 
     rel "touch .motion_plots_complete"
 fi
@@ -860,15 +860,18 @@ function runFieldMapUnwarp {
    if [[ -n ${fieldmap} && ! -f ".unwarp_complete" ]]; then
        
        #expect:
+       #  example_func has been created 
+       #  have motion corrected functional
        # -fieldmap
        # -fm_mag
        # -fm_cfg
-       # TODO: does functional need to be skull stripped?! (No?)
 
+       [ ! -r example_func.nii* ] && echo "cannot find example_func (created during motion correction)!" && exit 1
+       
        rel "Applying fieldmap" c
      
-       rel "logFile=$logFile \
-        $(dirname $0)/preprocessFMUnwarp -f $prefix$funcFile -m $fm_mag -g $fieldmap -c $fm_cfg --mcFunctional $mcFunctional"
+       rel "logFile=$logFile savetmps=yes pics=yes \
+        $(dirname $0)/preprocessFMUnwarp -m $fm_mag -p $fieldmap -c $fm_cfg --mcFunctional $mcFunctional" #-f $prefix$funcFile 
        # creates unwarp_thumbnails dirctory
        # leaves prefiltered_func_data_unwarp.nii
 
