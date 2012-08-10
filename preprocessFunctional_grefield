@@ -99,9 +99,11 @@ EndOfHelp
 }
 
 #Written: 5/18/2010
-#Last updated: 08/02/2012
+#Last updated: 08/10/2012
 #
 #Changelog:
+#08/10/2012
+# - add .preprocessfunctional_complete with command and date $datefmt
 #08/02/2012
 # - make skullstrip and field map unwarp functions
 # - fm_cfg for FM unwapring
@@ -188,6 +190,12 @@ EndOfHelp
 
 #TODO: 
 # - Switch high pass filtering to seconds, not TRs and use bc to calculate #TRs.
+
+datefmt='+%F|%I:%M'
+#grab command, arguments, script version (date), and start time
+thiscommandinfo="$0 $@ # script v$(perl -e 'print $1 if /^#Last updated: (.*)/' $0) # started $(date $datefmt) "
+finishedotfile=.preprocessfunctional_complete
+
 
 function deleteFile() {
     #delete a file, if it exists
@@ -1355,6 +1363,12 @@ if [ $cleanup -eq 1 ]; then
 	wpre=""
     fi
 
+    #TODO
+    #deleteFile createdByFMUnwarp
+    # mcOrig
+    # pic tmp
+    # prefix=u
+
     #interleaved stream
     deleteFile t${dspre}_${funcFile}.nii.gz
     deleteFile mt${dspre}_${funcFile}.nii.gz
@@ -1413,8 +1427,6 @@ if [ $cleanup -eq 1 ]; then
     deleteFile "${threshMask}_lin.nii.gz"
     deleteFile templateMask.nii.gz
 
-    #TODO
-    #deleteFile createdByFMUnwarp
 fi
 
 
@@ -1434,6 +1446,8 @@ if [[ ${deoblique_all} = [Yy] ]]; then
 
 fi
 
+## Step 99: write (append) what command was used to complete dot file
+echo "$thiscommandinfo # finished $(date $datefmt)" >> $finishedotfile
 
 
 #The second round of 10th percentile thresholding has been removed as of 19Jul2010.
