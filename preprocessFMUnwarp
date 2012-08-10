@@ -286,7 +286,7 @@ _picture FM_UD_fmap                    "remove low intenity (mask by brain_mask 
 fslmaths FM_UD_fmap_mag_brain_mask -ero FM_UD_fmap_mag_brain_mask_ero
 
 #Apply 2D median filtering to fieldmap, apply 2D despiking filter
-fugue --loadfmap=FM_UD_fmap --savefmap=FM_UD_fmap_tmp_fmapfilt -m FM_UD_fmap_mag_brain_mask --despike --despikethreshold=2.1
+fugue --loadfmap=FM_UD_fmap --savefmap=FM_UD_fmap_tmp_fmapfilt --mask=FM_UD_fmap_mag_brain_mask --despike --despikethreshold=2.1
 # what is going on next? break it down
 #fslmaths FM_UD_fmap_tmp_fmapfilt -sub FM_UD_fmap -mas FM_UD_fmap_mag_brain_mask_ero  curious
 #_picture curious "sub self from demeaned, apply ero. mask"
@@ -306,7 +306,10 @@ fugue --loadfmap=FM_UD_fmap --savefmap=FM_UD_fmap_tmp_fmapfilt -m FM_UD_fmap_mag
 #3) add back original jaggy fieldmap -- this does 2 things:
 #      - retains smoothed fmap within ero mask
 #      - and add original unsmooth fmap outside of ero mask
-fslmaths FM_UD_fmap_tmp_fmapfilt -sub FM_UD_fmap -mas FM_UD_fmap_mag_brain_mask_ero -add FM_UD_fmap FM_UD_fmap
+# OLD original fsl command
+#fslmaths FM_UD_fmap_tmp_fmapfilt -sub FM_UD_fmap -mas FM_UD_fmap_mag_brain_mask_ero -add FM_UD_fmap FM_UD_fmap
+# new correct command
+fslmaths FM_UD_fmap -sub FM_UD_fmap_tmp_fmapfilt -mas FM_UD_fmap_mag_brain_mask_ero -add FM_UD_fmap_tmp_fmapfilt FM_UD_fmap
 
 # snap shots
 _picture FM_UD_fmap_mag_brain_mask_ero "erode brain_mask again (regardless of intensity)"
