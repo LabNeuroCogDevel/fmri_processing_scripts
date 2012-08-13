@@ -895,7 +895,7 @@ function runFieldMapUnwarp {
    fi
 
    # set prefix to include unwarping given we did this
-   [ -n ${fieldmap} ] && prefix="u$prefix" 
+   [ -n "${fieldmap}" ] && prefix="u$prefix" 
 }
 
 #betBrain is global

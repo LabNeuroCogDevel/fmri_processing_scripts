@@ -98,6 +98,9 @@ EndOfHelp
 #Last updated: 07/12/2012
 #
 #Changelog:
+#08/07/2012
+# - Provide -no_st option to skip slice timing correction. See here: https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1207&L=FSL&P=R95699
+# - Provide -mc_first option to perform motion correction first.
 #07/12/2012
 # - Provide -no_warp option to maintain native space.
 # - Provide -constrain_to_template option, which defaults to yes. This constrains functional voxels to the standard space anatomical (eliminates extra-brain activation).
@@ -236,7 +239,9 @@ funcStructFlirtDOF=12
 funcWarpInterp="spline"
 hpFilter=40
 logFile="preprocessFunctional.log"
+mc_first=0
 motionSinc="y"
+no_st=0
 no_warp=0
 ref_vol=  #don't set a motion correction reference volume by default
 rescalingMethod="10000_globalmedian" #scale whole brain 4D by single constant to normalize median to 10000.
@@ -313,6 +318,9 @@ while [ _$1 != _ ] ; do
     elif [ $1 = -log ]; then
 	logFile="${2}"
 	shift 2
+    elif [ $1 = -mc_first ]; then
+	mc_first=1
+	shift 1
     elif [ $1 = -motion_sinc ]; then
 	if [[ $2 = [NnYy] ]]; then
 	    motionSinc="${2}"
@@ -324,6 +332,9 @@ while [ _$1 != _ ] ; do
     elif [ $1 = -mprage_bet ]; then
 	mprageBet="${2}"
 	shift 2
+    elif [ $1 = -no_st ]; then
+	no_st=1
+	shift 1
     elif [ $1 = -no_warp ]; then
 	no_warp=1
 	shift 1
@@ -804,13 +815,12 @@ function runMotionCorrection {
 #as motion correction.
 
 if [[ $sliceAcquisition = interleaved || $st_first -eq 1 ]]; then
-    runSliceTimingCorrection
+    [ $no_st -eq 0 ] && runSliceTimingCorrection
     runMotionCorrection
-elif [[ $sliceAcquisition = "seqasc" || $sliceAcquisition = "seqdesc" ]]; then
+elif [[ $sliceAcquisition = "seqasc" || $sliceAcquisition = "seqdesc" || $mc_first -eq 1 ]]; then
     runMotionCorrection
-    runSliceTimingCorrection
+    [ $no_st -eq 0 ] && runSliceTimingCorrection
 fi
-
 
 #SKULL STRIPPING
 if [ ! -f ".skull_strip_complete" ]; then
@@ -1343,6 +1353,7 @@ if [ $cleanup -eq 1 ]; then
   
     #some more here...
     deleteFile "${threshMask}_lin.nii.gz"
+    deleteFile "w${threshMask}_outOfAnatBounds.nii.gz"
     deleteFile templateMask.nii.gz
 fi
 
