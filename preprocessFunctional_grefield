@@ -191,10 +191,13 @@ EndOfHelp
 #TODO: 
 # - Switch high pass filtering to seconds, not TRs and use bc to calculate #TRs.
 
-datefmt='+%F|%I:%M'
+datefmt='+%F+%I:%M'
 #grab command, arguments, script version (date), and start time
 thiscommandinfo="$0 $@ # script v$(perl -e 'print $1 if /^#Last updated: (.*)/' $0) # started $(date $datefmt) "
-finishedotfile=.preprocessfunctional_complete
+dotfile=.preprocessfunctional
+
+# write to an incompelete file (later to be changed to complete if process finishes)
+echo "$thiscommandinfo " >> ${dotfile}_incomplete
 
 
 function deleteFile() {
@@ -1446,8 +1449,9 @@ if [[ ${deoblique_all} = [Yy] ]]; then
 
 fi
 
-## Step 99: write (append) what command was used to complete dot file
-echo "$thiscommandinfo # finished $(date $datefmt)" >> $finishedotfile
+## Step 99: write (append) finish time, mv incomplete to complete
+echo "# finished $(date $datefmt)" >> ${dotfile}_incomplete
+mv ${dotfile}_incomplete ${dotfile}_complete
 
 
 #The second round of 10th percentile thresholding has been removed as of 19Jul2010.
