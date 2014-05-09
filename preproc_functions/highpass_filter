@@ -1,0 +1,20 @@
+#!/bin/bash
+function highpass_filter {
+
+    [ $no_hp -eq 1 ] && return 0 #skip high-pass filtering
+
+    if [[ ! -f ".temporal_filtering_complete" ]]; then
+
+	#####
+	#High-pass filtering for slow-frequency scanner drift
+	#-bptf 80 -1: pass any signal faster than 80 TRs, don't low-pass filter (-1)
+
+	rel "High-pass filtering functional data to remove signals slower than $hpFilter volumes" c
+	rel "fslmaths \"${prefix}${funcFile}${smoothing_suffix}\" -bptf $hpFilter -1 \"f${prefix}${funcFile}${smoothing_suffix}\""
+
+	rel "date > .temporal_filtering_complete"
+
+    fi
+    prefix="f${prefix}"
+
+}

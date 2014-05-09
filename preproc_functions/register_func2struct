@@ -1,0 +1,90 @@
+#!/bin/bash
+function register_func2struct {
+    #Obtain a transformation matrix that co-registers the subject's
+    #structural T1 scan with the functional T2* image used as the motion coregistration target (mc_target).
+
+    #note: the default is a 6 dof transformation, which is appropriate for cross-modal registration for a single
+    #subject (since the brain should be the same size in T1 and T2*, just need to rotate and translate.
+
+    #as currently written, this creates a warped functional, func_to_struct (perhaps important
+    #for checking the success of the warp), but the important part is the
+    #transformation matrix: func_to_struct.mat
+
+    #for standard cost functions, weight registration by signal quality from fieldmap, if available
+    #for BBR coregistration, incorporate fieldmap into coregistration (also results in unwarping coefficients)
+    inweight=
+    bbrfmap=
+
+    if [ -n "${fm_phase}" ]; then
+
+	inweight="-inweight $(pwd)/unwarp/EF_UD_fmap_sigloss"
+	#echo spacing and phase encode direction should be defined when $fm_cfg is sourced by prepareFieldmap (upstream)
+	#need to convert pedir to numeric codes x=1, y=2, z=3
+	
+	case $unwarpdir in
+	    x)     bbr_pedir=1  ;;
+	    -x|x-) bbr_pedir=-1 ;;
+	    y)     bbr_pedir=2  ;;
+	    -y|y-) bbr_pedir=-2 ;; 
+	    z)     bbr_pedir=3  ;;
+	    -z|z-) bbr_pedir=-3 ;;
+	    *)     echo "Unable to determine unwarping direction"
+		exit 1 ;;
+	esac
+
+	bbrfmap="-fieldmap $(pwd)/unwarp/fmapForBBR -pedir $bbr_pedir -echospacing $dwelltime"
+    fi
+    
+    if [[ ! -f func_to_struct.mat || ! -f .func2struct_complete ]]; then
+	rel "Warping subject mean functional to subject structural (intrasubject)" c
+
+	if [ $funcStructFlirtDOF = "bbr" ]; then
+	    
+	    mprageBet_base=$( remove_ext ${mprageBet} )
+
+	    if [ $bbrCapable -eq 1 ]; then
+		rel "Using boundary-based registration approach to register EPI to T1" c
+		[ $( imtest "${mprageBet_base}_fast_seg" ) -eq 0 ] && rel "fast -o \"${mprageBet_base}_fast\" \"${mprageBet_base}\"" #segment T1 to create WM
+		[ $( imtest "${mprageBet_base}_fast_wmseg" ) -eq 0 ] && rel "fslmaths ${mprageBet_base}_fast_pve_2 -thr 0.5 -bin ${mprageBet_base}_fast_wmseg" #create binary WM mask
+		
+		#standard 6 parameter EPI-to-T1 registration to get initial estimate of transform
+		#leaving off inweight for now because should handle fieldmap in flirt now
+		rel "flirt -in mc_target -ref $mprageBet -out func_to_struct -omat func_to_struct_init.mat -dof 6"
+
+		#now do the BBR-based registration
+		#N.B.: the epi_reg program uses betted T1 for initial transformation, but the unbetted image for BBR registration!
+		rel "flirt -in mc_target -ref $mprageBet -out func_to_struct -omat func_to_struct.mat -wmseg ${mprageBet_base}_fast_wmseg \
+		    -cost bbr -init func_to_struct_init.mat -dof 6 -schedule ${FSLDIR}/etc/flirtsch/bbr.sch $bbrfmap"
+
+		if [ $createBBRFmapWarp -eq 1 ]; then
+		    #when BBR is used, we need to transform the FM into functional space via the inverse of the func -> struct warp
+		    #in the new (epi_reg) approach, the FM is never explicitly aligned to the EPI. This occurs via the func -> struct inverse.
+		    rel "Creating FM shiftmap in EPI space by using the struct_to_func.mat from BBR coregistration as transformation." c
+		    
+		    #need to create a func -> struct warp file that incorporates the transformation and FM unwarping
+		    #create EF_UD_warp file used for one-step interpolation to MNI (potentially with MC, too)
+
+		    #invert func_to_struct.mat to generate struct_to_func transformation. Used to get fmap back into EPI space.
+		    rel "convert_xfm -inverse -omat struct_to_func.mat func_to_struct.mat"
+		    rel "convert_xfm -omat fmap2epi_bbr.mat -concat struct_to_func.mat unwarp/fmap2struct.mat" #assemble fmap2epi via fm -> struct + struct -> epi
+
+		    #warp fmap into EPI space using transform fmap2epi_bbr.mat
+		    rel "applywarp -i unwarp/FM_UD_fmap_unmasked -r mc_target --premat=fmap2epi_bbr.mat -o unwarp/EF_UD_fmap_bbr --interp=spline"
+		    rel "fslmaths unwarp/EF_UD_fmap_bbr -abs -bin unwarp/EF_UD_fmap_bbr_mask" #create fmap mask
+
+		    #save unmasked shift map in EPI space
+		    rel "fugue --loadfmap=unwarp/EF_UD_fmap_bbr --mask=unwarp/EF_UD_fmap_bbr_mask --saveshift=unwarp/EF_UD_shift_bbr --unmaskshift --dwell=$dwelltime --unwarpdir=$unwarpdir"
+		    rel "convertwarp -r unwarp/EF_D_mc_target -s unwarp/EF_UD_shift_bbr -o unwarp/EF_UD_warp_bbr --shiftdir=$unwarpdir --relout"
+		fi
+	    else
+		rel "BBR EPI-to-T1 requested, but flirt < v6.0. Reverting to typical 6 DOF registration" c
+		funcStructFlirtDOF=6
+		rel "flirt -in mc_target -ref $mprageBet -out func_to_struct -omat func_to_struct.mat -dof $funcStructFlirtDOF $inweight"
+	    fi
+	else
+	    rel "flirt -in mc_target -ref $mprageBet -out func_to_struct -omat func_to_struct.mat -dof $funcStructFlirtDOF $inweight"
+	fi
+
+	touch .func2struct_complete
+    fi
+}

@@ -1,0 +1,98 @@
+#!/bin/bash
+
+function warp_to_template {
+
+    #define subject mask
+    if [ $no_warp -eq 1 ]; then
+	subjMask=${threshMask} #subject mask is just non-warped threshold mask
+    else
+	if [[ $constrainToTemplate = [Yy] ]]; then
+	    subjMask=w${threshMask}_templateTrim
+	else
+	    subjMask=w${threshMask}
+	fi
+    fi
+
+    if [ $no_warp -eq 1 ]; then
+	#do not warp to template
+	#but we may need to combine motion correction and fieldmap unwarping
+	#for mc_first, onestep_warp is called upstream prior to slice timing correction
+
+	#echo "calling onestep_warp in warp_to_template"
+
+	[ $mc_first -eq 0 ] && onestep_warp mc_target #for mc_first fmunwarp and motion correction happen before ST
+
+    else
+	if [ ! -f .warp_complete ]; then	    
+	    #setup mask files for warping
+
+	    #transform threshold / skull strip mask from prior step into template space.
+	    #rel "flirt -in ${threshMask} -applyxfm -init func_to_struct.mat -out ${threshMask}_2struct -paddingsize 0.0 -interp nearestneighbour -ref $mprageBet" #mask in struct space
+	    rel "applywarp --ref=${templateBrain} --in=${threshMask} --out=w${threshMask} \
+	    --interp=nn --premat=func_to_struct.mat --warp=${warpCoef} --paddingsize=0" #mask in standard space
+
+	    #warning: sinc interpolation is most precise, but if the mask used below does not precisely match the subject's
+	    #structural scan (e.g., greater cerebellar coverage for anat relative to functional), then sinc is prone to extending
+	    #the warp into non-brain space in ways that produce artifact. Spline is the more intelligent default unless you
+	    #have precisely setup the mask.
+
+	    #12Jul2012: constrain_to_template: shrink functional mask for warping to be no bigger than the anatomical mask
+	    #to ensure that subject mask does not extend beyond anatomical borders, since this could lead to weird stretching etc.
+	    #The risk may have to do with applywarp doing excessive padding, especially for sinc:
+	    #https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1108&L=FSL&P=R69770
+	    #The risk may also a difference in coverage/size between MPRAGE and EPI because warp coefficients are generate for MPRAGE,
+	    #but applied here to EPI.
+	    #Also, this step eliminates brain activation that falls outside of the template mask
+	    #So, in general, this is a good idea, hence default yes.
+
+	    if [[ $constrainToTemplate = [Yy] ]]; then
+
+		#Generate template anatomical mask (these are in ~/standard already, but are created by resampling stock brain mask).
+		#The template mask created here will tend to be slightly bigger than the warped mask in ~/standard
+		#because of small floating point values around T1 template. Still, using the 10th percentile of non-zero voxels
+		#as an initial threshold seems to reduce differences to trivial amounts.
+		#And eyeballing the mask versus T1, the ~/standard warped mask file may lose some voxels of interest.
+
+		#zero anything below 10th percentile of non-zero voxels, then binarize
+		rel "fslmaths ${templateBrain} -thrP 10 -bin templateMask -odt char"
+
+		#subtract template anatomical mask from subject's functional mask, then threshold at zero
+		#(neg values represent areas where template anatomical mask > subj functional mask, which are not of interest)
+		#thus, subject mask may be smaller than template (e.g., low cerebellum coverage), but not bigger.
+		rel "fslmaths w${threshMask} -sub templateMask -thr 0 w${threshMask}_outOfAnatBounds -odt char"
+		
+		#subtract the out of bounds mask from subject mask (trim to match template)
+		rel "fslmaths w${threshMask} -sub w${threshMask}_outOfAnatBounds w${threshMask}_templateTrim -odt char"
+	    fi
+
+	    #####
+	    #Warp all T2* functionals to standard stereotaxic space
+	    #use onestep_warp to minimize the number of interpolations.	    
+
+	    rel "Warping functionals to standard space using coefficients from structural nonlinear warp." c
+	    rel "Template is $templateBrain" c
+
+	    #add symbolic link of template used to the directory to document which template file was used
+	    if [[ -f "${templateBrain}.nii" && ! -h ./template_brain.nii ]]; then
+		rel "ln -sfn \"${templateBrain}.nii\" ./template_brain.nii"
+	    elif [[ -f "${templateBrain}.nii.gz" && ! -h ./template_brain.nii.gz ]]; then
+		rel "ln -sfn \"${templateBrain}.nii.gz\" ./template_brain.nii.gz"
+	    fi
+	fi
+
+	#one-step warp to template
+	#note that this is always called even if .warp_complete exists
+	#the function does nothing in this case, but is necessary for setting the right prefix
+	onestep_warp standard
+
+    fi
+
+    if [ $no_warp -eq 0 ]; then
+	#don't keep the unwarped mask
+	[ $cleanup -eq 1 ] && deleteFile "${threshMask}.nii.gz"
+    fi
+
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+
+}

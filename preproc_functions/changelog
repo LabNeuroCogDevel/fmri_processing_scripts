@@ -1,0 +1,111 @@
+#!/bin/bash
+#Changes to preprocessFunctional
+#03/10/2014
+# - change default high-pass filter cutoff to 80 volumes. So if user does not specify, it should be quite gentle.
+# - add MNI_2.3mm template target for MB 2.3mm data.
+# - provide -mc_movie option for movies of 4d file before and after motion correction.
+# - add -no_hp option to skip high-pass filtering.
+#02/13/2014
+# - added -mc_program to allow user to choose between mcflirt and 3dvolreg. 3dvolreg is now default because of evidence (Beall) that mcflirt badly estimates rotations.
+#12/12/2013
+# - added -custom_slice_times file to allow a csv-formatted file of slice times to be passed through to sliceMotion4d --slice_times.
+#11/11/2013
+# - no_st option was not running motion correction in some cases. Re-factored to be more explicit.
+#02/28/2013
+# - only re-run FAST on mprage for BBR registration if fast segmentation does not exist.
+#10/04/2012
+# - default to BBR (boundary-based registration) for epi-to-T1 coregistration. BBR is part of FSL 5.0 that improves this coregistration considerably. Not yet coupled with fieldmap.
+#09/24/2012
+# - provide -no_smooth option.
+# - move .preprocessfunctional_incomplete section below command line parsing so that it doesn't fire on an empty call.
+#08/15/2012
+# - changed default -bet_frac to 0.3 to be consistent with FEAT. Less severe skull strip.
+# - revert -func_struc_dof to 7, not 12. This is used for functional-to-structural registration, which should only involve translation, rotation, and scaling.
+#08/10/2012
+# - add .preprocessfunctional_complete with command and date $datefmt
+#08/07/2012
+# - Provide -no_st option to skip slice timing correction. See here: https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1207&L=FSL&P=R95699
+# - Provide -mc_first option to perform motion correction first.
+#08/02/2012
+# - make skullstrip and field map unwarp functions
+# - fm_cfg for FM unwarping
+#07/12/2012
+# - Provide -no_warp option to maintain native space.
+# - Provide -constrain_to_template option, which defaults to yes. This constrains functional voxels to the standard space anatomical (eliminates extra-brain activation).
+#06/07/2012
+# - Only retain voxels with non-zero values at all timepoints. Extents mask created before smoothing, applied after.
+#06/04/2012
+# - Provide option to use SPM8 MNI template.
+#05/26/2012
+# - Retain rms motion files from mcflirt.
+# - Provide -st_first option for those who want to run slice timing first.
+#04/10/2012
+# - Change skull-stripping and thresholding to apply BET + low intensity + dilate mask to pre-BET data so that BET does not rule edge voxels (follows FEAT).
+#04/09/2012
+# - incorporate fieldmap unwarping.
+#02/06/2012
+# - changed default warp interpolation to spline. Sinc was generating too many strange artifacts when functional mask didn't precisely match the boundaries of subject brain.
+#01/27/2012
+# - small fixes to use of --ocustom, added checks for odd/even with -4d input and added -trio_tim flag
+#01/18/2012
+# - add --ocustom to acquisitionString for interleaved TrioTim with even num total slices -- Will
+#12/5/2011
+# - added -log parameter to log the exact preprocessing commands used
+#11/17/2011
+# - added option to run 3dDespike on functionals prior to motion or slice timing correction.
+#10/27/2011
+# - put back in 3dresample to orient to LPI. With some of Kirsten's data, warp was failing due to some orientation problem.
+#10/18/2011
+# - removed 3dresample command to orient original functional to LPI. Bug in AFNI that was flipping storage but not header.
+# - Added -f to gzip to overwrite old file.
+#9/27/2011
+# - Switched dicom conversion to Dimon
+# - Default to MNI nonlinear template from Vladimir Fonov (added MNI_FSL_3mm option)
+# - Use improved Talairach template (@auto_tlrc approach)
+# - Ensure that images are oriented to LPI for MNI space
+# - Restrict applywarp to brain voxels (problems with sinc smudging the image when not masked)
+# - Use wktm mask based on thresholding step as final mask for subject. (problems with Susan + sinc creating tiny, weird artifacts ringing at the outside of brain)
+# - Auto-detect slice acquisition order and TR from DICOM header. Notify user of discrepancies.
+# - Create symbolic link to standard space template within subject directory. Documents the template used and makes it easier to view functional data against structural backdrop.
+# - Default motion correction sinc interpolation ON. Makes things run slower (~20 min/subject), but can be turned off if user needs results quickly.
+# - Create symbolic link to final mask for subject: subject_mask.nii.gz.
+# - Remove default TR. Detected from DICOM or must be passed by user.
+#6/16/2011
+# - SO commented out a delete file command for an file that was never created
+#6/13/2011
+# - Based on DM's initiative, implemented option for deobliquing datasets as final preprocessing step. For visualization convenience only.
+#5/11/2011
+# - Now appropriately varies the order of slice timing correction and motion correction depending on sequential vs. ascending slice order
+#4/28/2011
+# - updated code in the 'startover'section. was missing this: deleteFile ".thresholding_complete" (DM)
+# - added a step to remove any previous file left over from dcm2nii before running it (DM)
+#4/26/2011:
+# - updated code in the 'check for existence of required files' to allow symbolic links to mprage_bet and mprage_warpcoef files (DM)
+#3/20/2011:
+# - Added final stage mean functional and corresponding mask to be used in GLM
+#3/11/2011:
+# - Added option for slice acquisition order for proper slice timing correction.
+#3/10/2011:
+# - Switched default template brain to MNI.
+#3/8/2011:
+# - Changed rm command to include -f to handle files that lack write permission.
+# - Added -motion_sinc parameter for final stage sinc interpolation during motion correction.
+# - Added -template_brain parameter to allow choice of MNI vs. Tal.
+#11/8/2010:
+# - Added -bet_frac parameter for fractional intensity threshold. Default 0.4.
+#11/5/2010:
+# - Changed default DOF for functional-structural coregistration to 12.
+# - Added -func_struc_dof option for setting functional-structural DOF.
+#9/2/2010:
+# - Changed HP Filter to default of 40 TRs, not 20. 20 seems way too short and 
+#     is likely to filter some slower task-related effects. FSL defaults to
+#     100s (~66 TRs at TR=1.5), SPM default to 128s. So even 40 may be too fast.
+# - Improved checks for median calculation if thresholding complete
+#8/9/2010:
+# - added rescaling_method parameter to support grand mean rescaling
+# - fixed thresholding_complete logic for cases where thresholding complete, but need median_intensity
+#7/26/2010:
+# - Added dicom processing options
+#6/28/2010:
+# - updated to improve filename handling with prepending of processing steps.
+# - removed robert compatibility settings (forked to preprocessFunctional_Old)

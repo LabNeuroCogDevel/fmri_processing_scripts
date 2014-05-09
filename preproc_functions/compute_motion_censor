@@ -1,0 +1,98 @@
+#!/bin/bash
+
+function compute_motion_censor {
+    #parse -censor_motion syntax
+
+    [ -z "$motionCensor" ] && return 0
+
+    [ -f .motion_censor_complete ] && return 0
+
+    allmats=
+
+    #just replace slashes with spaces so that IFS will capture properly
+    OLDIFS="${IFS}"
+    IFS='/' read -ra cens <<< "$motionCensor"
+    for spec in "${cens[@]}"; do
+    #echo "censor motion is $censorMotion"
+    #censorMotion=$( echo $censorMotion | tr "/" " " )
+    #for spec in ${censorMotion}; do
+	if [[ $spec == *=* ]]; then
+	    #has equals sign
+	    metric=${spec/=*/} #before the equals
+	    thresh=${spec/*=/} #after the equals
+	    outbase="${metric}_${thresh}"
+	else 
+	    #do not pass --thresh
+	    metric=${spec}
+	    thresh=
+	    outbase="${metric}_pct75_1p5IQR"
+	fi
+
+	matname="motion_info/${outbase}.mat"
+	imgname="-p motion_info/${metric}.png"
+	metname="-s motion_info/${metric}.txt"
+	allmats="${allmats} ${matname}" #list of output matrices
+
+	#force lower case
+	metric=$( echo $metric | awk '{print tolower($0)}' )
+
+	case "$metric" in 
+	    dvars|fd|refrms|refmse|fdrms) 
+		metric="--${metric}" #add double hyphen for compatibility with fsl_motion_outliers
+		[ -n "$thresh" ] && thresh="--thresh=${thresh}" #format for fsl_motion_outliers
+		rel "fsl_motion_outliers -i \"$funcFile\" -o \"$matname\" $metric $thresh $imgname $metname";;
+	    relrms)
+		#relative rms movement (mm) from rmsdiff of movement parameters (displacement)
+		if [ ! -f motion_info/motion_relrms_mm ]; then
+		    echo "Cannot find motion_info/motion_relrms_mm to generate motion censor file"
+		else
+		    [ -z "$thresh" ] &&	thresh=$( Rscript -e "relrms <- read.table('motion_info/motion_relrms_mm')\$V1; cat(quantile(relrms, 0.75) + 1.5*IQR(relrms))" )
+		    
+		    local rcmd1="relrms <- read.table('motion_info/motion_relrms_mm')\$V1;"
+		    local rcmd2="censormat=do.call(cbind, sapply(1:length(relrms), function(x) { if (abs(relrms[x]) > $thresh) {"
+		    local rcmd3="v <- rep(0, length(relrms)); v[x] <- 1; v } else { NULL } }));"
+		    local rcmd4="write.table(censormat, file='$matname', col.names=FALSE, row.names=FALSE)"
+		    local rcmd="$rcmd1 $rcmd2 $rcmd3 $rcmd4" 
+
+		    Rscript -e "$rcmd"
+		fi
+		;;
+            *)
+		echo "Unsupported metric to fsl_motion_outliers: $metric" && exit 1;;
+	esac
+
+
+    done
+    IFS="${OLDIFS}"
+
+    #Convert matrices to AFNI -censor style (see 3dDeconvolve)
+    #In AFNI censor, 1 represents good, 0 represents bad.
+    #But spike regressors are the opposite (1 where there is a bad volume)
+
+    local allcensor=
+    for f in ${allmats}; do
+	fcensor=${f/.mat/_censor.1D}
+	rel "awk '{for ( i=1 ; i<=NF ; i++ ) t+=\$i; print 1 - t; t=0}' $f > $fcensor"
+	allcensor="${allcensor} $fcensor"
+    done
+
+    paste $allcensor > motion_info/allcensor_wide.1D
+    rel "Making a union file of all motion censoring criteria." c
+    #awk call checks whether the sum across the row is equal to the number of columns (indicating all 1=good)
+    rel "awk '{ for ( i=1 ; i<=NF ; i++ ) { t+=\$i } if ( t == NF ) { print 1 } else { print 0 }; t=0 }' motion_info/allcensor_wide.1D > motion_info/censor_union.1D"
+    rm -f motion_info/allcensor_wide.1D
+
+    #make a spike regression censor_union.mat file. Need to drop any duplicate spike regressors (if metrics flag same volumes) before writing to disk.
+    paste $allmats > motion_info/allmats_wide.1D
+    local rcmd1="allc <- read.table(\"motion_info/allmats_wide.1D\"); rbad <- which(rowSums(allc) > 1); if (length(rbad) > 0L) { "
+    local rcmd2="cdrop <- unlist(sapply(rbad, function(r) { which(allc[r,] == 1)[-1L] })); allc <- allc[,-1*cdrop] }; "
+    local rcmd3="write.table(allc, file=\"motion_info/censor_union.mat\", row.names=FALSE, col.names=FALSE)"
+    
+    Rscript -e "$rcmd1 $rcmd2 $rcmd3"
+
+    rm -f motion_info/allmats_wide.1D
+    
+    date > .motion_censor_complete
+
+    return 0
+}

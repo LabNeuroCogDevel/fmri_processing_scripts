@@ -1,0 +1,27 @@
+#!/bin/bash
+
+function skull_strip_epi {
+
+   if [ ! -f ".skull_strip_complete" ]; then
+       #####
+       #Compute the mean functional: mt_tmean.nii.gz
+       #Used in warping subjects mean T2* to his/her T1 structural scan
+
+       rel "fslmaths \"${prefix}${funcFile}\" -Tmean \"${prefix}tmean\""
+
+       #####
+       #Skull strip the mean functional: kmt_tmean.nii.gz
+
+       rel "Skull stripping functionals" c
+       rel "bet \"${prefix}tmean\" \"k${prefix}tmean\" -R -f ${betFrac} -m"
+
+       #Use the mask generated from skull stripping the mean functional to strip all functionals
+       rel "fslmaths \"${prefix}${funcFile}\" -mas \"k${prefix}tmean_mask\" \"k${prefix}${funcFile}\""
+
+       rel "date > .skull_strip_complete"
+   fi
+
+   #store the pre-bet file for application of combined BET + intensity mask below
+   preBet="${prefix}${funcFile}"
+   prefix="k${prefix}"
+}

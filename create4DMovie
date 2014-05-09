@@ -1,0 +1,202 @@
+#!/bin/bash
+
+function printHelp() {
+
+cat <<EndOfHelp
+-----------------------------------
+create4DMovie is a simple script to create a movie of a 4d fMRI dataset over time. This is useful for spot checking for artifacts,
+  especially problems related to head motion. The script depends on having imagemagick and ffmpeg installed. In addition,
+  to create the movie, the script uses tools from FSL (specifically fslroi and slicer) to create the images.
+
+At this point, the script creates images that include 5 axial slices, 7 sagittal slices, and 7 coronal slices in a montage.
+I will probably customize sometime, but this basic approach works for now.
+
+Command line options:
+  -input: The 4D functional file used to generate the movie.
+  -input2: Optional. A second 4D functional file of the same length as -input to be rendered together (e.g., before and after a processing step)
+  -output: The name of the movie file to be generated.            Default: fmri_movie.mp4
+  -fps: Speed of the movie in frames per second.                  Default: 10
+  -njobs: Number of jobs to run in parallel to generate images.   Default: 16
+  -scale: How big to make the images (arbitrary multiples)        Default: 3
+  
+Example call:
+  create4DMovie -input 10802func.nii.gz -output 10802_timeMovie.mpg -fps 8 -njobs 5
+
+-----------------------------------
+EndOfHelp
+
+}
+
+
+#if no parameters are passed in, then print help and exit.
+if [ $# -eq 0 ]; then
+    printHelp
+    exit 0
+fi
+
+input2=
+njobs=16
+while [ _$1 != _ ] ; do
+    if [ $1 = -input ] ; then
+	input="${2}"
+	shift 2
+    elif [ $1 = -input2 ] ; then
+	input2="${2}"
+	shift 2
+    elif [ $1 = -njobs ]; then
+	njobs=$2
+	shift 2
+    elif [ $1 = -output ]; then
+	output="${2}"
+	shift 2
+    elif [ $1 = -fps ]; then
+	fps="${2}"
+	shift 2
+    elif [ $1 = -scale ]; then
+	scale="${2}"
+	shift 2
+    else
+	printHelp
+	echo -e "----------------\n\n"
+	echo "Unrecognized command line parameter: ${1}"
+	exit 1
+    fi
+done
+
+[ -z "${output}" ] && output="fmri_movie.mp4"
+[ -z "${fps}" ] && fps=10
+[ -z "${scale}" ] && scale=3
+[ -z "${input}" ] && echo "-input not specified." && exit 1
+[ ! -r "${input}" ] && echo "Unable to find file: ${input}" && exit 1
+[[ -n "${input2}" && ! -r "${input2}" ]] && echo "Unable to find file: ${input2}" && exit 1
+
+#force extension to .mp4 (.mpg leads to non-functioning formats)
+output="${output%.*}.mp4"
+
+set -e
+
+delay=$( echo "scale=5; 100/${fps}" | bc ) #imagemagick expects movie speed in terms of decisecond delay between frames.
+
+numVols=$( fslhd ${input}  | grep '^dim4' | perl -pe 's/dim4\s+(\d+)/\1/' )
+
+if [ -n "$FSLOUTPUTTYPE" ]; then
+    if [ "$FSLOUTPUTTYPE" == "NIFTI_GZ" ]; then
+	ext=".nii.gz"
+    elif [ "$FSLOUTPUTTYPE" == "NIFTI" ]; then
+	ext=".nii"
+    else
+	echo "We don't FSLOUTPUTTYPE: $FSLOUTPUTTYPE at this point."
+	exit 1
+    fi
+else
+    ext=".nii.gz"
+fi
+
+if [ -n "${input2}" ]; then
+    #verify equal length
+    i1Vols=$( fslhd "${input}" | grep '^dim4' | perl -pe 's/dim4\s+(\d+)/\1/' )
+    i2Vols=$( fslhd "${input2}" | grep '^dim4' | perl -pe 's/dim4\s+(\d+)/\1/' )
+    if [ $i1Vols -ne $i2Vols ]; then
+	echo "Number of volumes in both inputs must match: -input is $i1Vols, -input2 is $i2Vols"
+	exit 1
+    fi
+fi
+
+for ((v=0; v < numVols ; v++))
+do
+    joblist=($(jobs -p)) #list of running jobs
+
+    #wait here until number of jobs is <= limit
+    while (( ${#joblist[*]} >= ${njobs} ))
+    do
+	sleep 1
+	joblist=($(jobs -p))
+    done
+
+    { 
+	echo "processing volume: $v"
+	#fslroi ${input} i1vol${v} $v 1
+	#3dbucket is faster than fslroi (~2x)
+	3dbucket "${input}[$v]" -prefix "i1vol${v}${ext}" 2> /dev/null
+	
+	slicer i1vol${v} -s ${scale} -z 0.15 i1ax1_${v}.png -z 0.30 i1ax2_${v}.png -z 0.50 i1ax3_${v}.png -z 0.70 i1ax4_${v}.png -z 0.85 i1ax5_${v}.png \
+	    -x 0.25 i1sag1_${v}.png -x 0.35 i1sag2_${v}.png -x 0.45 i1sag3_${v}.png -x 0.50 i1sag4_${v}.png \
+	    -x 0.55 i1sag5_${v}.png -x 0.65 i1sag6_${v}.png -x 0.75 i1sag7_${v}.png -y 0.20 i1cor1_${v}.png \
+	    -y 0.30 i1cor2_${v}.png -y 0.40 i1cor3_${v}.png -y 0.50 i1cor4_${v}.png -y 0.60 i1cor5_${v}.png \
+	    -y 0.70 i1cor6_${v}.png -y 0.80 i1cor7_${v}.png
+
+	#create image for volume number of same size as axial
+	convert -background black -fill white \
+            -size $( identify -ping -format '%wx%h' i1ax1_${v}.png ) -pointsize 72 -gravity center -density 72 \
+            label:${v} i1volnum_${v}.png
+	
+	#-z 0.40 i1ax6_${v}.png -z 0.45 i1ax7_${v}.png -z 0.50 i1ax8_${v}.png -z 0.55 i1ax9_${v}.png \
+	#-z 0.60 i1ax10_${v}.png -z 0.65 i1ax11_${v}.png -z 0.70 i1ax12_${v}.png -z 0.75 i1ax13_${v}.png \
+	
+	#pngappend i1ax1_${v}.png + i1ax2_${v}.png + i1ax3_${v}.png + i1ax4_${v}.png + i1ax5_${v}.png + i1ax6_${v}.png + \
+	
+	pngappend i1ax1_${v}.png + i1ax2_${v}.png + i1ax3_${v}.png + i1ax4_${v}.png + i1ax5_${v}.png + i1volnum_${v}.png - \
+	    i1sag1_${v}.png + i1sag2_${v}.png + i1sag3_${v}.png + i1sag4_${v}.png + i1sag5_${v}.png + i1sag6_${v}.png - \
+	    i1cor1_${v}.png + i1cor2_${v}.png + i1cor3_${v}.png + i1cor4_${v}.png + i1cor5_${v}.png + i1cor6_${v}.png + i1cor7_${v}.png i1vol$( printf '%03d' ${v} ).png
+
+	#add label
+	montage -label "-input: $input" i1vol$( printf '%03d' ${v} ).png -pointsize 42 -geometry +0+0 i1vol$( printf '%03d' ${v} ).png
+
+	if [ -n "${input2}" ]; then
+	    3dbucket "${input}[$v]" -prefix "i2vol${v}${ext}" 2> /dev/null
+	    
+	    slicer i2vol${v} -s ${scale} -z 0.15 i2ax1_${v}.png -z 0.30 i2ax2_${v}.png -z 0.50 i2ax3_${v}.png -z 0.70 i2ax4_${v}.png -z 0.85 i2ax5_${v}.png \
+		-x 0.25 i2sag1_${v}.png -x 0.35 i2sag2_${v}.png -x 0.45 i2sag3_${v}.png -x 0.50 i2sag4_${v}.png \
+		-x 0.55 i2sag5_${v}.png -x 0.65 i2sag6_${v}.png -x 0.75 i2sag7_${v}.png -y 0.20 i2cor1_${v}.png \
+		-y 0.30 i2cor2_${v}.png -y 0.40 i2cor3_${v}.png -y 0.50 i2cor4_${v}.png -y 0.60 i2cor5_${v}.png \
+		-y 0.70 i2cor6_${v}.png -y 0.80 i2cor7_${v}.png
+
+	    #create image for volume number of same size as axial
+	    #convert -background black -fill white \
+	    #	-size $( identify -ping -format '%wx%h' i2ax1_${v}.png ) -pointsize 72 -gravity center -density 72 \
+	    #	label:${v} i2volnum_${v}.png
+		    
+	    #-z 0.40 i2ax6_${v}.png -z 0.45 i2ax7_${v}.png -z 0.50 i2ax8_${v}.png -z 0.55 i2ax9_${v}.png \
+	    #-z 0.60 i2ax10_${v}.png -z 0.65 i2ax11_${v}.png -z 0.70 i2ax12_${v}.png -z 0.75 i2ax13_${v}.png \
+	    
+	    #pngappend i2ax1_${v}.png + i2ax2_${v}.png + i2ax3_${v}.png + i2ax4_${v}.png + i2ax5_${v}.png + i2ax6_${v}.png + \
+	    
+	    #+ i2volnum_${v}.png
+	    pngappend i2ax1_${v}.png + i2ax2_${v}.png + i2ax3_${v}.png + i2ax4_${v}.png + i2ax5_${v}.png - \
+		i2sag1_${v}.png + i2sag2_${v}.png + i2sag3_${v}.png + i2sag4_${v}.png + i2sag5_${v}.png + i2sag6_${v}.png - \
+		i2cor1_${v}.png + i2cor2_${v}.png + i2cor3_${v}.png + i2cor4_${v}.png + i2cor5_${v}.png + i2cor6_${v}.png + i2cor7_${v}.png i2vol$( printf '%03d' ${v} ).png
+	    
+	    rm -f i2ax*_${v}.png i2sag*_${v}.png i2cor*_${v}.png i2volnum_${v}.png i2vol${v}.nii.gz
+
+	    #add label
+	    montage -label "-input2: $input2" i2vol$( printf '%03d' ${v} ).png -pointsize 42 -geometry +0+0 i2vol$( printf '%03d' ${v} ).png
+
+	    #vertically append the two images
+	    convert i1vol$( printf '%03d' ${v} ).png i2vol$( printf '%03d' ${v} ).png -depth 8 -append vol$( printf '%03d' ${v} ).png
+	    rm -f i1vol$( printf '%03d' ${v} ).png i2vol$( printf '%03d' ${v} ).png
+	else
+	    mv i1vol$( printf '%03d' ${v} ).png vol$( printf '%03d' ${v} ).png
+	fi
+	
+	rm -f i1ax*_${v}.png i1sag*_${v}.png i1cor*_${v}.png i1volnum_${v}.png i1vol${v}.nii.gz
+    } &
+
+done
+wait
+
+#need bigger memory limits for bigger files
+#convert -limit memory 512mb -limit map 1024mb -delay ${delay} vol*.png "${output}"
+
+#somehow imagemagick has unbelievably high disk I/O for this task.
+#ffmpeg is faster and easier
+#need -r on input to read in the png files with a "rate" of fps
+#-r on the output sets the fps of the output image
+#if output -r is greater than input -r, then frames will be duplicated, which is not necessary.
+
+#ffmpeg complains if height is not divisible by 2
+#thus, rescale slightly
+width=$( identify -ping -format '%w' vol000.png )
+echo "ffmpeg -r ${fps} -i vol%03d.png -c:v libx264 -vf \"fps=${fps},scale=${width}:trunc(ow/a/2)*2,format=yuv420p\" \"${output}\""
+ffmpeg -r ${fps} -i vol%03d.png -c:v libx264 -vf "fps=${fps},scale=${width}:trunc(ow/a/2)*2,format=yuv420p" "${output}"
+
+rm -f vol*.png

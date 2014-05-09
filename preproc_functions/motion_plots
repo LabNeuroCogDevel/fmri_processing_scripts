@@ -1,0 +1,76 @@
+#!/bin/bash
+
+#transform volumewise motion matrices into absolute and relative RMS
+function generate_motion_rms {
+
+    [ ! -d $mcMats ] && return 0 #must have the mcMats directory
+
+    local mats=($( find $mcMats -iname "MAT_*" -type f | sort -n )) #ascending set of motion matrices
+    local nmats=${#mats[@]}
+
+    #generate mask of mc_target for use in calculation of rmsdiff
+    rel "bet mc_target.nii.gz mc_target_mask -f 0.3 -n -m -R"
+    imrm mc_target_mask
+    immv mc_target_mask_mask mc_target_mask
+
+    #loop over motion matrices and calculate RMS motion relative to identity (absolute) and prior volume (relative)
+    #this uses the rmsdiff tool and calculates motion within the brain mask
+    #see here: https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=fsl;d9abdb68.1307
+    #very similar to the output of mcflirt -rmsrel and -rmsabs, but works for output of other programs (3dvolreg, slicemotion4d)
+
+    [ -f motion_relrms_mm ] && rm -f motion_relrms_mm
+    echo 0 > motion_relrms_mm # Add 0 at beginning of relrms. In effect, this will censor the later volume of the two (i.e., essentially after the big movement).
+
+    # use for loop read all values and indexes
+    for (( i = 0; i < ${nmats}; i++ )); do
+	if [ $i -lt $(( nmats - 1 )) ]; then
+	    #Need last row output by rmsdiff when using mask. This represents RMS movement (in mm) over all voxels in the mask
+	    #See: https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FLIRT/UserGuide#rmsdiff
+	    rmsdiff ${mats[$i]} ${mats[(( $i + 1 ))]} mc_target mc_target_mask | tail -n 1 >> motion_relrms_mm
+	fi
+    done
+
+    [ -f motion_absrms_mm ] && rm -f motion_absrms_mm
+    touch motion_absrms_mm
+
+    # use for loop read all values and indexes
+    for (( i = 0; i < ${nmats}; i++ )); do
+	if [ $i -lt $nmats ]; then
+	    rmsdiff $FSLDIR/etc/flirtsch/ident.mat ${mats[$i]} mc_target mc_target_mask | tail -n 1 >> motion_absrms_mm
+	fi
+    done
+
+    mv motion_absrms_mm motion_relrms_mm motion_info/
+
+}
+
+function motion_plots {
+
+    #handle creation of motion parameter plots and movie before and after motion correction
+    if [ ! -f ".motion_plots_complete" ]; then
+
+	[ ! -d motion_info ] && mkdir motion_info
+
+	#generate relative and absolute rms files from motion matrices
+	generate_motion_rms
+
+	#rotations plot
+	rel "fsl_tsplot -i motion.par -t '$mc_program estimated rotations (radians)' -u 1 --start=1 --finish=3 -a x,y,z -w 1000 -h 400 -o motion_info/rot.png"
+
+	#translations plot
+	rel "fsl_tsplot -i motion.par -t '$mc_program estimated translations (mm)' -u 1 --start=4 --finish=6 -a x,y,z -w 1000 -h 400 -o motion_info/trans.png"
+
+	#displacement plot
+	rel "fsl_tsplot -i motion_info/motion_absrms_mm,motion_info/motion_relrms_mm -t '$mc_program estimated mean displacement (mm)' \
+	    -u 1 -w 1000 -h 400 -a absolute,relative -o motion_info/disp.png"
+
+	if [ $mc_movie -eq 1 ]; then
+	    rel "create4DMovie -input \"${preMC}\" -input2 \"${postMC}\" -output \"motion_info/${funcFile}_motion.mp4\" -fps 10 -njobs 2"
+	fi
+
+	date > .motion_plots_complete
+    fi
+
+    return 0
+
+}

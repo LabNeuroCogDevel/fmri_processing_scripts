@@ -1,0 +1,301 @@
+#!/bin/bash
+#set -x
+set -e
+
+function printHelp() {
+
+cat <<EndOfHelp
+-----------------------------------
+setup3dMEMA is a convenience script for generating a 3dMEMA analysis.
+  It allows you to test a contrast at the second-level model (i.e., between-subjects),
+  as well as one or more covariates, which are extracted from a tab-delimited file.
+
+  For now, this only supports a single group analysis (to be extended later).
+
+  All stats brik outputs from 3dREMLfit should be collected into a single directory, specified
+      using -statbrik_dir here. Files should begin with the subject id, as specified in the
+      -cov_file. Can specify the suffix for these files using -statbrik_suffic.
+
+  Example stat brik name: 001_yc_emoConflictStats_REML+tlrc.BRIK.gz where
+      001_yc is the subject id
+
+  Example -cov_file:
+  subj    age   paiaffe   bpddiag   dep   paiharm
+  001_yc  17    13        14        3     9
+  002_zz  17    0         4         0     1
+  003_jd  16    17        15        2     10
+  004_dm  16    0         1         0     1
+
+  N.B. setup3dMEMA will accept any of the usual parameters used by the 3dMEMA program (e.g., -model_outliers).
+      These will be forwarded to 3dMEMA when the analysis is setup. Some intelligent defaults include:
+      -jobs 8 #run 8 jobs in parallel
+      -covariates_center mean #grand mean center all covariates
+      -covariates_model center=different slope=different
+      -missing_data 0
+      -HKtest
+      -model_outliers
+      -residual_Z
+
+  OPTIONS:     
+ 
+  -glm_contrast <string> : name of contrast from subject-level GLMs (using 3dREMLfit)
+  -cov_file <string>     : name of tab-delimited file containing subject ids and other covariates. At a minimum,
+                           this file must contain the header "subj" and a row of subject ids. These are used to
+                           identify stats BRIK files and setup the analysis.
+  -covs <string>         : comma-delimited list of covariates to include in analysis. Each covariate
+                           specified must be present in <cov_file>. Example: subj:depression:anxiety:age
+  -mask <string>         : name of mask file for group analysis.
+  -exclude_subjs <string>: comma-delimited list of ids to exclude from analysis.
+  -run: if passed in, then 3dMEMA is run after analysis setup is complete.
+  -statbrik_dir <string>      : directory containing all first-level stats briks, one per subject
+  -statbrik_suffix <string>   : file name suffix corresponding to stat brik files. Default: *_REML+tlrc
+
+   Example: setup3dMEMA -statbrik_dir ../statbriks -run -max_zeros 0.2 -model_outliers \\
+                  -covs subj,age,paiaffe -cov_file memacovs.txt -glm_contrast feaCon -exclude_subjs 009_cm,001_yc
+
+----
+Here is an example of setting up a separate script to loop over several contrasts and models to run several 3dMEMA analyses
+----
+#!/bin/bash
+set -e
+
+defaults=$(cat <<_EOF_
+ -statbrik_dir ../sepemo_remlfitAll -statbrik_suffix _emoconStats_hrf_REML+tlrc -cov_file memacov.txt -exclude_subjs 005_sb
+ -mask ~/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_3mm.nii
+ -model_outliers -jobs 8 -covariates_center mean -covariates_model center=different slope=different -HKtest -residual_Z
+_EOF_
+)
+
+for contrast in AngI_gt_AngC FeaI_gt_FeaC HapI_gt_HapC AllI_gt_AllC Err_gt_AllC
+do
+
+    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,age -run
+    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,paiaffe -run
+    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,paiharm -run
+    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,bpddiag -run
+    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,paiaffe,paiharm -run
+    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,age,paiaffe,paiharm -run
+    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,age,paiaffe,paiharm,dep -run
+    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,bpddiag,dep -run
+
+done
+
+----
+-----------------------------------
+EndOfHelp
+
+}
+
+# -jobs 12
+# -covariates_center mean \\
+# -covariates_model center=different slope=different \\
+# -missing_data 0 \\
+# -HKtest \\
+# -model_outliers \\
+# -residual_Z \\
+
+
+# -max_zeros <N>     : whether to compute group statistics for a voxel with more than 
+#     <N> subjects missing. If 0 < N < 1, this specifies a proportion of missingness that
+#     is tolerated. If N >= 1, this specifies the number of cases that can be missing. See 3dMEMA docs.
+
+
+#if no parameters are passed in, then print help and exit.
+if [ $# -eq 0 ]; then
+    printHelp
+    exit 0
+fi
+
+covFile=
+covs=
+excludeSubjs=
+glmContrast=
+maskFile=
+maxZeros=0
+run=0
+statBrikDir=
+statBrikSuffix="*_REML+tlrc"
+
+remainder=
+allparams="$@"
+
+while [ -n "$1" ]; do
+    case $1 in
+	-cov_file)             covFile="$2";            shift 2;;  # name of tab-delimited covariates file
+        -covs)                 covs="$2";               shift 2;;  # comma-delimited list of covariates for model
+	-exclude_subjs)        excludeSubjs="$2";       shift 2;;  # comma-delimited list of subjects to exclude
+	-glm_contrast)         glmContrast="$2";        shift 2;;  # name of first-level contrast
+	-mask)                 maskFile="$2";           shift 2;;  # name of mask file
+	-max_zeros)            maxZeros="$2";           shift 2;;  # number or proportion of zeros to tolerate in voxelwise estimation
+	-run)                  run=1;                   shift 1;;  # whether to run 3dMEMA after setup
+        -statbrik_dir)         statBrikDir="$2";        shift 2;;  # directory containing GLM coefficients for each subject
+        -statbrik_suffix)      statBrikSuffix="$2";     shift 2;;  # file name suffix for stat brik files
+	*) remainder="${remainder} $1"; shift 1;; #copy any non-matching arguments into remainder
+
+	# pass any remaining parameters to 3dMEMA
+	# *) echo -e "\n[Unrecognized option '$1']\n"; 
+	#     printHelp
+	#     exit 1;;
+    esac
+done
+
+[ -z "$covFile" ] && echo "-cov_file not specified, unable to setup analysis." && exit 1
+[ -z "$maskFile" ] && echo "-mask not specified. This is required." && exit 1
+[ -z "$statBrikDir" ] && echo "-statbrik_dir not specified. This is required." && exit 1
+[ -z "$glmContrast" ] && echo "-glm_contrast not specified. This is required." && exit 1
+
+statBrikDir=$( cd $statBrikDir && pwd ) #convert to absolute path
+
+#verify that subj is the first column of the covariate file.
+hasSubj=$( awk 'NR > 1 { exit }; {print $1}' "${covFile}" )
+if [ "${hasSubj}" != "subj" ]; then
+    echo "First column of -cov_file: ${covFile} must be subj."
+    exit 1
+fi
+
+if [ -z ${covs} ]; then
+    echo "-covs not specified, using all covariates from file: ${covFile}"
+    cp "$covFile" .3dMEMA_cov
+    #obtain comma-delimited list of all covariates in file (just reads header row)
+    covs=$( awk 'NR > 1 { exit }; {gsub(/[ \t]+/, ",")};1' "${covFile}" )
+else
+    #build a file that is a subset of covariates in the master file.
+
+    #ensure that "subj" is in the list, since this is required.
+    #subjinlist=$( echo "$covs" | grep -Ec "^(subj,.*|.*,subj,.*|.*,subj)$" )
+
+    #line above allows subject anywhere in covariate cols, but really needs to be first
+    subjinlist=$( echo "$covs" | grep -Ec "^subj,.*$" )
+
+    if [ ! $subjinlist -eq 1 ]; then
+	echo "Did not detect subj as first field in covs. Adding automatically."
+	echo "covs = $covs"
+	covs="subj,$col_cols"
+    fi
+
+    OIFS="$IFS"
+    IFS=","
+    covnum=1
+
+    unset covlist
+
+    for field in $covs; do
+	#echo "searching for, ${field}"	
+	#use awk to pull out column corresponding to header
+	awk -v col="${field}" '
+            BEGIN { c=0 }
+            NR == 1 { for (i=1;i<=NF;i++) { if ($i==col) { c=i }} }
+            c > 0 { print $c }
+            ' "${covFile}" > ._cov${covnum}
+
+	covlist="$covlist ._cov${covnum}"
+	
+	covnum=$(( $covnum + 1 ))	
+    done
+
+    IFS="$OIFS"
+
+    #now that we have temp files for each covariate, paste together the columns
+    paste $covlist > .3dMEMA_cov
+
+    rm $covlist
+
+fi
+
+#handle removal of excluded subjects from mema covariate file
+if [ -n "${excludeSubjs}" ]; then
+    excludeSubjs=${excludeSubjs//,/|} #convert to alternation operator
+    awk -v excludeSubjs="${excludeSubjs}" '{ if ($1 ~ excludeSubjs) { next } else { print } } ' .3dMEMA_cov > .3dMEMA_cov_excl
+    #awk "{ if (\$1 ~ /${excludeSubjs}/) { next } else { print } } " .3dMEMA_cov > .3dMEMA_cov_excl #less clear version with substitution
+    rm -f .3dMEMA_cov && mv .3dMEMA_cov_excl .3dMEMA_cov
+fi
+
+#for file naming, replace all commas with underscores.
+cov_vars=${covs//,/_}
+
+dirOut="${glmContrast}_${cov_vars}"
+scriptOut="3dMEMA_${glmContrast}_${cov_vars}"
+
+if [ -f "${dirOut}/${scriptOut}" ]; then
+    echo "3dMEMA script ${dirOut}/${scriptOut} already exists. Exiting"
+    exit 0
+fi
+
+[ ! -d "$dirOut" ] && mkdir "$dirOut"
+
+#put covariate file in place
+mv .3dMEMA_cov "$dirOut"
+
+#3dMEMA blows up with NIFTI mask
+#assuming this will result in a +tlrc view suffix
+3dcopy "${maskFile}" "${dirOut}/mask" 2>/dev/null
+
+#setup 3dMEMA script
+#including $@ passes any remaining parameters straight to 3dMEMA (e.g., -model_outliers).
+cat > "${dirOut}/${scriptOut}" <<EOF
+#!/bin/bash
+set -e
+set -x
+
+# setup3dMEMA call:
+# $0 $allparams
+
+#turn on gzip of BRIK files
+export AFNI_AUTOGZIP=YES
+export AFNI_COMPRESSOR=GZIP
+
+3dMEMA $remainder \\
+-covariates .3dMEMA_cov \\
+-mask mask+tlrc \\
+-set $glmContrast \\
+EOF
+
+#vector of subjects to analyze (use the .3dMEMA_cov file to ensure that dropped subjects match)
+subjvec=$( awk 'NR > 1 {print $1}' "${dirOut}/.3dMEMA_cov" )
+
+#switch IFS to new lines so that parsing 3dinfo into an array gives one element per matching line
+OLDIFS="$IFS"
+IFS=$'\n'
+
+for subj in $subjvec; do
+    #need to grep sub-briks of interest
+    coefMatch=($( 3dinfo -verb "${statBrikDir}/${subj}${statBrikSuffix}" 2>/dev/null | grep -Ei ".*At sub-brick #[0-9]+ '${glmContrast}#[0-9]+_Coef'"))
+
+    if [ ${#coefMatch[@]} -gt 1 ]; then
+	echo "Ambiguous coef match: ${coefMatch[@]}"
+	echo "Length: ${#coefMatch[@]}"
+	exit 1
+    elif [ ${#coefMatch[@]} -eq 0 ]; then
+	echo "Unable to locate coefficient sub-brik for ${glmContrast}"
+	exit 1
+    else 
+	coefBrik=$( echo "${coefMatch[0]}" | perl -pe 's:^.*At sub-brick #(\d+).*$:\1:' )
+    fi
+
+    tMatch=($( 3dinfo -verb "${statBrikDir}/${subj}${statBrikSuffix}" 2>/dev/null | grep -Ei ".*At sub-brick #[0-9]+ '${glmContrast}#[0-9]+_Tstat'"))
+
+    if [ ${#tMatch[@]} -gt 1 ]; then
+	echo "Ambiguous tstat match: ${tMatch[@]}"
+	exit 1
+    elif [ ${#tMatch[@]} -eq 0 ]; then
+	echo "Unable to locate t-stat sub-brik for ${glmContrast}"
+	exit 1
+    else 
+	tBrik=$( echo "${tMatch[0]}" | perl -pe 's:^.*At sub-brick #(\d+).*$:\1:' )
+    fi
+
+    echo "${subj} ${statBrikDir}/${subj}${statBrikSuffix}'[${coefBrik}]' ${statBrikDir}/${subj}${statBrikSuffix}'[${tBrik}]' \\" >> "${dirOut}/${scriptOut}"
+done #< ${subj_file}
+IFS="$OLDIFS"
+
+echo "-prefix 3dMEMA_${glmContrast}_${cov_vars}" >> "${dirOut}/${scriptOut}"
+
+chmod u+x "${dirOut}/${scriptOut}"
+
+if [ $run -eq 1 ]; then
+    #run script in a subshell to avoid changing directory in pipeline
+    (
+	cd "$dirOut"
+	bash "$scriptOut"
+    )
+fi

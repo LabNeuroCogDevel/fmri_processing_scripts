@@ -1,0 +1,43 @@
+#!/bin/bash
+
+function correct_slice_motion_4d {
+    #4d slice timing + motion correction using sliceMotion4d
+
+    slcmotprefix="tm" #sliceMotion4D prepends a prefix onto existing input
+    preMC="${prefix}${funcNifti}"
+    preST="${prefix}${funcNifti}"
+    prefix="${slcmotprefix}${prefix}" #add tm to file prefix to denote motion and slice timing correction
+    postMC="${prefix}${funcNifti}"
+    postST="${prefix}${funcNifti}"
+
+    mcMats=mc_mats #location of motion MAT files
+
+    if [[ -f ".motion_correction_complete" && -f ".slice_timing_complete" ]]; then
+	return 0
+    fi
+
+    if [ -n "${sliceTimesFile}" ]; then
+	[ ! -r "${sliceTimesFile}" ] && echo "Unable to load -custom_slice_times ${sliceTimesFile}" && exit 1
+	slcorder="${sliceTimesFile}"
+    else
+	slcorder=${sliceAcquisition}
+    fi
+
+    siemensInterleaved=
+    if [ $detectSiemens -eq 1 ]; then
+	siemensInterleaved="--siemens"
+    fi
+
+    rel "Running 4-D slice timing + motion correction (NiPy)" c
+    rel "sliceMotion4d --inputs \"${preMC}\" --tr $tr --slice_times $slcorder --prefix ${slcmotprefix} ${siemensInterleaved} --mats"
+
+    rel "fslmaths \"${postMC}\" -Tmean mc_target" #coregistration target for fieldmap unwarping is mean image after correction
+    rel "mv ${prefix}${funcFile}.par motion.par" #standardize naming of motion parameters file
+
+    rel "date > .slice_timing_complete"
+    rel "date > .motion_correction_complete"
+
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+
+}

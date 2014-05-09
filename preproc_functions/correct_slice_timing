@@ -1,0 +1,63 @@
+#!/bin/bash
+
+function correct_slice_timing {
+    #SLICE TIMING CORRECTION
+
+    preST="${prefix}${funcNifti}"
+    prefix="t${prefix}" #add t to file prefix to denote slice timing
+    postST="${prefix}${funcNifti}"
+
+    if [ -f ".slice_timing_complete" ]; then
+	return 0 #nothing to do
+    fi
+
+    #####
+    #Slice timing correction. Note that the conventional wisdom is to apply
+    #slice timing correction before motion correction for interleaved acquisition,
+    #but after motion correction for sequential acquisition.
+
+    #For interleaved data, slice timing is performed on the original 4D file: -i ${funcNifti}
+    #For sequential data, slice timing is performed on the motion-corrected 4D file: -i m_${funcNifti}
+    #Slice timed functionals are output to t_$funcNifti: -o "${prefix}${funcNifti}"
+    #TR is specified by -r
+    #--odd specifies interleaved order
+    #--down specifies sequential descending
+    #--ocustom filename of single-column custom interleave order file (first slice is referred to as 1 not 0)
+    #slicetimer default is ascending, so no need to create acquitionString for this setting
+
+    rel "Running slice timing correction" c
+
+    acquisitionString=
+    if [ $sliceAcquisition = interleaved ]; then
+
+        # if slice number is even and triotrim is set 
+        # need to create a custom slice order file
+        # put all even slices first, then all odd slices (where slices are numbered 1..n, bottom-up)
+        # use this file with --ocustom switch option to slicetimer
+        if [ $((($detectSliceNum%2))) = 0 ] && [ $detectSiemens -eq 1 ]; then
+
+	    rel "  Siemens scanner with even number of slices detected" c
+	    rel "  Using custom slice order file --ocustom with order 2,4,6...1,3,5..." c
+	    
+	    acqCustFile='.siemens_evenSliceNum_acquisitionOrder'
+            #Create custom interleaved acquisition order file: evens, then odds
+            # print evens(%2==0), then print odds (%2==1)
+            n=$detectSliceNum \
+                perl -le '$,="\n"; @a=1..$ENV{n}; for $i (0,1){ print grep {$_%2==$i} @a }' > $acqCustFile
+	    
+	    acquisitionString="--ocustom=$acqCustFile"
+	    
+        else
+	    acquisitionString="--odd"
+        fi
+    elif [ $sliceAcquisition = seqdesc ]; then
+	acquisitionString="--down"
+    fi
+
+    rel "slicetimer -i \"${preST}\" -o \"${postST}\" -r $tr ${acquisitionString}"
+
+    rel "date > .slice_timing_complete"
+
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+}

@@ -1,0 +1,265 @@
+#!/bin/bash
+#Apply fieldmap to EPI data at the same time as motion correction (one-step interpolation)
+
+function onestep_warp {
+
+    if [ $# -lt 1 ]; then
+	echo "onestep_warp requires one parameter: <warptarget=mc_target|standard>"
+	exit 1
+    fi
+
+    local warp_target="$1"
+
+    if [ $warp_target = standard ]; then
+	local ref="$templateBrain"
+	local mask="${subjMask}"
+
+	if [[ -n "$fm_phase" && $mc_first -eq 0 ]]; then #if -mc_first, then fieldmap unwarping happens upstream
+	    prefix="wu${prefix}" #fm unwarp and warp to standard
+	else
+	    prefix="w${prefix}" #just warp to standard
+	fi
+	
+	if [[ -n "$fm_phase" && -f .warp_complete && -f .fmunwarp_complete ]]; then
+	    #echo "returning 0"
+	    return 0
+	elif [[ -z "$fm_phase" && -f .warp_complete ]]; then
+	    return 0   #relevant steps already complete
+	fi
+    elif [ $warp_target = mc_target ]; then
+	local ref=mc_target
+	local mask="unwarp/EF_UD_fmap_mag_brain_mask" #is this right?
+
+	if [ -n "$fm_phase" ]; then
+	    prefix="u${prefix}"
+	fi
+	
+	if [ -f .fmunwarp_complete ]; then
+	    return 0   #relevant steps already complete
+	fi
+    else
+	echo "Unrecognized target: $warp_target"
+	exit 1
+    fi
+
+    # One-step warping occurs under several scenarios, and applies motion correction, 
+    # fieldmap unwarping, and warping to standard in various combinations. The motivating
+    # goal is to reduce the number of data interpolations.
+    #
+    # Combinations that combine motion correction with fieldmap unwarping and/or warp to standard
+    # require a unique volume-wise warp.
+
+    if [ -n "$fm_phase" ]; then
+	#fmap_unwarp_field is the fm unwarp field aligned to mc_target (coregistration target)
+	if [ $createBBRFmapWarp -eq 1 ]; then
+	    rel "Using unwarp information from BBR -fieldmap functional -> struct alignment" c
+	    local fmap_unwarp_field=unwarp/EF_UD_warp_bbr
+	else
+	    rel "Using unwarp information from conventional fieldmap -> functional alignment" c
+	    local fmap_unwarp_field=unwarp/EF_UD_warp
+	fi
+    fi
+
+    #setup the warp field based on the processing circumstance
+    if [ $warp_target = mc_target ]; then
+	if [[ -z "${fm_phase}" && ( $mc_first -eq 1 || $no_st -eq 1 ) ]]; then
+	    #Combination 1: motion correction alone. In this case, do nothing because motion correction alone was performed upstream (by 3dvolreg or mcflirt)
+	    #  $warp_target = mc_target
+	    #  Conditions: a) no fieldmap AND
+	    #              b) -mc_first OR -no_st
+
+	    return 0 #nothing to do
+
+	elif [[ ( -n "${fm_phase}" && ( $no_st -eq 1 || $st_first -eq 1 ) && $no_warp -eq 1 ) \
+	    || ( -n "${fm_phase}" && $mc_first -eq 1 && $sliceMotion4D -eq 0 ) ]]; then
+	    #Combination 2: motion correct + fieldmap unwarp
+	    #  $warp_target = mc_target
+	    #  Conditions: a) fieldmap provided (-fm_phase) AND     ###IS THIS A REAL POSSIBILITY?
+	    #              b) -no_st OR -st_first AND
+	    #              c) -no_warp
+	    #
+	    #  Conditions: a) fieldmap provided (-fm_phase) AND
+	    #              b) -mc_first AND
+	    #              c) Use conventional motion and slice timing correction (i.e., not -4d_slice_motion)
+	    #        
+	    #              This is the condition handled in the standard FSL tools (motion correction + fieldmap unwarping before slice timing)
+
+	    towarp="${preMC}"
+
+	    #make a vol-specific warp for MC + unwarp
+	    #just need to add --premat inside volwise loop
+	    volwise=1
+	    rel "Volume-wise motion correction + fieldmap unwarping to $warp_target in one interpolation" c
+	    cvcmd="convertwarp --ref=$ref --warp1=$fmap_unwarp_field --relout"
+
+	elif [[ -n "$fm_phase" && $no_warp -eq 1 && $sliceMotion4D -eq 1 ]]; then
+	    #Combination 3: fieldmap unwarp alone (not volume-wise)
+	    #  $warp_target = mc_target
+	    #  Conditions: a) fieldmap provided (-fm_phase)
+	    #              b) -no_warp
+	    #              c) data already motion-corrected by -4d_slice_motion
+
+	    towarp="${postMC}"
+
+	    volwise=0
+	    rel "Apply fieldmap unwarping alone" c
+	    rel "convertwarp --ref=$ref --warp1=$fmap_unwarp_field  \
+		--relout --out=func_to_${warp_target}_warp_allv"
+	    
+	else 
+	    echo "Unable to figure out what warp was intended."
+	    exit 1
+	fi
+    elif [ $warp_target = standard ]; then
+	if [[ -z "${fm_phase}" && $no_warp -eq 1 ]]; then
+	    #Combination 4: motion correction alone. In this case, do nothing because motion correction alone was performed upstream (by 3dvolreg or mcflirt)
+	    #  $warp_target = standard
+	    #  Conditions: a) no fieldmap AND
+	    #              b) -no_warp
+
+	    #NOTE: This will never trigger because warp_to_template calls onestep_warp with $preMC mc_target
+
+	    return 0 #if no warp to standard and no fieldmap, then nothing to do
+
+	elif [[ -z "$fm_phase" && ( $no_st -eq 1 || $st_first -eq 1 ) && $sliceMotion4D -eq 0 ]]; then
+	    #Combination 5: motion correct + warp to standard
+	    #  $warp_target = standard
+	    #  Conditions: a) No fieldmap AND
+	    #              b) -no_st OR -st_first AND
+	    #              c) Use conventional motion and slice timing correction (i.e., not -4d_slice_motion)
+
+	    towarp="${preMC}" #warp the pre-motion correction data because we are combining motion + standard
+
+	    #make a vol-specific warp for MC + standard
+	    #just need to add --premat inside volwise loop
+	    volwise=1
+	    rel "Volume-wise motion correction + warp to $warp_target in one interpolation" c
+	    cvcmd="convertwarp --ref=$ref --midmat=func_to_struct.mat \
+		--warp2=${warpCoef} --relout"	#use --warp2 to warp after vol -> mc_target and func -> struct
+
+	elif [[ ( -z "$fm_phase" && $sliceMotion4D -eq 1 ) || $mc_first -eq 1 ]]; then
+	    #Combination 6: warp to standard 
+	    #  $warp_target = standard
+	    #  Conditions: a) no fieldmap AND
+	    #              b) data already motion-corrected by -4d_slice_motion
+	    #              
+	    #  Conditions: a) -mc_first (motion correction and optional fieldmap unwarping performed prior to slice timing)
+
+	    #for mc_first, steps before warp to template are MC + FM + ST. Hence postST is what to warp to template
+	    #for sliceMotion4D, steps before warp are MC + ST. So postST is also the right file
+	    towarp="${postST}"
+
+	    volwise=0
+	    rel "Warp to $warp_target alone via $warpCoef." c
+	    rel "convertwarp --ref=$ref --premat=func_to_struct.mat --warp1=$warpCoef \
+		--relout --out=func_to_${warp_target}_warp_allv"
+
+	elif [[ -n "$fm_phase" && $sliceMotion4D -eq 1 ]]; then
+	    #Combination 3: fieldmap unwarp + warp to standard (not volume-wise)
+	    #  $warp_target = standard
+	    #  Conditions: a) fieldmap provided (-fm_phase) AND
+	    #              b) data already motion-corrected, typically by -4d_slice_motion
+
+	    towarp="${postMC}" #motion correction already done upstream
+
+	    volwise=0
+	    rel "Fieldmap unwarping + warp to $warp_target in one interpolation" c
+	    rel "convertwarp --ref=$ref --warp1=$fmap_unwarp_field --midmat=func_to_struct.mat \
+		--warp2=${warpCoef} --relout --out=func_to_${warp_target}_warp_allv"
+	    
+	elif [[ -n "$fm_phase" && ( $no_st -eq 1 || $st_first -eq 1 ) && $sliceMotion4D -eq 0 ]]; then
+	    #Combination 4: motion correct + fieldmap unwarp + warp to standard
+	    #  $warp_target = standard
+	    #  Conditions: a) -no_st OR -st_first AND
+	    #              b) fieldmap provided (-fm_phase) AND
+    
+	    towarp="${preMC}"
+
+	    volwise=1
+	    rel "Volume-wise motion correction, fieldmap unwarping, and warp to $warp_target in one interpolation" c
+	    cvcmd="convertwarp --ref=$ref --warp1=$fmap_unwarp_field --midmat=func_to_struct.mat \
+		--warp2=${warpCoef} --relout"
+	    
+	else
+	    echo "Unable to figure out what warp was intended."
+	    exit 1
+	fi
+
+    else
+	echo "Unclear target for onestep_warp: $warp_target"
+	exit 1
+    fi
+
+    [ $( imtest $towarp ) -eq 0 ] && echo "Unable to find volume to warp: $towarp" && exit 1
+
+    #applywarp basics:
+    #
+    # --ref: Reference brain. Note that the dimensions and voxel sizes of the
+    #   ref parameter become the dimensions and voxel sizes for the resulting images.
+    # --in: The input is the slice-timed, motion-corrected, skull-stripped,
+    #   thresholded 4D functional file: kmt_$funcFile_masked.
+    # --out: The warped 4D functionals file to create: wkmt_$funcFile
+    # --premat: An affine (linear) transformation matrix to be applied to
+    #   each volume prior to the nonlinear warp. This is important so that
+    #   each functional volume is first spatially aligned with the structural
+    #  scan before being warped.
+    # --warp: The warping matrix to be applied. Here, we use the nonlinear
+    #   warping matrix from the mprage normalization.
+    # --interp: The interpolation method for performing the warp. See -warp_interpolation in help.
+    # --mask: Restrict the warp to the mask above used for thresholding low intensity voxels.
+    #   Note that this corrects odd behavior with applywarp and sinc interpolation smudging edge voxels extensively.
+    #   See here: https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1108&L=FSL&P=R66855&1=FSL&9=A
+
+    #note that I switched over to sinc interpolation, which is slowest, but best.
+    #applywarp defaults to trilinear, which blurs the image.
+	
+    if [ $volwise -eq 0 ]; then
+
+	rel "applywarp --in=\"$towarp\" --out=\"${prefix}${funcFile}\" \
+	    --warp=func_to_${warp_target}_warp_allv --ref=$ref --rel \
+	    --mask=$mask --interp=${funcWarpInterp}"
+	
+    elif [ $volwise -eq 1 ]; then
+	#volume-wise warping (includes motion correction)
+
+	# split the funcdata into numbered individual volumes
+	[ -d episplit ] && rel "rm -rf episplit" #cleanup old split
+	rel "mkdir episplit"
+	rel "fslsplit \"$towarp\" episplit/episplit"
+
+	# get the total number of volumes in the functional
+	totalVolumes=$( fslhd $towarp | perl -lne 'print $1 if m/^dim4\s+(\d+)$/' )
+
+	# count is 0 based
+	for ((i = 0; i < $(( $totalVolumes )); i++)); do
+	    pad=$(printf "%04d" $i)
+
+	    torun="${cvcmd} --premat=$mcMats/MAT_$pad --out=func_to_${warp_target}_warp_v${pad}"
+	    rel "${torun}"
+
+	    rel "applywarp --in=episplit/episplit$pad --out=episplit/episplit$pad \
+		--warp=func_to_${warp_target}_warp_v${pad} --ref=$ref --rel \
+		--mask=$mask --interp=${funcWarpInterp}"
+	done
+	
+	rel "fslmerge -t ${prefix}${funcFile} episplit/*"
+	#rel "fslmerge -t func_to_${warp_target}_warp_allv func_to_${warp_target}_warp_v*" #this is an ill-conceived idea because each warp vol has 3 sub-briks
+
+	[ -d episplit ] && rel "rm -rf episplit" #for now always cleanup episplit (don't depend on -cleanup)
+
+	_picture "${prefix}${funcFile}"  "EPI after unwarping"
+
+	rm -f func_to_${warp_target}_warp_v* #cleanup separate warps
+
+    else 
+	echo "volwise missing in action?"
+	exit 1
+    fi
+
+    [ -n "$fm_phase" ] && rel "date > .fmunwarp_complete"
+    [ $warp_target = standard ] && rel "date > .warp_complete"
+
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+
+}

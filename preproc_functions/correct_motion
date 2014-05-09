@@ -1,0 +1,96 @@
+#!/bin/bash
+
+function correct_motion {
+    preMC="${prefix}${funcNifti}"
+    prefix="m${prefix}" #add m to file prefix to denote motion correction
+    postMC="${prefix}${funcNifti}"   
+
+    mcMats=mc_mats #directory for volume-to-target affine transform matrices (created below, or already created)
+
+    #whether to use a 4-stage coregistration for mcflirt with sinc interpolation for resampling
+    if [[ ${motionSinc} = [Yy] ]]; then
+	mcflirtSinc="-stages 4 -sinc_final"
+    else
+	mcflirtSinc=
+    fi
+
+    if [ -f ".motion_correction_complete" ]; then
+	return 0
+    fi
+
+    #####
+    #Motion correction.
+    #Defaults to mean volume correction unless -refvol passed.
+    # 
+    # if FM unwarping
+    #   * mc_target
+    #   * mc/*{par,rms,mat}
+    # 
+
+    rel "Running motion correction" c
+
+    if [ -n "$ref_vol" ]; then
+	rel "Using volume number: $ref_vol for motion correction" c
+	rel "3dbucket -overwrite \"${preMC}[$ref_vol]\" -prefix \"mc_target${ext}\" 2> /dev/null"
+    else
+	rel "Using mean volume of motion-corrected functional as registration reference for $preMC" c
+	rel "3dTstat -overwrite -mean -prefix premc_mean_vol.nii.gz \"${preMC}\"" #mean image pre-correction
+    fi
+
+    #for now, a slightly junky if else for 3dvolreg versus mcflirt
+    if [ $mc_program = "3dvolreg" ]; then
+	if [ -z "$ref_vol" ]; then
+	    #have to run motion correction twice to get a reasonable motion-corrected mean volume
+	    #cf. http://fcp-indi.github.io/docs/developer/workflows/func_preproc.html
+	    #first run: coregister to mean functional of pre-motion-corrected data (hence, mean could be a bit blurry)
+	    rel "3dvolreg -quintic -twopass -base premc_mean_vol.nii.gz -zpad 4 -prefix mc_initial.nii.gz \"${preMC}\""
+
+	    #second run: now take the mean of the corrected series and use that as the coregistration target
+	    rel "3dTstat -overwrite -mean -prefix mc_target.nii.gz mc_initial.nii.gz"	       
+	fi
+
+	#reverting to quintic interpolation because of notes on AFNI message board about ringing artifacts with Fourier approach:
+	#http://afni.nimh.nih.gov/afni/community/board/read.php?1,143988,143994
+	rel "3dvolreg -quintic -twopass -maxdisp1D maxdisp.1D -1Dfile 3dvolreg.par -1Dmatrix_save 3dvolreg_mats -base mc_target.nii.gz -zpad 4 -prefix \"${postMC}\" \"${preMC}\""
+
+	#convert to match mcflirt: Rx Ry Rz (radians) Tx Ty Tz (mm)
+	rel "Note that motion.par contains 3dvolreg motion parameters reformatted to match mcflirt column order: Rx, Ry, Rz, (radians) Tx, Ty, Tz." c
+	rel  "awk "\''{print $2*(3.141593/180),$3*(3.141593/180),$1*(3.141593/180),$5,$6,$4}'\'" 3dvolreg.par > motion.par"
+
+	#create a series of affine transform files to be combined with FUGUE as needed (and match mcflirt -mats output)
+	mfile=3dvolreg_mats.aff12.1D
+
+	[ ! -d $mcMats ] && mkdir $mcMats
+
+	nr=$(( $( awk 'END { print NR }' "$mfile" ) - 1)) #subtract one for header
+
+	for (( v = 0; v < $nr; v++ )); do
+	    row=$(( v + 2 )) #+1 for conversion of 0-based volume to row in file, +1 for header row from 3dvolreg
+	    awk "NR==$row {print}" "$mfile" > _temp.aff12.1D
+	    cat_matvec _temp.aff12.1D -I -4x4 > $mcMats/MAT_$( printf "%04d" $v )
+	done
+
+	rm -f _temp.aff12.1D
+    else
+	#if no reference volume specified, correct to the mean volume
+	if [ -z "$ref_vol" ]; then
+	    rel "mcflirt -in \"${preMC}\" -o mc_initial -reffile premc_mean_vol"
+	    rel "fslmaths mc_initial -Tmean mc_target" #mean motion-corrected image
+	fi
+
+	rel "mcflirt -in $( remove_ext \"${preMC}\" ) -o $( remove_ext \"${postMC}\" ) -reffile mc_target ${mcflirtSinc} -mats -plots"
+
+	#motion parameters should be renamed motion.par
+	mv $prefix*.par motion.par
+	
+	#volumewise affine transforms should be relocated with mc/
+
+	mv $prefix*.mat $mcMats
+    fi
+
+    rel "date > .motion_correction_complete"
+
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+
+}

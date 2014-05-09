@@ -1,0 +1,91 @@
+#!/bin/bash
+set -e
+function printHelp() {
+
+cat <<EndOfHelp
+-----------------------------------
+Script to compute motion censor for a given directory
+
+   -dir         : directory to search for motion parameters
+   -mfile       : name of raw motion parameters files (default = mcplots.par
+   -censor_norm : euclidean norm for censoring motion (default = 0.9)
+   
+   Example: computeCensor -dir /Volumes/Serena/testdir -mfile mcplots.par -censor_norm 1.1
+-----------------------------------
+EndOfHelp
+
+}
+
+#END
+
+#if no parameters are passed in, then print help and exit.
+if [ $# -eq 0 ]; then
+    printHelp
+    exit 0
+fi
+
+
+ddir=
+motraw="mcplots.par"
+cens=0.9
+
+while [ -n "$1" ]; do
+    case $1 in 
+	-dir)           ddir="$2";        shift 2;;  # directory containing functional data
+	-mfile)         motraw=$2;        shift 2;;  # filename for raw motion parameters: default to mcplots.par
+	-censor_norm)   cens=$2;		  shift 2;;  # euclidean norm thrshold for censor
+	*) echo -e "\n[Unrecognized option '$1']\n"; 
+	    printHelp
+	    exit 1;;
+    esac
+done
+
+[[ -z "$ddir" || ! -d "$ddir" ]] && echo "Cannot locate directory: $ddir" && exit 1
+
+#convert to absolute path to avoid problems with cd bewlo
+ddir=$(echo $(cd "$ddir"; pwd) )
+
+runfiles=$( find "${ddir}" -iname "$motraw" -type f )
+
+for r in ${runfiles}; do
+
+    fname=$( basename "$r" )
+    fbase=$( echo "$fname" | sed 's/\.[^.]*$//' ) #strip off file extension
+    rundir=$( dirname "$r" )
+
+    cd "$rundir"
+    echo -e "===\n  ${r}"
+    
+    #create first derivatives of motion (velocity)
+    [ ! -r "${fbase}_velocity.par" ] && 1d_tool.py -overwrite -infile "$fname" -set_nruns 1 -derivative -write "${fbase}_velocity.par"
+
+    #Demean the motion parameters
+    [ ! -r "${fbase}_demeaned.1D" ] && 1d_tool.py -overwrite -infile "$fname" -set_nruns 1 -demean -write "${fbase}_demeaned.1D" -overwrite
+
+    if [ ! -r "censor.1D" ]; then
+
+	#afni's default call
+	1d_tool.py -infile "$fname" -set_nruns 1 \
+	    -show_censor_count -censor_prev_TR -overwrite \
+	    -censor_motion $cens "${fbase}_censor"
+
+	#censor TRs based on motion spikes
+	#0,1,2 cols are rotation x,y,z; 3,4,5 cols are translation x,y,z.
+	
+        # numCensored=$(1d_tool.py \
+        #     -infile ${subnum}_motion_all.par[3..5] \
+        #     -set_nruns ${numRuns} \
+        #     -derivative \
+        #     -collapse_cols euclidean_norm \
+	#     -extreme_mask -.8 .8 \
+	#     -censor_prev_TR \
+	#     -write_censor "${subnum}_censor.1D" \
+	#     -write_CENSORTR "${subnum}_censorTR.txt" \
+	#     -overwrite)
+    fi
+
+    echo -e "===\n"
+
+    #rm -f mcplots_demeaned
+
+done

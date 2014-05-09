@@ -5,40 +5,48 @@ set -e #stop script on error
 
 cat <<EndOfHelp
 ----------------------------------------------
-preprocessMprage is a shell script that preprocesses axial mprage structural scans.
+preprocessMprage is a shell script that computes the nonlinear warp of a
+  participant's structural scan to a standard stereotaxic template (e.g., MNI).
 
 It is intended to be run within an mprage directory containing raw data (or a
   nifti of the raw data if you use the -n option).
 
 The basic pipeline is:
   1) Convert dicom files to NIFTI
-  2) Brain extract the structural image
-  3) Warp structural to standard stereotactic space using affine (linear)
-       transformation: flirt. (Used only for warp coefficients)
-  4) Warp structural image to stereotactic space using nonlinear transformation
+  2) Optional bias field correction to reduce spatial variation in intensity
+       due to coil sensitivity. Particularly important for 32-channel T1 images.
+  3) Brain extract the structural image
+  4) Warp structural to standard stereotactic space using affine (linear)
+      transformation: flirt. (Used only for warp coefficients)
+  5) Warp structural image to stereotactic space using nonlinear transformation
        with fnirt. Affine coefficients from the linear warping are used as
        starting values (helps optimization). In the case of MNI, uses FSL's
        config file with optimal parameters for fnirt. In the case of Talairach,
        use a custom settings file adapted from FSL's MNI configuration.
 
 Command line options:
-  -b: bet options. Passes value to fsl bet (brain extraction).
+  -b -bet_opts: bet options. Passes value to fsl bet (brain extraction).
         Must be quoted (e.g., -b "-f 0.7"). Defaults to "-R -f 0.5 -v"
-  -d: delete or archive DICOM files. Options are -d n ("no": leaves DICOM
+  -cleanup: cleanup intermediate files not needed for further processing.
+  -cleanup_only: run cleanup of intermediate files, then exit. (after checking files)
+  -d -delete_dicom: delete or archive DICOM files. Options are -d n ("no": leaves DICOM
         untouched), -d y ("yes": deletes DICOM files), -d a ("archive":
         compresses files into archive file: mprage_dicom.tar.gz. If not
-        passed, user will be prompted for action.
+        passed, user will be prompted for action. Can also use "yes", "no", and "archive."
   -h: print command help
-  -n: skip DICOM conversion and start with specified NIFTI file. 
+  -log: Name for log file that documents each command that is run. Default: preprocessMprage.log
+  -n -nifti: skip DICOM conversion and start with specified NIFTI file. 
         Example: -n mprage.nii.gz (will complete bet, flirt, and
         fnirt, but skip DICOM -> NIFTI conversion).
-  -o: output file name. The filename for the final warped mprage image.
+  -no_bias: skip bias field correction.
+  -o -output: output file name. The filename for the final warped mprage image.
         Defaults to mprage_nonlinear_warp_<referenceName>.nii.gz
-  -p: file pattern for dicom MR files. Defaults to "MR*". Please enclose the pattern in quotes or it may not function properly
-  -r: reference brain. Currently supports "MNI_2mm", "MNI_FSL_2mm", "SPM_2mm", and "Tal_2mm". Default is "MNI_2mm".
+  -p -dicom: file pattern for dicom MR files. Defaults to "MR*". Please enclose the pattern in quotes or it may not function properly
+  -r -template_brain: reference brain. Currently supports "MNI_2mm", "MNI_FSL_2mm", "SPM_2mm", and "Tal_2mm". Default is "MNI_2mm".
+  -w -warpres: resolution of warp basis (nonlinear neighborhood size) in mm. Default is 8 mm.
+  -weakbias: used for images with little and/or smooth bias fields (cf. fsl_anat).
 
-
-Example call: preprocessMprage -r MNI_2mm -b "-R -f 0.5 -g 0.2" -d a -o mprage_final.nii.gz
+Example call: preprocessMprage -r MNI_2mm -b "-R -f 0.5 -g 0.2" -d a -o mprage_final.nii.gz -w 6
 ----------------------------------------------
 EndOfHelp
 
@@ -46,9 +54,20 @@ EndOfHelp
 
 #Author: Michael Hallquist
 #Written: 5/2/2010
-#Last updated: 6/3/2012
+#Last updated: 4/5/2014
 #
 #Changelog:
+#4/5/2014
+# - added -log parameter to keep a log of processing steps.
+# - generate brain mask from inverse MNI warp to reduce sensitivity to BET (follows fsl_anat)
+# - generate struct_to_template.png image to display quality of struct -> template warp.
+# - provide option for bias field correction (to reduce spatial variability in intensity due to coil sensitivity).
+#     Bias field is also incorporated into fnirt to improve warp to template. (adapted from fsl_anat).
+# - use fslreorient2std to ensure that mprage matches template (MNI) orientation (LPI/RPI)
+# - provide -w option for setting warp resolution. Default to 8mm.
+# - align related arguments between preprocessMprage and preprocessFunctional (e.g., -dicom).
+# - switch to remove_ext for T1
+# - switch to more general arg parsing to allow for longer names
 #6/4/2012
 # - provide option to use SPM8 canonical MNI template
 #10/27/2011
@@ -75,25 +94,94 @@ EndOfHelp
 
 set -e #exit if any error occurs (stop processing)
 
+scriptDir=$( dirname "$0" )
+source "${scriptDir}/preproc_functions/helper_functions" #contains rel for running/logging
+
 #set defaults for dicomPattern, reference, betOpts, and outputFile
+cleanup=0
+cleanup_only=0
+biasCorrect=1
+strongBias=1 #0 for minimal bias correction, 1 for strong bias
 dicomPattern="MR*"
+logFile="preprocessMprage.log"
 reference="MNI_2mm"
 betOpts="-R -f 0.5 -v" #default bet options
+wr=8 #warp resolution in mm
 
-#handle command line parameters
-while getopts b:d:hn:o:p:r: option
-do
-    case "$option" in
-	b) betOpts=$OPTARG ;;
-	d) delDicom=$OPTARG ;;
-	h) printHelp; exit 0 ;;
-	p) dicomPattern=$OPTARG ;;
-	n) nifti=$OPTARG ;;
-	o) outputFile=$OPTARG ;;
-	r) reference=$OPTARG ;;
-	*) echo -e "Unrecognized option: -$OPTARG\n"
-    esac
+#if no parameters are passed in, then print help and exit.
+if [ $# -eq 0 ]; then
+    printHelp
+    exit 0
+fi
+
+datefmt='+%F+%I:%M'
+#grab command, arguments, script version (date), and start time.
+#needs to come before while loop because the positional parameters get popped off.
+thiscommandinfo="$0 $@ \n# preprocessMprage v$(perl -ne 'print $1 if /^#Last updated: (.*)/' $0) \n# Run started $(date $datefmt) "
+
+#process command line parameters
+while [ _$1 != _ ] ; do
+    if [[ $1 = -b || $1 = -bet_opts ]] ; then
+	betOpts="${2}"
+	shift 2
+    elif [[ $1 = -cleanup ]]; then
+	cleanup=1
+	shift 1
+    elif [[ $1 = -cleanup_only ]]; then
+	cleanup_only=1
+	shift 1
+    elif [[ $1 = -d || $1 = -delete_dicom ]]; then
+	low=$( echo "${2}" | awk '{print tolower($0)}' ) 	#force lower case input
+	if [[ $2 = "delete" || $2 = "yes" || $2 = "no" || $2 = "archive" ]]; then
+	    delDicom="${low}"
+	    shift 2
+	elif [[ $2 = "y" || $2 = "n" || $2 = "a" ]]; then
+	    echo "Use of single character deprecated. Please change to yes, no, archive."
+	    delDicom="${low}"
+	    shift 2
+	else
+	    echo -e "Unrecognized ${1}: ${2}.\n  Options are: ${1} delete yes no archive."
+	    exit 1
+	fi
+    elif [[ $1 = -p || $1 = -dicom ]]; then
+	dicomPattern="${2}"
+	shift 2
+    elif [[ $1 = -h || $1 = -help ]]; then
+	printHelp
+	exit 0
+    elif [ $1 = -log ]; then
+	logFile="${2}"
+	shift 2
+    elif [[ $1 = -no_bias ]]; then
+	biasCorrect=0
+	shift 1
+    elif [[ $1 = -n || $1 = -nifti ]]; then
+	nifti="${2}"
+	shift 2
+    elif [[ $1 = -o || $1 = -output ]]; then
+	outputFile="${2}"
+	shift 2
+    elif [[ $1 = -r || $1 = -template_brain ]]; then
+	reference="${2}"
+	shift 2
+    elif [[ $1 = -warpres ]]; then
+	wr="${2}"
+	if [[ ! ${wr} =~ ^[0-9]+$ ]]; then
+	    echo "-warpres must be an integer (e.g., 10)."
+	    exit 1
+	fi
+	shift 2
+    elif [[ $1 = -weakbias ]]; then
+	strongBias=0
+	shift 1
+    else
+        printHelp
+        echo -e "----------------\n\n"
+        echo "Unrecognized command line parameter: ${1}"
+        exit 1
+    fi
 done
+
 
 case "$reference" in
     Tal_2mm)  bettedRefBrain=$HOME/standard/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm_brain;
@@ -138,13 +226,21 @@ if [[ -n $nifti && ! -f $nifti ]]; then
     exit 1
 fi
 
+if [ -n "${logFile}" ]; then
+    if [ -f "${logFile}" ]; then
+	rm -f "${logFile}"
+    fi
+    echo "#!/bin/bash" > "${logFile}"
+    echo "## Log of preprocessMprage commands" >> "${logFile}"
+    echo -e "## Call: $thiscommandinfo" >> "${logFile}"
+fi
+
+
 #if nifti undefined, assume the dicoms need to be converted
 if [ -z $nifti ]; then
     ##############
     #convert dicom files to NIFTI
-    echo "----------------"
-    echo "Converting DICOM files to NIFTI"
-    echo "----------------"
+    rel "Converting DICOM files to NIFTI" c
 
     #check whether files exist
     #numFiles=$( ls | grep "$dicomPattern"  | wc -l )
@@ -159,35 +255,33 @@ if [ -z $nifti ]; then
 
     #remove mprage.nii if it exists so that Dimon doesn't bomb out
     if [ -f mprage.nii ]; then
-	rm -f mprage.nii
+	rel "mv -f mprage.nii \"mprageBAK_$(date $datefmt).nii\""
+    fi
+
+    if [ -f mprage.nii.gz ]; then
+	rel "mv -f mprage.nii.gz \"mprageBAK_$(date $datefmt).nii.gz\""
     fi
 
     #convert dicom to nifti using Dimon
-    Dimon \
-	-infile_pattern "${dicomPattern}" \
+    rel "Dimon \
+	-infile_pattern \"${dicomPattern}\" \
 	-GERT_Reco \
 	-quit \
 	-dicom_org \
 	-sort_by_acq_time \
 	-gert_write_as_nifti \
 	-gert_create_dataset \
-	-gert_to3d_prefix mprage
+	-gert_to3d_prefix mprage"
 
     rm -f dimon.files*
     rm -f GERT_Reco_dicom*
 
     #if afnirc has compressor on, then above will already generate nii.gz
     if [ -f mprage.nii ]; then
-	gzip -f mprage.nii #use -f to force overwrite in case where mprage.nii.gz exists, but we want to replace it.
+	rel "gzip -f mprage.nii" #use -f to force overwrite in case where mprage.nii.gz exists, but we want to replace it.
     fi
 
-    #default to LPI
-    #hopefully the 3dresample bug is fixed:
-    #http://afni.nimh.nih.gov/afni/community/board/read.php?f=1&i=39923&t=39923
-    3dresample -overwrite -orient LPI -prefix "mprage.nii.gz" -inset "mprage.nii.gz"
-
     #Ask user what to do with original DICOM files unless passed on command line
-
     if [ -z $delDicom ]; then
 	until [[ "$delDicom" = [AaNnYy] ]]; do
 	    read -sn1 -p "Delete or archive original DICOM files? (y/n/a)" delDicom
@@ -195,60 +289,150 @@ if [ -z $nifti ]; then
     fi
 
     case ${delDicom} in
-	y|Y) echo -e "\nDeleting DICOM files"; rm ${dicomPattern} ;;
-	n|N) echo -e "\nKeeping DICOM files" ;;
-	a|A) echo -e "\nArchiving DICOM files (mprage_dicom.tar.gz)"; tar czf mprage_dicom.tar.gz ${dicomPattern} && rm -f ${dicomPattern} ;;
+	y|Y|yes|delete) echo -e "\nDeleting DICOM files"; rel "rm -f ${dicomPattern}" ;;
+	n|N|no) echo -e "\nKeeping DICOM files" ;;
+	a|A|archive) echo -e "\nArchiving DICOM files (mprage_dicom.tar.gz)"; rel "tar czf mprage_dicom.tar.gz ${dicomPattern}" && rel "rm -f ${dicomPattern}" ;;
     esac
 
 fi
 
-#this won't work if the filename contains a period (no worries for now)
-niftiBase=$( echo $nifti | cut -d . -f 1 )
+#strip off file extension to allow for suffix
+T1=$( remove_ext $nifti )
+
+#check for cleanup only
+if [ $cleanup_only -eq 1 ]; then
+    rel "Cleaning up intermediate files for preprocessMprage." c
+    cleanup_preprocessMprage
+    exit 0
+fi
+
+#reorient structural to RPI/LPI to match template
+rel "fslreorient2std $nifti $nifti"
 
 #need to set default after processing options and dicom import
 #to account for reference choice and filename
-if [ -z $outputFile ]; then outputFile=${niftiBase}_nonlinear_warp_${reference}; fi
+if [ -z $outputFile ]; then outputFile=${T1}_nonlinear_warp_${reference}; fi
+
+#adapted from fsl_anat to create a blurred image by downsampling
+quick_smooth() {
+  in=$1
+  out=$2
+  rel "fslmaths $in -subsamp2 -subsamp2 -subsamp2 -subsamp2 vol16"
+  rel "flirt -in vol16 -ref $in -out $out -noresampblur -applyxfm -paddingsize 16"
+  # possibly do a tiny extra smooth to $out here?
+  rel "imrm vol16"
+}
+
+
+type=1    # For FAST: 1 = T1w, 2 = T2w, 3 = PD
+
+#Adapted from fsl_anat
+#### BIAS FIELD CORRECTION (main work, although also refined later on if segmentation run)
+# required input: ${T1}
+# output: ${T1}_biascorr  [ other intermediates to be cleaned up ]
+if [ $biasCorrect -eq 1 ] ; then
+    rel "Performing bias field correction." c
+    if [ $strongBias -eq 1 ] ; then
+	rel "Estimating and removing field (stage 1 - large-scale fields)" c
+	niter=5 #FAST iterations
+	smooth=10 # bias field smoothing extent (FWHM) in mm; -l in FAST
+
+	#create a highly smoothed T1 image for getting a rough brain mask
+	quick_smooth "${T1}" "${T1}_s20"
+
+	#divide T1 image by smoothed image
+	rel "fslmaths ${T1} -div ${T1}_s20 ${T1}_hpf"
+
+        #get a rough brain mask - it can be *VERY* rough (i.e. missing huge portions of the brain or including non-brain, but non-background)
+	#use -f 0.1 to err on being over inclusive
+	rel "bet ${T1}_hpf ${T1}_hpf_brain -m -f 0.1"
+
+        # get a smoothed version without the edge effects
+	rel "fslmaths ${T1} -mas ${T1}_hpf_brain_mask ${T1}_hpf_s20" #mask by hpf brain
+	quick_smooth "${T1}_hpf_s20" "${T1}_hpf_s20" #smooth masked img
+	quick_smooth "${T1}_hpf_brain_mask" "${T1}_initmask_s20"
+	rel "fslmaths ${T1}_hpf_s20 -div ${T1}_initmask_s20 -mas ${T1}_hpf_brain_mask ${T1}_hpf2_s20"
+	rel "fslmaths ${T1} -mas ${T1}_hpf_brain_mask -div ${T1}_hpf2_s20 ${T1}_hpf2_brain"
+
+	# make sure the overall scaling doesn't change (equate medians)
+	med0=$( fslstats ${T1} -k ${T1}_hpf_brain_mask -P 50 )
+	med1=$( fslstats ${T1}_hpf2_brain -k ${T1}_hpf_brain_mask -P 50 )
+	rel "fslmaths ${T1}_hpf2_brain -div $med1 -mul $med0 ${T1}_hpf2_brain"
+
+	rel "Estimating and removing bias field (stage 2 - detailed fields)" c
+	rel "fast -o ${T1}_initfast -l ${smooth} -b -B -t $type --iter=${niter} --nopve --fixed=0 -v ${T1}_hpf2_brain" #run on T1 with smoothed edge
+	rel "fast -o ${T1}_initfast2 -l ${smooth} -b -B -t $type --iter=${niter} --nopve --fixed=0 -v ${T1}_initfast_restore" #run again on bias corrected image from above
+	rel "fslmaths ${T1}_hpf_brain_mask ${T1}_initfast2_brain_mask" #copy mask for fast to match weak correction below
+    else
+	niter=10  #FAST iterations
+	smooth=20 #bias field smoothing extent (FWHM) in mm; -l in FAST
+
+	#for weak bias field correction, do not iterate the FAST as above (initfast, initfast2)
+        # get a rough brain mask - it can be *VERY* rough (i.e. missing huge portions of the brain or including non-brain, but non-background) 
+	# use -f 0.1 to err on being over inclusive
+	rel "bet ${T1} ${T1}_initfast2_brain -m -f 0.1"
+	rel "fslmaths ${T1}_initfast2_brain ${T1}_initfast2_restore"
+    fi
+
+    # Run FAST (again) to improve bias field
+    rel "fast -o ${T1}_fast -l ${smooth} -b -B -t $type --iter=${niter} --nopve --fixed=0 -v ${T1}_initfast2_restore"
+    
+    rel "Extrapolating bias field from central region" c
+
+    # use the latest fast output
+    rel "fslmaths ${T1} -div ${T1}_fast_restore -mas ${T1}_initfast2_brain_mask ${T1}_fast_totbias"
+    rel "fslmaths ${T1}_initfast2_brain_mask -ero -ero -ero -ero ${T1}_initfast2_brain_mask2"
+    rel "fslmaths ${T1}_fast_totbias -sub 1 ${T1}_fast_totbias" #subtract 1 from total bias
+    rel "fslsmoothfill -i ${T1}_fast_totbias -m ${T1}_initfast2_brain_mask2 -o ${T1}_fast_bias"
+    rel "fslmaths ${T1}_fast_bias -add 1 ${T1}_fast_bias" #re-add 1
+    rel "fslmaths ${T1}_fast_totbias -add 1 ${T1}_fast_totbias"
+    rel "fslmaths ${T1} -div ${T1}_fast_bias ${T1}_biascorr" #bias-corrected structural
+else
+    #no bias correction -- just copy T1 as is
+    rel "Skipping bias field correction." c
+    rel "fslmaths ${T1} ${T1}_biascorr"
+fi
+
 
 
 ###############
-#brain extract
-#append _bet to whatever is passed in for nifti
-echo "----------------"
-echo "Running brain extraction"
-echo "bet ${niftiBase} ${niftiBase}_bet.nii.gz ${betOpts}"
-echo "----------------"
+#brain extract structural for FLIRT
+rel "Running brain extraction" c
+rel "bet ${T1} ${T1}_bet_initial ${betOpts}"
 
-bet ${niftiBase} ${niftiBase}_bet ${betOpts}
 
 ##############
-#warp structural to Stereotaxic space (MNI or Talairach)
+#warp structural to standard space (MNI or Talairach)
 #first conduct affine (linear) warping to get linear warp coefficients
 #note that flirt works with betted reference brain, but fnirt prefers unbetted
-flirtAffCoef="${niftiBase}_to_${reference}_affine.mat"
+flirtAffCoef="${T1}_to_${reference}_affine.mat"
 
-echo "----------------"
-echo -e "Running affine (linear) warp to extract warp coefficients"
-echo -e "flirt -in ${niftiBase}_bet -ref $bettedRefBrain -omat ${flirtAffCoef} -out ${niftiBase}"_warp_linear" -v"
-echo "----------------"
-
-flirt -in ${niftiBase}_bet -ref $bettedRefBrain -omat ${flirtAffCoef} -out ${niftiBase}"_warp_linear" -v
-
-#omitting flirt parameter -out, which creates a linearly-warped brain.
-#We only need the coefficients for fnirt, created by -omat
-#see here: http://www.fmrib.ox.ac.uk/fsl/fnirt/index.html
-#-out mprage_tlrc_affine
+if [ $( imtest "${T1}_warp_linear" ) -eq 0 ]; then
+    rel "Running affine (linear) transformation for structural -> template" c
+    rel "flirt -in ${T1}_bet_initial -ref $bettedRefBrain -omat ${flirtAffCoef} -out ${T1}\"_warp_linear\" -dof 12 -interp spline -v"
+fi
 
 ###############
 #now nonlinear warp
-#note that Robert's original mprage2tlrc_nonlinear script used the betted brain,
-#but the documentation suggests using the non-bet brain.
 
-echo "----------------"
-echo "Running nonlinear transformation to warp mprage to: ${reference}"
-echo -e "fnirt --ref=$unbettedRefBrain --refmask=$refMask --in=${niftiBase} --aff=$flirtAffCoef --iout=$outputFile --config=$fnirtConfig --logout=${niftiBase}_to_${reference}_fnirt_settings.log -v"
-echo "----------------"
+rel "Running nonlinear transformation to warp mprage to: ${reference}" c
+rel "Using warp resolution of $wr mm" c
 
-fnirt --ref=$unbettedRefBrain --refmask=$refMask --in=${niftiBase} --aff=$flirtAffCoef --iout=$outputFile --config=$fnirtConfig --logout=${niftiBase}_to_${reference}_fnirt_settings.log -v
+#Note: fsl_anat generates a mask from the template brain_mask by -fillh -dilF.
+#Previously FSL tools used the dil mask that had been dilated 2x -dilF -dilF.
+#Not sure of the relevance (the fsl_anat way leads to a smaller mask).
+if [ $( imtest $outputFile ) -eq 0 ]; then
+    rel "fnirt --ref=$unbettedRefBrain --refmask=$refMask --in=${T1}_biascorr --aff=$flirtAffCoef \
+	--fout=${outputFile}\"_warpfield\" --cout=${T1}\"_warpcoef\" --iout=$outputFile \
+	--config=$fnirtConfig --logout=${T1}_to_${reference}_fnirt_settings.log --warpres=${wr},${wr},${wr} -v"
+fi
+
+rel "Generating brain mask based on inverse warp from template" c
+rel "invwarp --ref=${T1}_biascorr -w ${T1}_warpcoef -o template_to_subject_warpcoef"
+nodil=$( echo $refMask | sed -e 's/\(.*\)_dil$/\1/' )
+rel "applywarp --interp=nn --in=$nodil --ref=${T1}_biascorr -w template_to_subject_warpcoef -o ${T1}_biascorr_brain_mask"
+rel "fslmaths ${T1}_biascorr_brain_mask -fillh ${T1}_biascorr_brain_mask"
+rel "fslmaths ${T1}_biascorr -mas ${T1}_biascorr_brain_mask ${T1}_bet" #will be used as -mprage_bet in preprocessFunctional
 
 if [[ -f "${bettedRefBrain}.nii" && ! -h ./template_brain.nii ]]; then
     ln -s "${bettedRefBrain}.nii" ./template_brain.nii
@@ -256,59 +440,61 @@ elif [[ -f "${bettedRefBrain}.nii.gz" && ! -h ./template_brain.nii.gz ]]; then
     ln -s "${bettedRefBrain}.nii.gz" ./template_brain.nii.gz
 fi
 
+#Perform tissue segmentation here to avoid running FAST multiple times with parallel preprocessFunctional jobs
+#WM segmentation is used for bbr co-registration
+#also improves bias field correction here by running again
+if [ $( imtest ${T1}_bet_fast ) -eq 0 ]; then
+    #adapted from fsl_anat
+    # required input: ${T1}_biascorr ${T1}_biascorr_brain ${T1}_biascorr_brain_mask
+    # output: ${T1}_biascorr ${T1}_biascorr_brain (modified) ${T1}_fast* (as normally output by fast) ${T1}_fast_bias (modified)
+    rel "Performing tissue-type segmentation" c
 
+    rel "fast -o ${T1}_bet_fast -n 3 -g -H 0.1 -l ${smooth} -b -B -t $type --iter=${niter} ${T1}_bet"
+    rel "immv ${T1}_biascorr ${T1}_bet_initbias" #bias field correction up to this point
+    rel "fslmaths ${T1}_bet_fast_restore ${T1}_bet" #use the further refinement of the bias field as the mprage_bet output
 
-######
-#LEFTOVERS
-######
-#Previous attempts at dicom to nifti conversion
-#dcm2nii abandoned because of strange behavior orienting images and creating multiple nii files.
+    # extrapolate bias field and apply to the whole head image
+    rel "fslmaths ${T1}_bet_initbias -div ${T1}_bet_fast_restore -mas ${T1}_biascorr_brain_mask ${T1}_fast_totbias"
+    rel "fslmaths ${T1}_fast_totbias -sub 1 ${T1}_fast_totbias"
+    rel "fslsmoothfill -i ${T1}_fast_totbias -m ${T1}_biascorr_brain_mask -o ${T1}_fast_bias"
+    rel "fslmaths ${T1}_fast_bias -add 1 ${T1}_fast_bias"
+    rel "fslmaths ${T1}_fast_totbias -add 1 ${T1}_fast_totbias"
+    rel "fslmaths ${T1}_bet_initbias -div ${T1}_fast_bias ${T1}_biascorr"
 
-#dcm2nii ${dicomPattern}
+    # regenerate the standard space structural with the updated bias field correction applied
+    rel "applywarp -i ${T1}_biascorr -w ${T1}_warpcoef --ref=$unbettedRefBrain -o $outputFile --interp=spline"
+    rel "fslmaths ${T1}_bet_fast_pve_2 -thr 0.5 -bin ${T1}_bet_fast_wmseg" #create binary WM mask
+fi
 
-#initial dimon attempt
-#dimon -infile_pattern "${dicomPattern}" -GERT_Reco -quit -gert_write_as_nifti -gert_create_dataset -gert_to3d_prefix ${nifti}_temp
+#create png to check registration
+#invwarp -w "${T1}_warpcoef" -o warpcoef_inv -r "${T1}_bet"
+applywarp --ref="$unbettedRefBrain" --in="${T1}_bet" --warp="${T1}_warpcoef" --interp=spline --out=mprage_bet_warped
 
-#second dimon attempt
-#dimon \
-#-infile_pattern "${dicomPattern}" \
-#-GERT_Reco \
-#-quit \
-#-gert_write_as_nifti \
-#-gert_create_dataset \
-#-gert_to3d_prefix ${nifti}_temp
+#note: first input to slicer is rendered image, second is overlay
+slicer mprage_bet_warped "$bettedRefBrain" -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
+    -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
+    -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png
 
-#various unsuccessful (depending on dataset) attempts to rename and identify correct output from dcm2nii
-#dcm2nii makes a file with a funky name. Rename to mprage
-# nifti="mprage.nii.gz" #used in bet step.
-# numNifti=$( ls *.nii.gz | wc -l )
-# if [ $numNifti -gt 1 ]; then
-#     if [ -f o*.nii.gz ]; then
-#         mv o*.nii.gz $nifti
-#         echo "Using oriented nifti output from dcm2nii"
-#     else
-#         echo "Multiple nifti files present in mprage directory. Cannot determine correct target."
-#         exit 1
-#     fi
-# else
-#     mv *.nii.gz $nifti
-# fi
+pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png highres2standard1.png
 
-#niftiFiles=$( ls *.nii.gz  )
-#correctNiftiFile=''
-#if [ ${#niftiFiles[@]]} -ge 1 ]; then    
-#  for niftiFile in ${niftiFiles[@]}; do
-# 	if [[ ${niftiFile} =~ ^[0-9]{8}_[0-9]{9}-[0-9]{4}-[0-9]{5}.*\.nii\.gz ]]; then
-#  		correctNiftiFile=${niftiFile}
-#  	fi
-#  done 
-#fi
+montage -label "Subject brain with template outline overlaid" highres2standard1.png -pointsize 30 -geometry +0+0 highres2standard1.png
 
-#if [[ ${correctNiftiFile} != ''  ]]; then
-#	echo "Using ${correctNiftiFile} as anatomical data"
-#	#mv ${correctNiftiFile} ${nifti}
-#	3dWarp -deoblique -prefix ${nifti} ${correctNiftiFile}
-#else
-#  	echo "Could not determine correct .nii.gz anatomical file. DCM2NII failed?"
-# 	exit 1
-#fi
+slicer "$bettedRefBrain" mprage_bet_warped -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
+    -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
+    -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png
+
+pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png highres2standard2.png
+
+montage -label "Template with subject brain outline overlaid" highres2standard2.png -pointsize 30 -geometry +0+0 highres2standard2.png
+
+pngappend highres2standard1.png - highres2standard2.png struct_to_template.png; 
+rm -f sl?.png highres2standard2.png  highres2standard1.png
+imrm mprage_bet_warped
+
+#generate symbolic link to skull-stripped mprage file for compatibility with FSL tools
+ln -sfn "${T1}_bet.nii.gz" "${T1}_brain.nii.gz"
+
+if [ $cleanup -eq 1 ]; then
+    rel "Cleaning up preprocessMprage intermediate files." c
+    cleanup_preprocessMprage
+fi

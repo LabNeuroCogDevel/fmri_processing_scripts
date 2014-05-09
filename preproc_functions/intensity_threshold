@@ -1,0 +1,101 @@
+#!/bin/bash
+
+function intensity_threshold {
+    #THRESHOLDING LOW INTENSITY VOXELS
+    if [[ ! -f ".thresholding_complete" && $thresholdMethod = "10" ]]; then
+	rel "Thresholding 4d functionals by masking any voxel below the 10th percentile \(distribution is non-zero voxels\)." c
+
+	#####
+	#calculate the 10th percentile of non-zero voxels
+	#input: slice-timed, motion-corrected, skull-stripped 4D functionals
+
+	P_10=$( fslstats "${prefix}${funcFile}" -P 10 )
+
+	#####
+	#for each voxel, calculate the minimum activation value for the
+	#run (i.e., over time) and create a single volume with all minima.
+	#output: kmt_$funcFile_Tmin.nii.gz
+
+	rel "fslmaths \"${prefix}${funcFile}\" -Tmin \"${prefix}${funcFile}_Tmin\""
+
+	#####
+	#Threshold the minimum activation volume by zeroing all values below the
+	#10th percentile in the 4D file.
+	#input: single volume with minimum activation values over the run: kmt_$funcFile_Tmin.nii.gz
+	#output: single volume with minimum activation values over the run, with any value < 10th percentile set to 0: kmt_$funcFile_Tmin_10pctThr.nii.gz
+
+	rel "fslmaths \"${prefix}${funcFile}_Tmin\" -thr $P_10 \"${prefix}${funcFile}_Tmin_10pctThr\""
+
+	#####
+	#Create a binary mask from the thresholded minimum activation volume,
+	#where any non-zero value receives a value of 1 in the mask, and any 0 value
+	#is 0 in the mask. Essentially, any
+	#voxel that was below the 10th percentile in the original data will be zeroed.
+	#output: mask_$funcFile_Tmin_10pctThr.nii.gz
+
+	rel "fslmaths \"${prefix}${funcFile}_Tmin_10pctThr\" -bin \"mask_${funcFile}_Tmin_10pctThr\" -odt char"
+
+	#####
+	#Mask the slice-timed, motion-corrected, skull-stripped 4D functionals
+	#file using the mask created above.
+	#output: slice-timed, motion-corrected, skull-stripped, 10th percentile thresholded 4D file: kmt_$funcFile_masked.nii.gz
+
+	rel "fslmaths \"${prefix}${funcFile}\" -mas \"mask_${funcFile}_Tmin_10pctThr\" \"${prefix}${funcFile}_masked\""
+
+	#threshMask="mask_${funcFile}_Tmin_10pctThr"
+
+	rel "date > .thresholding_complete"
+
+    elif [[ ((! -f ".thresholding_complete") && $thresholdMethod = "98_2") || ( ! -f .median_intensity || ! -f .pct2 ) ]]; then
+
+	p_2=$( fslstats "${prefix}${funcFile}" -p 2 )
+	p_98=$( fslstats "${prefix}${funcFile}" -p 98 )
+
+	echo $p_2 > .pct2 #used by susan in smoothing
+
+	#note that this threshold calculation is based on FEAT's brain/background threshold of 10
+	#the FEAT calculation is p2 + (brain_thresh * (p98 -p2))/100. When brain_thresh is 10, cancels a zero.
+	thresh=$( echo "scale=5; $p_2 + ($p_98 - $p_2)/10" | bc )
+
+	#create mask that zeroes anything below threshold.
+	#because this mask is computed on the skull-stripped data, it also reflects skull stripping
+	rel "fslmaths \"${prefix}${funcFile}\" -thr $thresh -Tmin -bin \"${prefix}${funcFile}_98_2_mask\" -odt char"
+
+	#calculate median intensity (after dumping thresholded voxels) -- compute this prior to dilation to avoid inclusion of 0 voxels
+	#Echoing the FEAT approach, compute this on pre-bet data, with mask applied. Should have little or no effect since the mask 
+	#effectively does BET since it was generated from post-BET data.
+	median_intensity=$( fslstats "${preBet}" -k "${prefix}${funcFile}_98_2_mask" -p 50 )
+
+	echo $median_intensity > .median_intensity #used by susan in smoothing
+
+	#dilate mask (drawing from FEAT). This creates a liberal mask unlikely to delete brain voxels
+	#Logic and dilF command not well documented in FSL.
+	rel "fslmaths \"${prefix}${funcFile}_98_2_mask\" -dilF \"${prefix}${funcFile}_98_2_mask_dil1x\""
+
+	#susan requires the 2nd pctile and the median intensity to auto-calculate brightness threshold
+	#but if 98_2 thresholding requested, then actually apply the resulting mask
+	if [[ $thresholdMethod = "98_2" && ! -f ".thresholding_complete" ]]; then
+	    rel "Thresholding 4d functionals by zeroing any voxel below the value: 2nd %ile + \(98th %ile - 2nd %ile\)/10" c
+	    rel "This is the default thresholding method used by FSL GUI tools." c
+
+	    #Apr2012: Following FEAT, apply the mask to pre-BET data. The logic is that BET may cut out too much brain.
+	    #We have generated a mask that reflects: 1) Skull strip; 2) removal of low intensity; 3) 1x mask dilation
+	    #If we were to apply this mask to post-BET data, the 1x dilation would essentially be irrelevant since BET would 
+	    #have already zeroed those data.
+	    rel "fslmaths \"${preBet}\" -mas \"${prefix}${funcFile}_98_2_mask_dil1x\" \"${prefix}${funcFile}_masked\""
+	    
+	    rel "date > .thresholding_complete"
+	fi
+    fi
+
+    #load median intensity from file if available (to avoid recalculation)
+    [ -z ${median_intensity} ] && read median_intensity < .median_intensity
+    [ -z ${p_2} ] && read p_2 < .pct2
+
+    #define intensity threshold mask used downstream in pipeline
+    [ $thresholdMethod = "10" ] && threshMask="mask_${funcFile}_Tmin_10pctThr" || threshMask="${prefix}${funcFile}_98_2_mask_dil1x"
+
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+
+}

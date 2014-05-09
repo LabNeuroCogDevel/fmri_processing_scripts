@@ -1,0 +1,93 @@
+#!/bin/bash
+function spatial_smooth {
+
+    preSmooth="${prefix}${funcFile}"
+    [ $no_smooth -eq 0 ] && prefix="s${prefix}"
+    postSmooth="${prefix}${funcFile}${smoothing_suffix}" #in case of -no_smooth, will be same as preSmooth
+
+    if [[ ! -f ".smoothing_complete" && $no_smooth -eq 0 ]]; then
+
+	#Create an extents mask pre-smoothing that ensures that all unsmoothed voxels are sampled at all timepoints. 
+	#Then apply mask after smoothing to ensure well-behaved voxels (i.e., not smoothing a mixture of zero and non-zero voxels).
+	extentsMask=${preSmooth}_extents_mask
+	rel "fslmaths $preSmooth -Tmin -bin ${extentsMask} -odt char"
+    
+	rel "Smoothing functional data with ${smoothing_kernel}mm FWHM" c
+
+	if [ $smoother = "susan" ]; then
+	    dimensionality=3 #smooth in two or three dimensions
+	    susan_thresh=$( echo "scale=5; ($median_intensity - $p_2) * 0.75" | bc )
+	    
+            #recompute mean functional, which is used for susan
+	    rel "fslmaths \"${preSmooth}\" -Tmean \"${preSmooth}_tmean\""
+	    rel "susan \"${preSmooth}\" $susan_thresh $sigma $dimensionality 1 1 \"${preSmooth}_tmean\" $susan_thresh \"${postSmooth}\""
+	    
+	    rel "date > .smoothing_complete"
+
+	elif [ $smoother = "gaussian" ]; then
+
+            #By dumb luck, I stumbled across a paper on correcting edge artifact due to gaussian smoothing:
+            #Maisog and Chmielowska (1998). It turns out that Robert's method below implements their recommendations!
+            #The procedure is:
+            #1) Define a binary mask denoting the voxels to be analyzed (i.e., all brain voxels in, all non-brain out).
+            #2) For safety, apply this mask to the 4d file. (Shouldn't have an impact)
+            #3) Blur the binary mask using the same Gaussian kernel to be used for smoothing. This results
+            #   in a "weighting" volume that has correction factors for voxels toward the edge.
+            #   Essentially, any edge voxel will have a correction factor < 1, which represents degree of falloff due to blurring
+            #   with non-brain near-zero voxels.
+            #4) Apply Gaussian smoothing to the 4d file, dividing the result by the correction volume, thereby correcting for falloff.
+	    
+            #####
+            #Create a binary mask, mask_pre.nii.gz, that is zero for all zero voxels and 1 for any non-zero
+            #voxel (i.e., in vs. out).
+	    
+            #This is essentially just taking the Tmin of the image.
+            #The max 0 says "take the minimum activation or 0, whichever is greater"
+            #Would handle a weird circumstance where an activation was < 0.
+            #But I just diffed the files with and without -max 0 and they are identical.
+	    
+            #This is then used to build a "weighting" mask that handles edge falloff.
+	    
+	    rel "fslmaths \"${preSmooth}\" -max 0 -Tmin -bin \"${preSmooth}_mask_allbrain\" -odt char"
+	    
+            #####
+            #Apply the mask from prior step to the warped functionals.
+            #(note that input and output are the same). This seems more like a safety procedure,
+            #applying a mask that was generated to be 0 v. non-0 should have no effect.
+	    
+	    rel "fslmaths \"${preSmooth}\" -mas \"${preSmooth}_mask_allbrain\" \"${preSmooth}\""
+            #NOTE THAT I JUST TOOK OUT THE ABOVE STEP DIFFED THE FILES.... NO DIFFERENCE. Superfluous (except I guess with negative values)
+	    
+            #####
+            #Blur the in v. out mask using the same sigma for subsequent smoothing.
+            #For the vast majority of the brain, the weight will be 1 (because blurring a 1 with many other 1s is 1).
+            #But toward the edge, there will be falloff as brain and non-brain voxels are mixed.
+            #Thus, at the edges, the weight will drop toward 0.
+            #output: mask_weight.nii.gz
+	    
+            #-odt float is important to retain continuous values
+	    rel "fslmaths \"${preSmooth}_mask_allbrain\" -s $sigma \"${preSmooth}_mask_edgecorrection\" -odt float"
+	    
+            #####
+            #Apply gaussian smoothing to the warped 4D functionals file.
+            #Not entirely clear on the approach here.
+	    
+            #-s $sigma: apply gaussian smoothing (mean filtering) with the specified sigma
+            #-div wkmt_mask_edgecorrection: divides the input image (wkmt_$funcFile) by mask_edgecorrection (i.e., apply edge correction)
+            #-mas wkmt_mask_allbrain: mask output image to retain only brain/nonzero voxels.
+	    
+            #note that it's okay for the edge correction mask not to be masked because of the -mas parameter here.
+	    rel "fslmaths \"${preSmooth}\" -s ${sigma} -div \"${preSmooth}_mask_edgecorrection\" -mas \"${preSmooth}_mask_allbrain\" \"${postSmooth}\""
+	    
+	    rel "date > .smoothing_complete"
+	fi
+
+	#now apply the extents mask to eliminate excessive blurring due to smooth and only retain voxels fully sampled in unsmoothed image
+	rel "fslmaths ${postSmooth} -mul ${extentsMask} ${postSmooth} -odt float"
+
+    fi #end check for smoothing_complete
+
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+
+}

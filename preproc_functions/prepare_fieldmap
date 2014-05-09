@@ -1,0 +1,622 @@
+#!/bin/bash
+
+#if [ $cleanup -eq 1 ]; then savetemps=no; pics=no;
+#else savetemps=yes; pics=yes;
+#fi
+
+
+#function to convert fieldmap to radians per second
+function fieldmap_make_rads_per_sec() {
+
+    rel "Converting fieldmap to rad/s based on fsl_prepare_fieldmap." c
+    rel "NOTE: This is only designed to work with Siemens fieldmap images at the moment!" c
+
+    rr=$( fslstats "$fm_phase" -R )
+    rmin=$( echo $rr | awk '{ print $1 }' )
+    rmax=$( echo $rr | awk '{ print $2 }' )
+    range=$( echo $rmax - $rmin | bc -l );
+    nrange=$( echo $range / 4096 | bc -l );
+    if [ X`echo "if ( $nrange < 2.1 ) { 1 }" | bc -l` = X1 ] ; then
+	if [ X`echo "if ($nrange > 1.9) { 1 }" | bc -l` = X1 ] ; then
+            # MRIcron range is typically twice that of dicom2nifti
+            newphaseroot=${tmpnm}_tmp_phase
+	    rel "Dividing fieldmap phase image by 2 (MRIcron range is typically twice that of dicom2nifti" c
+	    fslmaths "$fm_phase" fieldmap_orig
+            fslmaths "$fm_phase" -div 2 "$fm_phase"
+	fi
+    fi
+    if [ X`echo "if ( $nrange < 0.9 ) { 1 }" | bc -l` = X1 ] ; then
+	echo "Phase image values do not have expected range"
+	echo "Expecting at least 90% of 0 to 4096, but found $rmin to $rmax"
+	echo "Please re-scale or find correct image, or force executation of this script with --nocheck"
+	exit 2
+    fi
+
+    # make brain mask from magnitude image
+    rel "fslmaths FM_UD_fmap_mag_brain -thr 0.00000001 -bin mag_mask"
+
+    # Convert phasemap to radians
+    rel "fslmaths \"$fm_phase\" -div 2048 -sub 1 -mul 3.14159 -mas mag_mask \"${fm_phase}_radians\" -odt float"
+
+    # Unwrap phasemap
+    rel "prelude -p \"${fm_phase}_radians\" -a FM_UD_fmap_mag_brain -m mag_mask -o \"${fm_phase}_radians_unwrapped\" -v"
+
+    # Convert to rads/sec (dTE is echo time difference)
+    rel "fslmaths \"${fm_phase}_radians_unwrapped\" -div $TEdiff \"${fm_phase}_rps\" -odt float" #radians per second
+
+    # Call FUGUE to extrapolate from mask (fill holes, etc)
+    rel "fugue --loadfmap=\"${fm_phase}_rps\" --mask=mag_mask --savefmap=${fm_phasedir}/FM_UD_fmap" #FM_UD_fmap is the fieldmap used in subsequent processing
+
+    #remove magnitude mask
+    rel "imrm mag_mask"
+
+    #NOTE: fsl_prepare_fieldmap de-medians the fieldmap and despikes the edges.
+    #These steps, however, are already performed standard in FEAT, and are included below accordingly.
+    #Thus, de-median and de-spike at this point would be redundant.
+
+}
+
+
+### Worker function for preparation of fieldmap.
+# Steps:
+# 1)  Source fm_cfg file to define relevant fieldmap details (e.g., TEdiff)
+# 2)  Check for required files and variables
+# 3)  Reorient fieldmap and magnitude to same orientation as template (RPI/LPI) so that EPI and FM are similarly oriented
+# 4)  Convert fieldmap to radians per second
+# 5)  Create brain mask for fieldmap based on magnitude image
+# 6)  Despike edges of fieldmap (to avoid extreme voxel shifts due to rapid transitions at edge of fieldmap)
+# 7)  De-median the fieldmap
+# 8)  Create png image of fieldmap + magnitude
+# 9)  Generate signal loss estimate (sigloss) based on fieldmap, then generate distorted fieldmap images to match EPI distortion (forward warp)
+# 10) Create png of sigloss overlaid on magnitude
+# 11) Align magnitude image with EPI to generate fieldmap
+# 12) Undistort target functional (mc_target) based on EPI-aligned fieldmap, and generate voxel shift map
+# 13) Generate image of shift map overlaid on fieldmap magnitude image
+function prepare_fieldmap {
+    # FM = space of fieldmap
+    # EF = space of mc_target
+    # UD = undistorted (in any space)
+    # D  = distorted (in any space)
+
+    if [[ $bbrCapable -eq 1 && $funcStructFlirtDOF = "bbr" && -n "$fm_cfg" ]]; then
+	createBBRFmapWarp=1 #generate func -> struct warp that includes FM unwarping (via BBR -fieldmap)
+    else
+	createBBRFmapWarp=0
+    fi
+
+    [ -z "$fm_phase" ] && return 0 #skip fieldmap 
+
+    # Allow --config to be a shorthand lookup, defined here, rather than a config file
+    case $fm_cfg in
+	cogemo|multimodal|wpc5640 ) fm_cfg=$(dirname $0)/fmcfg/cogemo.fmcfg;;
+	clock|specc|wpc6290 )       fm_cfg=$(dirname $0)/fmcfg/MB5_TR1.0_TE30_60slc.fmcfg;;
+    esac
+    
+    # source config file or warn
+    [ -n "$fm_cfg" -a -r "$fm_cfg" ] && source $fm_cfg || ( echo "ERROR: readable config file not provided or understood ($fm_cfg)" && exit 1 )
+
+    if [[ -n "${fm_phase}" && -f ".prepare_fieldmap_complete" ]]; then
+	return 0 #preparefieldmap already completed
+    fi
+
+    local funcdir=$(pwd) #define working directory for functional processing
+
+    # Make an unwarp temps working directory
+    tempsdir=$(pwd)/unwarptemps
+    [ -d $tempsdir ] && rm -r $tempsdir
+    mkdir $tempsdir
+
+    # check that all required variables exist (defined in cfg)
+    for inputName in mcMats fm_phase fm_magnitude epiTE dwelltime unwarpdir TEdiff signallossthresh scanner; do
+	inputVal=${!inputName}
+	[ -z "${inputVal}" ] && echo "$inputName cannot be empty" && exit 1
+    done
+
+    #Apr2014: When phase encoding is in the X direction, there is a disjunction between the unwarpdir for FUGUE versus convertwarp and flirt -bbr -pedir.
+    #Corresponded with Mark Jenkinson and he acknowledged the bug. This workaround assumes that the direction in the cfg file gives proper results for
+    #convertwarp and flirt -bbr -pedir, but that the direction needs to be reversed for FUGUE. This workaround pertains to some CogEmo data using 
+    #the Northwestern OFC and my K01 pilot data.
+    if [ $unwarpdir = x ]; then
+	rel "Reversing phase encode direction for use in FUGUE. convertwarp and flirt -pedir will use x, whereas FUGUE will use x-" c
+	fugue_unwarpdir=x-
+    elif [ $unwarpdir = x- ]; then
+	rel "Reversing phase encode direction for use in FUGUE. convertwarp and flirt -pedir will use x-, whereas FUGUE will use x" c
+	fugue_unwarpdir=x
+    else
+	fugue_unwarpdir=$unwarpdir
+    fi
+
+    #handle dicom-to-nifti conversion of phase and magnitude
+    local fm_phasedir=$( dirname "$fm_phase" )
+    local fm_phasebase=$( basename "$fm_phase" ) 
+    local fm_magnitudedir=$( dirname "$fm_magnitude" )
+    local fm_magnitudebase=$( basename "$fm_magnitude" )
+
+    #randomly sleep 0-2 seconds to avoid lock file collisision
+    #Apr2014: I'm not really sure if this is necessary... problems may have emerged from running fslreorient2std simultaneously on originals...
+    #Still, for 2 seconds, I'll keep it.
+    sleep $(echo "scale=9; $RANDOM/32767*2"|bc)s
+
+    #Collision occurs among multiple preprocessFunctional calls trying to perform the fieldmap preparation simultaneously
+    #because the fieldmap files are shared. Use a lock file with a wait command to get around this problem (I hope).
+    if [[ "$fm_phasebase" =~ .*\*.* && ! -f ".fieldmap_phase" ]]; then
+	#if the lock file is present, sleep until complete
+	while [ -f "${fm_phasedir}/.fmphase_inprogress" ]; do
+	    sleep 1
+	done
+
+	if [ -f "${fm_phasedir}/.fieldmap_phase" ]; then
+	    #processing of fieldmap phase already completed elsewhere
+	    #simply copy this file to the functional directory
+	    cp "${fm_phasedir}/.fieldmap_phase" "${funcdir}/.fieldmap_phase"
+	else
+	    touch "${fm_phasedir}/.fmphase_inprogress" #lock for processing
+	fi
+    fi
+
+    if [[ "$fm_magnitudebase" =~ .*\*.* && ! -f ".fieldmap_magnitude" ]]; then
+	#if the lock file is present, sleep until complete
+	while [ -f "${fm_magnitudedir}/.fmmagnitude_inprogress" ]; do
+	    sleep 1
+	done
+
+	if [ -f "${fm_magnitudedir}/.fieldmap_magnitude" ]; then
+	    #processing of fieldmap magnitude already complete elsewhere
+	    #simply copy this file to the functional directory
+	    cp "${fm_magnitudedir}/.fieldmap_magnitude" "${funcdir}/.fieldmap_magnitude"
+	else
+	    touch "${fm_magnitudedir}/.fmmagnitude_inprogress" #lock for processing
+	fi
+    fi
+
+    #check whether the number of dicoms in the magnitude directory is 2x the phase directory.
+    #if not, switch phase and magnitude.
+    if [[ "$fm_phasebase" =~ .*\*.* && "$fm_magnitudebase" =~ .*\*.* && 
+		! -f ".fieldmap_phase" && ! -f ".fieldmap_magnitude" ]]; then
+	cd $fm_phasedir
+	phase_ndicoms=$( ls $fm_phasebase | wc -l )
+	cd - > /dev/null
+
+	cd $fm_magnitudedir
+	magnitude_ndicoms=$( ls $fm_magnitudebase | wc -l )
+	cd - > /dev/null
+
+	if [ $( echo "2*${magnitude_ndicoms} == ${phase_ndicoms}" | bc -l ) -eq 1 ]; then
+	    local tmp_mag="$fm_magnitude"
+	    fm_magnitude="$fm_phase"
+	    fm_phase="$tmp_mag"
+
+	    local fm_phasedir=$( dirname "$fm_phase" ) #redefine the dir and base variables
+	    local fm_phasebase=$( basename "$fm_phase" ) 
+	    local fm_magnitudedir=$( dirname "$fm_magnitude" )
+	    local fm_magnitudebase=$( basename "$fm_magnitude" )
+
+	    rel "You seem to have reversed the directories for the fieldmap phase and magnitude images." c
+	    rel "I will switch the directories so that the magnitude directory has twice as many dicoms as the phase directory." c
+	    rel "Phase directory is now: $fm_phase" c
+	    rel "Magnitude directory is now: $fm_magnitude" c
+	fi
+    fi
+
+    if [ -f ".fieldmap_phase" ]; then
+	read fm_phase < .fieldmap_phase
+	rel "Using fieldmap phase $fm_phase from file $fm_phasedir/.fieldmap_phase" c
+    elif [[ "$fm_phase" =~ .*\*.* ]]; then
+	rel "Converting fieldmap phase image to NIfTI." c
+	rel "Assuming all files in $fm_phasedir belong to phase image." c
+	
+	cd $fm_phasedir
+	dimon "$fm_phasebase" fm_phase #convert dicom to nifti using Dimon
+	rel "tar cvzf fm_phase_dicom.tar.gz $( ls $fm_phasebase )" && rel "rm -f ./$fm_phasebase" #archive dicoms
+	cd - > /dev/null
+
+	fm_phase="${fm_phasedir}/fm_phase" #update fm_phase to point to NIfTI.
+	echo "${fm_phasedir}/fm_phase" > "${funcdir}/.fieldmap_phase" #copy nifti location into functional directory
+	echo "${fm_phasedir}/fm_phase" > "${fm_phasedir}/.fieldmap_phase" #echo nifti location into phase directory for other processes to see
+    fi
+
+    if [ -f ".fieldmap_magnitude" ]; then
+	read fm_magnitude < .fieldmap_magnitude
+	rel "Using fieldmap magnitude $fm_magnitude from file $fm_magnitudedir/.fieldmap_magnitude" c
+    elif [[ "$fm_magnitude" =~ .*\*.* ]]; then
+	rel "Converting fieldmap magnitude images to NIfTI." c
+	rel "Testing for unique TEs in $fm_magnitudedir." c
+	
+	cd $fm_magnitudedir
+
+	local dcmfiles=($( ls $fm_magnitudebase ))
+	local echonum=($( dicom_hdr $fm_magnitudebase | grep -i "ACQ Echo Number" | perl -pe 's:.*ACQ Echo Number//(\d+).*:\1:' ))
+	local uniqechos=($( printf "%s\n" "${echonum[@]}" | sort -u )) #need to print newlines after each echo so sort recognizes as multiple lines
+	local numechos=${#uniqechos[@]}
+
+	if [ $numechos -eq 1 ]; then
+	    rel "Only one echo detected based on ACQ Echo Number in DICOM header. Converting all $fm_magnitudebase in $fm_magnitudedir to one NIfTI." c
+	    dimon "$fm_magnitudebase" fm_magnitude #convert dicom to nifti using Dimon
+	    fm_magnitude="${fm_magnitudedir}/fm_magnitude" #update fm_magnitude to point to NIfTI.
+	    rel "tar cvzf fm_magnitude_dicom.tar.gz $( ls $fm_magnitudebase )" && rel "rm -f ./$fm_magnitudebase" #archive dicoms
+	    echo "${fm_magnitudedir}/fm_magnitude" > "${funcdir}/.fieldmap_magnitude"
+	    echo "${fm_magnitudedir}/fm_magnitude" > "${fm_magnitudedir}/.fieldmap_magnitude" #copy into magnitude directory for other processes to see
+	elif [ $numechos -eq 2 ]; then
+	    rel "Two echos detected based on ACQ Echo Number in DICOM header." c
+	    rel "Moving DICOMs for each echo into separate directories for NIfTI conversion." c
+
+	    rel "mkdir echo1"
+	    rel "mkdir echo2"
+
+	    #loop over echonum and dcmfiles, moving files to the right echo dir
+	    for i in "${!dcmfiles[@]}"; do
+		[ ${echonum[$i]} -eq ${uniqechos[0]} ] && rel "mv \"${dcmfiles[$i]}\" \"echo1/\""
+		[ ${echonum[$i]} -eq ${uniqechos[1]} ] && rel "mv \"${dcmfiles[$i]}\" \"echo2/\""
+	    done
+
+	    cd echo1/
+	    dimon "$fm_magnitudebase" fm_magnitude_echo1 #convert dicom to nifti using Dimon
+	    rel "tar cvzf fm_magnitude_echo1_dicom.tar.gz $( ls $fm_magnitudebase )" && rel "rm -f ./$fm_magnitudebase" #archive dicoms
+	    cd - > /dev/null
+
+	    cd echo2/
+	    dimon "$fm_magnitudebase" fm_magnitude_echo2 #convert dicom to nifti using Dimon
+	    rel "tar cvzf fm_magnitude_echo2_dicom.tar.gz $( ls $fm_magnitudebase )" && rel "rm -f ./$fm_magnitudebase" #archive dicoms
+	    cd - > /dev/null
+
+	    rel "Using first echo as magnitude image for fieldmap processing." c
+	    fm_magnitude="${fm_magnitudedir}/echo1/fm_magnitude_echo1" #update fm_magnitude to point to NIfTI.
+
+	    echo "${fm_magnitudedir}/echo1/fm_magnitude_echo1" > "${funcdir}/.fieldmap_magnitude"
+	    echo "${fm_magnitudedir}/echo1/fm_magnitude_echo1" > "${fm_magnitudedir}/.fieldmap_magnitude" #copy into magnitude directory for other processes to see.
+	else
+	    echo "Number of echos detected is: $numechos. Unsure what to do!"
+	    exit 1
+	fi
+
+	cd "$funcdir" > /dev/null
+
+    fi
+
+    # check that required files exist
+    for fileVar in mprageBet fm_phase fm_magnitude logFile; do
+	filePath=${!fileVar} # path is the value of the variables we are iterating through
+
+	[ ! -r "${filePath}" -a ! -r "${filePath}.nii"  -a ! -r "${filePath}.nii.gz"  ] && echo "$fileVar ($filePath[.nii[.gz]]) DNE" && exit 1
+
+	# make paths absolute
+	cd $(dirname $filePath) 
+	filePath=$(pwd)/$(basename $filePath) 
+
+	# place absolute path back into the file variable name
+	printf -v $fileVar "$filePath" # eg functional="../functional.nii.gz"
+	# jump back to the directory we were in before setting abs path
+	cd - 1>/dev/null
+    done
+
+    #make sure that magnitude image is without extension (to allow for suffixes below)
+    fm_magnitude=$( remove_ext "$fm_magnitude" )
+    fm_phase=$( remove_ext "$fm_phase" )
+
+    # make storage directories
+    [ -d unwarp ] && rm -r unwarp
+
+    ## setup
+    rel "Copying fieldmap ingredients to FSL namespace images" c
+    mkdir unwarp && cd $_
+
+    rel "fslmaths ../mc_target       EF_D_mc_target"
+    rel "fslmaths $fm_magnitude      FM_UD_fmap_mag"
+    rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
+
+    ### STEP 1: Convert fieldmap to rad/s
+    if [ $( imtest "${fm_phasedir}/FM_UD_fmap" ) -eq 0 ]; then
+	#conversion to rads/sec not complete
+	fieldmap_make_rads_per_sec # creates master FM_UD_fmap in $fm_phasedir
+    fi
+
+    rel "fslmaths \"${fm_phasedir}/FM_UD_fmap\" FM_UD_fmap" #copy fieldmap in rads/sec to unwarp/
+
+    #used to require cfg file to specify code to convert fieldmap to rad/s, but better to standardize since conversion should be same on Siemens
+    #rel "fieldmapToRS $fm_phase"   # FM_UD_fmap
+
+    #now that we have a phase map in rads/sec ($fm_phasedir/FM_UD_fmap) and no longer have to worry about concurrent writes,
+    #remove the lock files so that other processes can proceed.
+    [ -f "${fm_phasedir}/.fmphase_inprogress" ] && rm -f "${fm_phasedir}/.fmphase_inprogress"
+    [ -f "${fm_magnitudedir}/.fmmagnitude_inprogress" ] && rm -f "${fm_magnitudedir}/.fmmagnitude_inprogress"
+
+    #change image orientation to LPI/RPI to match EPI (ease registration)
+    #N.B. This needs to be run on the local copies, not in $fm_phasedir to avoid file collisions during parallel runs of preprocessFunctional
+    rel "fslreorient2std FM_UD_fmap FM_UD_fmap"
+    rel "fslreorient2std FM_UD_fmap_mag FM_UD_fmap_mag"
+    rel "fslreorient2std FM_UD_fmap_mag_brain FM_UD_fmap_mag_brain"
+
+    globalcount=-1 #use global count of -1 since these are not steps per se, just initial snapshots
+    _picture EF_D_mc_target       "Initial"; globalcount=-1
+    _picture FM_UD_fmap           "Initial"; globalcount=-1 
+    _picture FM_UD_fmap_mag       "Initial"; globalcount=-1
+    _picture FM_UD_fmap_mag_brain "Initial (copy of FM mag)"; 
+
+    # creates EF_D_mc_target.nii  FM_UD_fmap_mag.nii   FM_UD_fmap.nii
+
+    ### STEP 2: Create and refine mask for fieldmap based on magnitude image.
+    rel "Creating masks" c
+
+    # Create a binary mask of the non-zero voxels of the fieldmap magnitude image (which was skull-stripped above)
+    rel "fslmaths FM_UD_fmap_mag_brain -bin FM_UD_fmap_mag_brain_mask -odt short"
+
+    #the steps below (up through re-creation of FM_UD_fmap_mag_brain_mask) appear to try to handle the case where
+    #either the fmap_rads or fmap_mag images have already been masked elsewhere, and we want to recreate a reasonable mask.
+
+    # abs the original fieldmap, binarize, then mask based on the 1/0 magnitude image, invert by *-1, + 1, binarize (to be safe).
+    # The result, FM_UD_fmap_mag_brain_mask_inv, is the non-zero voxels of the *fieldmap* (not magnitude) inverted such that
+    # brain-ish voxels are 0 and non-brain voxels are 1.
+    # This may lead to a circumstance where there are brain voxels of interest that have value 0 in the fieldmap. (patchy holes)
+    rel "fslmaths FM_UD_fmap -abs -bin -mas FM_UD_fmap_mag_brain_mask -mul -1 -add 1 -bin FM_UD_fmap_mag_brain_mask_inv"
+
+    _picture FM_UD_fmap_mag_brain_mask "binary mask of skullstripped fmap_mag "
+    _picture FM_UD_fmap_mag_brain_mask_inv "non brain regions"
+
+    # To handle the above scenario of 0-valued voxels in fieldmap, use cluster to obtain the largest cluster of non-zero
+    # (non-brain) voxels in the above mask. The output of cluster is an integer-valued image with masks for each spatial cluster
+    rel "cluster -i FM_UD_fmap_mag_brain_mask_inv -t 0.5 --no_table -o FM_UD_fmap_mag_brain_mask_idx"
+
+    # This will grab the largest spatial cluster (the max of the range, -R), which refers to the biggest non-brain cluster
+    outsideIdx=$(fslstats FM_UD_fmap_mag_brain_mask_idx -R | awk '{print  $2}')
+
+    # Now take the clusters image, zero everything below the max (where max contains the biggest non-brain cluster),
+    # binarize the image, re-invert (*-1 + 1), binarize again, then mask by the skull-stripped magnitude image.
+    # Overwrite the fieldmap magnitude brain mask with the result, which reflects the largest non-zero cluster
+    rel "fslmaths FM_UD_fmap_mag_brain_mask_idx -thr $outsideIdx -bin -mul -1 -add 1 -bin -mas FM_UD_fmap_mag_brain_mask FM_UD_fmap_mag_brain_mask"
+
+    _picture FM_UD_fmap_mag_brain_mask_inv "non brain regions, clustered"
+    _picture FM_UD_fmap_mag_brain_mask "new brain_mask (inverted biggest nonbrain region masked by old self)"
+
+    ### Refine Mask
+    rel "Refining masks to remove edge voxels where signal is poor" c
+    ## De-median the fieldmap (to avoid gross shifting)
+    # compute median of non-zero voxels in fieldmap, masking by the useful voxels (from mask steps above)
+    medVal=$(fslstats FM_UD_fmap -k FM_UD_fmap_mag_brain_mask -P 50 | sed 's/ //g') # 112.242508
+
+    # subtract off the median from all fieldmap voxels within the relevant mask, then overwrite fmap
+    rel "fslmaths FM_UD_fmap -sub $medVal -mas FM_UD_fmap_mag_brain_mask FM_UD_fmap"
+
+    # From skull-stripped magnitude image, compute 98th pctile of nonzero voxels, divide by 2
+    almostHalfMax=$(fslstats FM_UD_fmap_mag_brain -P 98 | awk '{print $1/2.0}') # 563.5
+
+    # Zero all non-zero voxels in the skull-stripped magnitude image that fall below half of 98th pctile
+    # Many will be near the edge
+    rel "fslmaths FM_UD_fmap_mag_brain -thr $almostHalfMax -bin FM_UD_fmap_mag_brain_mask50"
+
+    # Erode once to shave off a layer of all edges
+    rel "fslmaths FM_UD_fmap_mag_brain_mask -ero FM_UD_fmap_mag_brain_mask_ero"
+
+    # Take the eroded magnitude mask and add back those voxels (wherever they are) that exceed the half-max (~50th pctile)
+    # Then threshold those < 1 and binarize to make a magnitude mask.
+    # In effect, this will bring back edge voxels lost by -ero that are > median (i.e., they have adequate signal and should be retained)
+    rel "fslmaths FM_UD_fmap_mag_brain_mask_ero -add FM_UD_fmap_mag_brain_mask50 -thr 0.5 -bin FM_UD_fmap_mag_brain_mask"
+
+    # Remove poor-quality edge voxels from the fieldmap using the the magnitude mask above (that dropped voxels < half max)
+    rel "(Finally) applying the brain mask to the fieldmap image." c
+    rel "fslmaths FM_UD_fmap -mas FM_UD_fmap_mag_brain_mask FM_UD_fmap"
+
+    # snap shots
+    _picture FM_UD_fmap                    "overwrite by demedian-ing ( - $medVal, overwrite)"
+    _picture FM_UD_fmap_mag_brain_mask50   "mag (masked) >$almostHalfMax (all high intensity)"
+    _picture FM_UD_fmap_mag_brain_mask_ero "mag (masked) eroded"
+    _picture FM_UD_fmap_mag_brain_mask     "eroded + high intensity (overwrite)"
+    _picture FM_UD_fmap                    "remove low intenity (mask by brain_mask finally) (overwrite)"
+
+    # [ -n "$savetemps" ] && fslmaths FM_UD_fmap FM_UD_fmap_preMedianFilter
+
+    ### STEP 3: Despike edges of fieldmap
+    rel "Despiking edges of fieldmap image" c
+
+    # Erode the magnitude mask created above
+    rel "fslmaths FM_UD_fmap_mag_brain_mask -ero FM_UD_fmap_mag_brain_mask_ero"
+
+    #Apply 2D despiking filter, masking within the magnitude mask
+    rel "fugue --loadfmap=FM_UD_fmap --savefmap=FM_UD_fmap_tmp_fmapfilt --mask=FM_UD_fmap_mag_brain_mask --despike --despikethreshold=2.1"
+
+    #Smooth/despike voxels at the edge of the brain, leave everything else alone
+    #How: take the unsmoothed fieldmap, which is masked by magnitude,
+    #1) subtract despiked fieldmap (which is smoother) (-sub)
+    #2) zero all voxels outside of the eroded magnitude mask (-mas)
+    #3) add back despiked fieldmap -- this does 2 things:
+    #      - retains original fmap within ero mask (since the -add and -sub sum to 0)
+    #      - add despiked fmap outside of ero mask (where the -mas reset these voxels to 0)
+
+    rel "fslmaths FM_UD_fmap -sub FM_UD_fmap_tmp_fmapfilt -mas FM_UD_fmap_mag_brain_mask_ero -add FM_UD_fmap_tmp_fmapfilt FM_UD_fmap"
+
+    # snap shots
+    _picture FM_UD_fmap_mag_brain_mask_ero "erode brain_mask again (regardless of intensity)"
+    _picture FM_UD_fmap_tmp_fmapfilt       "2D demeaned,despiked FM"
+    _picture FM_UD_fmap                    "sub self from demeaned, apply ero. mask, add back (overwrite)"
+
+    #clean up
+    mv FM_UD_fmap_tmp_fmapfilt* FM_UD_fmap_mag_brain_mask_ero* FM_UD_fmap_mag_brain_mask50* FM_UD_fmap_mag_brain_mask_i* $tempsdir
+
+    ### STEP 4: Demedian fieldmap (again)
+    medVal=$(fslstats FM_UD_fmap -k FM_UD_fmap_mag_brain_mask -P 50 | sed 's/ //g' ) # -0.623573
+
+    rel "fslmaths FM_UD_fmap -sub $medVal -mas FM_UD_fmap_mag_brain_mask FM_UD_fmap"
+
+    _picture FM_UD_fmap "demedian and mask ($medVal, again, overwrite)"
+
+    ### STEP 5: image of fieldmap overlaid on magnitude image (fmap+mag.png)
+    rel "Composing image of fieldmap and magnitude: fmap+mag.png" c
+    # make lowest value 10: this prepares image for attractive thumbnail
+    minVal=$(fslstats FM_UD_fmap -R | awk '{ print  $1}') #  -1383.077148 
+
+    rel "fslmaths FM_UD_fmap -sub $minVal -add 10 -mas FM_UD_fmap_mag_brain_mask grot"
+
+    _picture grot "FM_UD_fmap - $minVal + 10 (prepare for thumbnail)"
+
+    # Determine the range of values above 1
+    rangeAboveOne=$( fslstats grot -l 1 -p 0.1 -p 95 ) # 607.379578 1602.596313
+
+    rel "overlay 0 0 FM_UD_fmap_mag -a grot $rangeAboveOne fmap+mag"
+
+    # Generate slice images
+    rel "slicer fmap+mag -s 3 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
+	-y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
+	-z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png"
+
+    #pull these together
+    rel "pngappend sla.png + slb.png + slc.png + sld.png + sle.png + slf.png + slg.png + slh.png + sli.png + slj.png + slk.png + sll.png fmap+mag.png"
+    rel "rm sl[a-l].png"
+
+    ### STEP 6: Compute a signal loss (sigloss) estimate and make a siglossed magnitude image for forward warp
+    rel "Compute signal loss estimate and apply to magnitude image for forward warp" c
+
+    # get a sigloss estimate and make (-s) a siglossed estimate for forward warp
+    # to be Distorted (ref (after *mag) and refweight in EF_2_FM warp) and warped to epi (sigloss+*png)
+    rel "sigloss -i FM_UD_fmap --te=$epiTE -m FM_UD_fmap_mag_brain_mask -s FM_UD_fmap_sigloss"
+
+    # make siglossed magnitude image for EPI -> fieldmap warp
+    rel "fslmaths FM_UD_fmap_sigloss -mul FM_UD_fmap_mag_brain FM_UD_fmap_mag_brain_siglossed -odt float"
+
+    _picture FM_UD_fmap_sigloss "FM_UD_fmap masked sigloss (te=$epiTE)"
+    _picture FM_UD_fmap_mag_brain_siglossed "magnitude image with expected signal loss in EPI applied"
+
+    # Distort mag_brain_siglossed and fmap_sigloss based on FD_UD_fmap.
+    # This uses the "forward warp" of the fieldmap to distort the sigloss and magnitude images
+    # to match EPI. These are then used for the sigloss+mag png file.
+    rel "fugue -i FM_UD_fmap_mag_brain_siglossed \
+    --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mag_brain_mask --dwell=$dwelltime \
+    -w FM_D_fmap_mag_brain_siglossed --nokspace --unwarpdir=$fugue_unwarpdir"
+
+    _picture FM_D_fmap_mag_brain_siglossed "undistorted to distorted ($fugue_unwarpdir), forward warp via FM_UD_fmap"
+
+    rel "fugue -i FM_UD_fmap_sigloss \
+    --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mag_brain_mask --dwell=$dwelltime \
+    -w FM_D_fmap_sigloss --nokspace --unwarpdir=$fugue_unwarpdir"
+
+    _picture FM_D_fmap_sigloss "undistorted to distorted ($fugue_unwarpdir), forward warp via FM_UD_fmap"
+
+    # threshold by value set in cfg
+    #The goal of thresholding based on signal loss is to remove EPI voxels where the signal loss
+    #is greater than 90%, so there is little useful signal there, and what is there may
+    #be highly distorted, which could detract from coregistration.
+    rel "fslmaths FM_D_fmap_sigloss -thr $signallossthresh FM_D_fmap_sigloss" # .9
+
+    _picture FM_D_fmap_sigloss "threshold by $signallossthresh (overwrite)"
+
+    ### STEP 7: Generate image of signal loss overlaid onto magnitude image.
+    rel "composing sigloss + magnitude image (FM_UD_sigloss+mag.png)" c
+
+    # Note: this is consistent with FSL 5.0+, but starts to diverge from 4.1.9.
+    # In FSL 5.0+, the sigloss+mag image is composed in the fieldmap space, as here. (trivial difference)
+    rel "overlay 1 0 FM_UD_fmap_mag_brain -a FM_UD_fmap_sigloss 0 1 FM_UD_sigloss+mag"
+
+    rel "slicer FM_UD_sigloss+mag -s 3 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
+    -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
+    -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png"
+
+    rel "pngappend sla.png + slb.png + slc.png + sld.png + sle.png + slf.png + slg.png + slh.png + sli.png + slj.png + slk.png + sll.png FM_UD_sigloss+mag.png"
+    rel "rm sl[a-l].png"
+
+    ##STEP 8. ALIGN MAGNITUDE WITH EPI
+    # This begins to diverge from FSL 5.0+, where the magnitude and EPI are never explicitly aligned
+    # In 5.0+, the thumbnail images are based on the func-to-struct warp using -fieldmap in BBR coregistration
+    # The main goal here, however, is to make relevant images. We still do the -fieldmap in BBR coregistration downstream,
+    # which then informs the func -> MNI warp and includes fieldmap unwarping, so we don't sacrifice any accuracy in the fmap -> EPI coregistration.
+    # If user declines BBR (or FSL too old), the below is useful for volwise unwarping
+
+    # align target epi (is distorted) to mag fieldmap (with distortion applied)
+    # use distorted sigloss as a reference weight
+    # mc_target is distorted and has falloff in high sigloss areas (darkening)
+    # FM magnitude siglossed has been distorted and darkened similarly to improve coregistration
+    # In addition, weight the "good" voxels (low sigloss) more in the registration cost function
+    # Output grot is just used for creating thumbnails
+    rel "Coregister fieldmap files into EPI space (mc_target)" c
+
+    rel "flirt -in EF_D_mc_target -ref FM_D_fmap_mag_brain_siglossed -omat epi2fmap.mat -o grot -dof 6 -refweight FM_D_fmap_sigloss"
+    _picture grot "align FM (mag,sigloss in) to epi (ref) (make epi2fmap.mat, use this image for thumbnail)"
+
+    # reverse  EF->FM  to get FM->EF (to put all fieldmap stuff in epi space)
+    rel "convert_xfm -omat fmap2epi.mat -inverse epi2fmap.mat"
+
+    # transform all the fieldmap images into EPI space (mc_target),  FM_UDs become EF_UDs
+    for file in "FM_UD_fmap" "FM_UD_fmap_mag_brain" "FM_UD_fmap_mag_brain_mask" "FM_UD_fmap_sigloss"; do
+	rel "flirt -in $file -ref EF_D_mc_target -init fmap2epi.mat -applyxfm -out ${file/FM_/EF_} -interp spline"
+	#creates "EF_UD_fmap" "EF_UD_fmap_mag_brain" "EF_UD_fmap_mag_brain_mask" "EF_UD_fmap_sigloss"
+	_picture ${file/FM_/EF_}  "align FM (mag,sigloss in) to epi (ref) (make epi2fmap.mat)"
+    done
+
+    #threshold warped mask file to maintain same approximate size (alternative to nn interp)
+    rel "fslmaths EF_UD_fmap_mag_brain_mask -thr 0.5 -bin EF_UD_fmap_mag_brain_mask -odt float"
+
+    #also threshold sigloss image in EPI space
+    rel "fslmaths EF_UD_fmap_sigloss -thr $signallossthresh EF_UD_fmap_sigloss -odt float"
+
+    ##STEP 9. UNWARP TARGET EPI (mc_target)
+
+    rel "Unwarp example func (undistort, shift)" c
+    # epi: D -> UD (undistort mc_target)
+    # unwarp EF_D_mc_target to EF_UD_mc_target (for thumbnail, compare to original, and in convertwarp to build applywarp)
+    # and save unwarp-shiftmap then convert to unwarp warpfield
+    # -u is unwarp 
+    rel "fugue --loadfmap=EF_UD_fmap --dwell=$dwelltime --mask=EF_UD_fmap_mag_brain_mask -i EF_D_mc_target -u EF_UD_mc_target --unwarpdir=$fugue_unwarpdir --saveshift=EF_UD_shift"
+    _picture EF_UD_shift "pixelshift ($fugue_unwarpdir)  EF_D_example using EF_UD_fmap"
+
+    # Create warpfield file for undistorting EPI data based on shiftmap above
+    # In FSL 4.1.9, this was used for the unwarping of functionals. In the new setup (consistent with 5.0+),
+    # we get the warpfield from the BBR func2struct coregistration with -fieldmap.
+    rel "convertwarp -s EF_UD_shift -o EF_UD_warp -r EF_D_mc_target --shiftdir=$unwarpdir --relout"
+    _picture EF_UD_warp "warped ($unwarpdir, shift w/undistorted, shifted epi (with orig distored epi as ref)"
+
+    ##STEP 10. Generate EPI voxel shift image thumbnail based on undistorted EPI
+    rel "composing voxel shift map overlaid on fieldmap magnitude (EF_UD_shift+mag.png)" c
+    # hack to to get variables (bash array of results from fslmatsh|awk)
+    shiftExtrema=( $(fslstats EF_UD_shift -R -P 1 -P 99 | awk '{printf "%.1f %.1f %f %f", $1, $2, $3*-1, $4}'))
+    #-9.9, 8.0, 3.999190, 4.090690
+    shiftminR=${shiftExtrema[0]} # not used by image
+    shiftmaxR=${shiftExtrema[1]} # not used by image
+    shiftminr=${shiftExtrema[2]}
+    shiftmaxr=${shiftExtrema[3]}
+
+    rel "fslmaths EF_UD_shift -mul -1 grot"
+    rel "overlay 1 0 EF_UD_fmap_mag_brain -a EF_UD_shift 0.0001 $shiftmaxr grot 0.0001 $shiftminr grot"
+    rel "slicer grot -s 3 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
+	-y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
+	-z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png"
+
+    rel "pngappend sla.png + slb.png + slc.png + sld.png + sle.png + slf.png + slg.png + slh.png + sli.png + slj.png + slk.png + sll.png EF_UD_shift+mag.png"
+    rel "rm sl[a-l].png"
+
+    #TODO: Feat composes a few other images (animated GIFs) to show before and after.
+    ## Skipping EF_D_mc_target.gif EF_UD_mc_target.gif EF_UD_fmap_mag_brain.gif
+    ## for files in ^; do slicer &&  pngappend; done;  whirlgif
+
+    #STEP 11. Coregister the fieldmap to the structural image for use in func2struct alignment with BBR cost function and -fieldmap
+    #adapted from epi_reg
+    rel "Coregister the fieldmap to the structural image for use in func2struct alignment with BBR cost function." c
+
+    rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -dof 6 -omat fmap2struct.mat -out fmap2struct" #magnitude to structural
+    #note that epi_reg requests unbetted MPRAGE and runs an additional flirt on the unbetted magnitude and MPRAGE images.
+
+    # unmask the fieldmap (necessary to avoid edge effects)
+    rel "fslmaths FM_UD_fmap -abs -bin -mul FM_UD_fmap_mag_brain_mask FM_UD_fmap_mask"
+
+    # the direction here should take into account the initial affine (it needs to be the direction in the EPI)
+    rel "fugue --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mask --unmaskfmap --savefmap=FM_UD_fmap_unmasked --unwarpdir=$fugue_unwarpdir"
+
+    # the following is a NEW HACK to fix extrapolation when fieldmap is too small
+    rel "applywarp -i FM_UD_fmap_unmasked -r $mprageBet --premat=fmap2struct.mat -o FM_UD_fmap2struct_pad0"
+    rel "fslmaths FM_UD_fmap2struct_pad0 -abs -bin FM_UD_fmap2struct_pad0_innermask"
+    rel "fugue --loadfmap=FM_UD_fmap2struct_pad0 --mask=FM_UD_fmap2struct_pad0_innermask --unmaskfmap --unwarpdir=${fugue_unwarpdir} --savefmap=FM_UD_fmap2struct_dilated"
+    rel "fslmaths FM_UD_fmap2struct_dilated fmapForBBR" #create the fieldmap to be used for BBR func -> struct coregistration
+
+    #cleanup
+    mv FM_UD_fmap2struct_pad0* FM_UD_fmap2struct_dilated* $tempsdir
+    imrm grot
+
+    ###
+    #Conclusion: We have now created the FM_UD_fmap FM_UD_fmap_mag and FM_UD_fmap_mag_brain files.
+    #We also have the fmap2struct image, which is the fieldmap aligned to the structural.
+    #For now, I am only going to support application of the unwarping step at the applywarp -> MNI phase of preprocessing.
+    #This will result in a func -> Struct + Unwarp -> MNI interpolation (pretty good, I think).
+    #If we wanted to, when slice timing falls between motion correction and warping to template, we could
+    #create a combined MC + unwarp transformation for each volume (the old fslsplit grot + fslmerge approach).
+    #This seems like overkill for the moment, esp. since I prefer sliceMotion4d which already does the MC interpolation.
+
+    cd $funcdir
+    rel "date > .prepare_fieldmap_complete"
+
+}

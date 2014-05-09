@@ -1,0 +1,376 @@
+#!/bin/bash
+
+function parse_args {
+    #parse input arguments, initialize default parameter settings
+    #when called from preprocessFunctional, must pass "$@", which is all input parameters to script
+
+    #initialize defaults
+    funcFile=
+    smoothing_kernel="5"
+    betFrac=0.3 #default fractional intensity threshold
+    cleanup=0
+    cleanup_only=0
+    constrainToTemplate="y"
+    deoblique_all=0
+    despike=0
+    despikeThresh="2.5 4.0"
+    delDicom=
+    detectSiemens=0
+    dicomPattern=
+    dte=
+    fm_phase=
+    fm_magnitude=
+    fm_cfg=
+    funcStructFlirtDOF="bbr" #boundary-based registration in FSL 5.0+
+    funcWarpInterp="spline"
+    hpFilter=80
+    logFile="preprocessFunctional.log"
+    mc_first= #default to empty
+    mc_movie=0
+    mc_program="3dvolreg"
+    motionCensor=
+    motionSinc="y"
+    no_hp=0
+    no_st=0
+    no_smooth=0
+    no_warp=0
+    ref_vol=  #don't set a motion correction reference volume by default
+    rescalingMethod="10000_globalmedian" #scale whole brain 4D by single constant to normalize median to 10000.
+    sliceAcquisition= #never assume slice acquistion order. Force definition or use auto-detect from DICOM.
+    sliceMotion4D=0
+    sliceTimesFile=
+    smoother="susan"
+    st_first= #default to empty and choose default based on slice acquisition order (sequential versus interleaved)
+    thresholdMethod="98_2"
+    tr= #never assume a TR. Force definition or use auto-detect from DICOM.
+    templateBrain="$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" #default to new 2009 MNI
+
+    #figure out file extension for FSL programs
+    if [ -z $FSLOUTPUTTYPE ]; then
+	export FSLOUTPUTTYPE=NIFTI_GZ
+    fi
+
+    if [ $FSLOUTPUTTYPE = NIFTI_GZ ]; then
+	ext=".nii.gz"
+    elif [ $FSLOUTPUTTYPE = NIFTI ]; then
+	ext=".nii"
+    else
+	echo "Not setup to handle FSLOUTPUTTYPE: $FSLOUTPUTTYPE."
+	exit 1
+    fi
+
+    #if no parameters are passed in, then print help and exit.
+    if [ $# -eq 0 ]; then
+	#check for resume
+	if [ -f .preproc_cmd ]; then
+	    read cmd < .preproc_cmd
+	    echo -e "\npreprocessFunctional called initially with parameters below:\n\n"
+	    echo "$cmd"
+	    local resume=
+	    until [[ "$resume" = [ny] ]]; do
+		echo ""
+		read -sn1 -p "Resume run with these settings? (y/n)" resume
+	    done
+
+	    if [ $resume = y ]; then
+		set -f #disable wildcard expansion so that -dicom patterns don't get expanded
+		set -- $cmd #change positional parameters to stored settings
+		set +f #re-enable wildcard expansion as usual
+	    else
+		echo -e "\n\nQuitting script."
+		exit 0
+	    fi
+	else
+	    printHelp
+	    exit 0
+	fi
+    else
+	#write the parameter settings to file
+	echo "$@" > .preproc_cmd #for resuming failed run.
+    fi
+
+    #process command line parameters
+    while [ _$1 != _ ] ; do
+	if [[ $1 = -4d || $1 = -4D ]] ; then
+	    funcFile="${2}"
+	    funcNifti="${funcFile}" #retains file extension
+	    shift 2
+	elif [ $1 = -bet_frac ]; then
+	    betFrac="${2}"
+	    shift 2
+	elif [ $1 = -cleanup ]; then
+	    cleanup=1
+	    shift 1
+	elif [ $1 = -cleanup_only ]; then
+	    cleanup_only=1
+	    cleanup=1
+	    shift 1
+	elif [ $1 = -custom_slice_times ]; then
+	    sliceTimesFile="$2"
+	    sliceMotion4D=1 #for now, this option is only relevant for sliceMotion4d correction
+	    shift 2
+	elif [ $1 = -constrain_to_template ]; then
+	    if [[ $2 = [NnYy] ]]; then
+		constrainToTemplate="${2}"
+		shift 2
+	    else
+		echo -e "Unrecognized -constrain_to_template parameter: ${2}.\n  Options are: y or n."
+		exit 1
+	    fi
+	elif [ $1 = -delete_dicom ]; then
+	    if [[ $2 = "delete" || $2 = "yes" || $2 = "no" || $2 = "archive" ]]; then
+		delDicom="${2}"
+		shift 2
+	    else
+		echo -e "Unrecognized -delete_dicom: ${2}.\n  Options are: -delete_dicom delete yes no archive."
+		exit 1
+	    fi
+	elif [ $1 = -deoblique_all ]; then
+	    deoblique_all=1
+	    shift 1
+	elif [ $1 = -despike ]; then
+	    despike=1
+	    shift 1
+	elif [ $1 = -despike_thresh ]; then
+	    despike=1
+	    despikeThresh="$2 $3"
+	    shift 3
+	elif [ $1 = -dicom ]; then
+	    dicomPattern="${2}"
+	    shift 2
+	elif [ $1 = -fm_phase ]; then
+	    fm_phase="${2}"
+	    shift 2
+	elif [ $1 = -fm_magnitude ]; then
+	    fm_magnitude="${2}"
+	    shift 2
+	elif [ $1 = -fm_cfg ]; then
+	    fm_cfg="${2}"
+	    shift 2
+	elif [ $1 = -func_struc_dof ]; then
+	    if [[ $2 = "bbr" || $2 = "6" || $2 = "7" || $2 = "12" ]]; then
+		funcStructFlirtDOF="${2}"
+		shift 2
+	    else
+		echo -e "Unrecognized -func_struc_dof: ${2}.\n  Options are: -func_struc_dof bbr, 6, 7, 12."
+		exit 1
+	    fi
+	elif [ $1 = -help ]; then	
+	    printHelp
+	    exit 0
+	elif [ $1 = -hp_filter ]; then
+	    hpFilter="${2}"
+	    shift 2
+	elif [ $1 = -log ]; then
+	    logFile="${2}"
+	    shift 2
+	elif [ $1 = -mc_first ]; then
+	    mc_first=1
+	    st_first=0
+	    shift 1
+	elif [ $1 = -mc_movie ]; then
+	    mc_movie=1
+	    shift 1
+	elif [ $1 = -mc_program ]; then
+	    if [[ $2 = "3dvolreg" || $2 = "mcflirt" ]]; then
+		mc_program="${2}"
+		shift 2
+	    else
+		echo -e "Unrecognized -mc_program: ${2}.\n  Options are: -mc_program 3dvolreg, mcflirt."
+		exit 1
+	    fi
+	elif [ $1 = -motion_censor ]; then
+	    motionCensor="${2}"
+	    shift 2
+	elif [ $1 = -motion_sinc ]; then
+	    if [[ $2 = [NnYy] ]]; then
+		motionSinc="${2}"
+		shift 2
+	    else
+		echo -e "Unrecognized -motion_sinc parameter: ${2}.\n  Options are: y or n."
+		exit 1
+	    fi
+	elif [ $1 = -mprage_bet ]; then
+	    mprageBet="${2}"
+	    shift 2
+	elif [ $1 = -no_hp ]; then
+	    no_hp=1
+	    shift 1
+	elif [ $1 = -no_smooth ]; then
+	    no_smooth=1
+	    shift 1
+	elif [ $1 = -no_st ]; then
+	    no_st=1
+	    shift 1
+	elif [ $1 = -no_warp ]; then
+	    no_warp=1
+	    shift 1
+	elif [ $1 = -ref_vol ] ; then
+            ref_vol="${2}"
+            shift 2
+	elif [ $1 = -rescaling_method ]; then
+	    if [[ $2 = "10000_globalmedian" || $2 = "100_voxelmean" ]]; then
+		rescalingMethod="${2}"
+		shift 2
+	    else
+		echo -e "Unrecognized -rescaling_method: ${2}.\n  Options are: -rescaling_method 10000_globalmedian or -rescaling_method 100_voxelmean"
+		exit 1
+	    fi
+	elif [ $1 = -slice_acquisition ]; then
+	    if [[ $2 = "interleaved" || $2 = "seqasc" || $2 = "seqdesc" ]]; then
+		sliceAcquisition="${2}"
+		shift 2
+	    else
+		echo "Slice acquisition setting not recognized. Options are: seqdesc, seqasc, and interleaved"
+		exit 1
+	    fi
+	elif [ $1 = -4d_slice_motion ]; then
+	    sliceMotion4D=1
+	    shift 1
+	elif [ $1 = -siemens ]; then
+	    detectSiemens=1
+	    shift 1
+	elif [ $1 = -smoother ]; then
+	    smoother="${2}"
+	    shift 2
+	elif [ $1 = -startover ]; then
+	    echo -e "\nStarting over...\n\nRe-running all preprocessing steps\n"
+	    deleteFile ".reorient2std_complete"
+	    deleteFile ".motion_censor_complete"
+	    deleteFile ".motion_plots_complete"
+	    deleteFile ".slice_timing_complete"
+	    deleteFile ".motion_correction_complete"
+	    deleteFile ".median_intensity"
+	    deleteFile ".pct2"
+	    deleteFile ".skull_strip_complete"
+	    deleteFile ".func2struct_complete"
+	    deleteFile ".warp_complete"
+	    deleteFile ".smoothing_complete"
+	    deleteFile ".temporal_filtering_complete"
+	    deleteFile ".rescaling_complete"
+	    deleteFile ".thresholding_complete"
+	    deleteFile ".despike_complete"
+	    deleteFile ".fmunwarp_complete"
+	    deleteFile ".prepare_fieldmap_complete"
+	    deleteFile ".preprocessfunctional_complete"
+	    shift 1
+	elif [ $1 = -smoothing_kernel ] ; then
+            smoothing_kernel="${2}"
+            shift 2
+	elif [ $1 = -st_first ]; then
+	    st_first=1
+	    mc_first=0
+	    shift 1
+	elif [ $1 = -template_brain ]; then
+	    case $2 in
+		Tal_3mm) templateBrain="$HOME/standard/talairach_fsl_mni152/TalFSL_MNI152_T1_3mm_brain" ;;
+		MNI_FSL_3mm) templateBrain="$HOME/standard/fsl_mni152/MNI152_T1_3mm_brain" ;;
+		MNI_3mm) templateBrain="$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" ;;
+		MNI_2.3mm) templateBrain="$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2.3mm" ;;
+		SPM_2mm) templateBrain="$HOME/standard/spm8_mni/T1_brain" ;;
+		*) echo -e "Reference brain -template_brain ${2} not recognized. Options are MNI_3mm, MNI_FSL_3mm, SPM_2mm, and Tal_3mm."; exit 1 ;;
+	    esac
+	    shift 2
+	elif [ $1 = -threshold ]; then
+	    if [[ $2 = "98_2" || $2 = "10" ]]; then
+		thresholdMethod="${2}"
+		shift 2
+	    else
+		echo -e "Unrecognized thresholding parameter: ${2}.\n  Options are: 98_2 or 10."
+		exit 1
+	    fi
+	elif [ $1 = -tr ]; then
+	    tr="${2}"
+            shift 2
+	elif [ $1 = -trio_tim ]; then
+	    #deprecated: -siemens preferred
+	    detectSiemens=1
+	    shift 1
+	elif [ $1 = -warpcoef ]; then
+	    warpCoef="${2}"
+	    shift 2
+	elif [ $1 = -warp_interpolation ]; then
+	    if [[ $2 = "sinc" || $2 = "trilinear" || $2 = "spline" ]]; then
+		funcWarpInterp="${2}"
+		shift 2
+	    else
+		echo -e "Unrecognized -warp_interpolation parameter: ${2}.\n  Options are: sinc, spline, or trilinear."
+		exit 1
+	    fi
+	else
+	    #printHelp
+	    echo -e "----------------\n\n"
+	    echo "Unrecognized command line parameter: ${1}"
+	    exit 1
+	fi
+    done
+
+    #trim off file extension for functional file
+    if [ -n "$funcFile" ]; then
+	if [ ! -r ${funcFile} ]; then
+	    #passed in parameter does not exist or does not have .nii or nii.gz extension. Need to test for file with added extension
+	    if [ -r "${funcFile}.nii" ]; then
+		funcNifti="${funcFile}.nii"
+		echo "Assuming that ${funcNifti} is the intended -4d input."
+	    elif [ -r "${funcFile}.nii.gz" ]; then
+		funcNifti="${funcFile}.nii.gz"
+		echo "Assuming that ${funcNifti} is the intended -4d input."
+	    else
+		echo -e "Raw functional 4d file: $funcFile does not exist.\nAttempted to look for ${funcFile}.nii and ${funcFile}.nii.gz to no avail.\nExiting.\n"
+		exit 1
+	    fi
+	fi
+
+	if [ ${funcFile:(-7)} = ".nii.gz" ]; then
+	    #strip off the suffix for FSL processing and makes filenames easier to build.
+	    lenFile=${#funcFile}
+	    lenSub=$( expr $lenFile - 7 )
+	    funcFile=${funcFile:0:$lenSub}
+	elif [ ${funcFile:(-4)} = ".nii" ]; then
+	    #strip off the suffix for FSL processing
+	    lenFile=${#funcFile}
+	    lenSub=$( expr $lenFile - 4 )
+	    funcFile=${funcFile:0:$lenSub}
+	fi
+    fi
+
+    #Not legal to pass in requests for MC versus ST order when using 4d slice + motion.
+    if [[ $sliceMotion4D -eq 1 && $no_st -eq 1 ]]; then
+	echo "Cannot request -no_st with -4d_slice_motion"
+	exit 1
+    fi
+
+    if [[ $sliceMotion4D -eq 1 && $st_first -eq 1 ]]; then
+	echo "Cannot request -st_first with -4d_slice_motion"
+	exit 1
+    fi
+
+    if [[ $sliceMotion4D -eq 1 && $mc_first -eq 1 ]]; then
+	echo "Cannot request -mc_first with -4d_slice_motion"
+	exit 1
+    fi
+
+    #determine whether flirt version is new enough to handle BBR coregistration
+    #if we have v6.0+, then incorporate fieldmap unwarping into BBR func2struct
+    #and use resulting unwarping information for EPI -> unwarp -> struct -> MNI transform.
+    #for older versions, need to use EPI-registered fieldmap for unwarping
+    flirtVersion=$( flirt | head -1 | perl -pe 's/^FLIRT version ([0-9\\.]+)$/\1/' )
+    bbrCapable=$( echo "${flirtVersion} >= 6" | bc )
+
+    #The smoothing kernel parameter is expected to be the full width at half
+    #maximum (FWHM) value (in mm). FWHM refers to the width of the Gaussian shape
+    #on the x-axis at half of the maximum y value
+    #(see http://imaging.mrc-cbu.cam.ac.uk/imaging/PrinciplesSmoothing).
+    #It is common to conceptualize Gaussian curves in terms of their standard
+    #deviation (sigma). Sigma is related to FWHM by the following equation:
+    #FHWM=sigma * sqrt(8*log(2))
+    #Hence, because FSL expects our smoothing specification to be a sigma,
+    #we divide the FWHM value provided by $smoothing_kernel by 2.355 (approximately 8*log(2).
+
+    sigma=$( echo "scale=5; $smoothing_kernel/2.355" | bc )
+    #echo "sigma is: $sigma"
+
+    #smoothed files include the FHWM as a sufix
+    [ $no_smooth -eq 0 ] && smoothing_suffix="_${smoothing_kernel}" || smoothing_suffix=
+
+}

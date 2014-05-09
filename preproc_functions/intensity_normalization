@@ -1,0 +1,38 @@
+#!/bin/bash
+
+function intensity_normalization {
+    if [ ! -f ".rescaling_complete" ]; then
+	#####
+	#Compute a mean functional volume after all of the preprocessing
+	#steps are complete. This image has been slice-timed, motion-corrected,
+	#skull-stripped, warped to Talairach, smoothed, and high-pass filtered.
+
+	rel "Grand mean intensity normalization (rescaling)" c
+	
+	if [ $rescalingMethod = "10000_globalmedian" ]; then
+	    rel "Rescaling intensities by a single factor: 10000/globalmedian" c
+	    rescalingFactor=$( echo "scale=5; 10000/${median_intensity}" | bc )
+	    rel "fslmaths \"${prefix}${funcFile}${smoothing_suffix}\" -mul $rescalingFactor \"n${prefix}${funcFile}${smoothing_suffix}\" -odt float"
+	elif [ $rescalingMethod = "100_voxelmean" ]; then
+            #####
+            #Rescale the 4D functionals file by dividing activations in each
+            #volume by the mean_float volume from Step 19 above and multiplying by 100.
+            #This is considered "grand mean scaling" (as opposed to global rescaling),
+            #which is important for cross-subject/cross-session inferences
+            #to be valid (i.e., on a similar scale).
+
+	    rel "Rescaling intensities by 100/voxelmean" c
+
+	    rel "fslmaths \"${prefix}${funcFile}${smoothing_suffix}\" -Tmean \"${prefix}mean_float\" -odt float"
+	    rel "fslmaths \"${prefix}${funcFile}${smoothing_suffix}\" -mul 100 -div ${prefix}mean_float \"n${prefix}${funcFile}${smoothing_suffix}\" -odt float"
+	fi
+
+	rel "date > .rescaling_complete"
+    fi
+
+    prefix="n${prefix}"
+
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+
+}

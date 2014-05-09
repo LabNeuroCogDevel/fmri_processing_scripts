@@ -1,0 +1,61 @@
+#!/bin/bash
+
+function check_requirements {
+    #preliminary checks for required files and settings
+    
+    #use the saved slice order from dicom_to_nifti conversion
+    if [ -f .detect_sliceorder ]; then
+	if [ -n "$sliceAcquisition" ]; then
+	    rel "Ignoring user setting for slice acquisition: ${sliceAcquisition} because of auto-detected order in .detect_sliceorder." c
+	fi
+	
+	read sliceAcquisition < .detect_sliceorder
+    fi
+
+    if [ -f .detect_tr ]; then
+	if [ -n "$tr" ]; then
+	    rel "Ignoring user setting for TR: ${tr} because of auto-detected TR in .detect_tr." c
+	fi
+
+	read tr < .detect_tr
+    fi
+
+    #check that slice acquisition order and TR was specified or detected in case of 4d input
+    if [ -n "$funcFile" ]; then
+	if [[ -z $sliceAcquisition && $no_st -eq 0 && -z $sliceTimesFile ]]; then #only enforce provision of slice acquisition order if slice timing in pipeline.
+	    echo -e "Slice acquisition order was not specified and not detected.\nPass using the -slice_acquisition parameter.\nExiting.\n"
+	    exit 1
+	fi
+
+	if [ -z $tr ]; then
+	    echo -e "TR was not specified and not detected.\nPass using the -tr parameter.\nExiting.\n"
+	    exit 1
+	fi
+
+	#check number of slices
+	#if DICOMs used, num slices will be picked up by preproc_functions/dicom_to_nifti
+	detectSliceNum=$( fslhd ${funcFile}  | grep '^dim3' | perl -pe 's/dim3\s+(\d+)/\1/' )
+
+    fi
+
+    #check for existence of required files
+    #mprageBet and warpCoef only required if warping to a standard template. Thus, don't require for -no_warp runs.
+    if [ $no_warp -eq 0 ]; then
+	if [ -z $mprageBet ]; then
+	    echo -e "Betted mprage file parameter not provided.\nPass using the -mprage_bet parameter.\nExiting.\n"
+	    exit 1
+	elif [[ ! -f $mprageBet ]] && [[ ! -h ${mprageBet} ]]; then
+	    echo -e "Betted mprage file: $mprageBet does not exist.\nExiting.\n"
+	    exit 1
+	fi
+
+	if [ -z $warpCoef ]; then
+	    echo -e "Structural to standard space warp coefficients file (from FNIRT) not provided.\nPass using the -warpcoef parameter.\nExiting.\n"
+	    exit 1
+	elif [[ ! -f $warpCoef ]] && [[ ! -h ${warpCoef} ]]; then
+	    echo "Structural to standard space warp coefficients file does not exist.\nFile specified: $warpCoef.\nExiting.\n"
+	    exit 1
+	fi
+    fi
+
+}

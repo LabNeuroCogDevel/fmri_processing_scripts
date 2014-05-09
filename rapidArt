@@ -1,0 +1,107 @@
+#!/usr/bin/env python
+
+from nipype.algorithms.rapidart import ArtifactDetect
+import os as os
+import shutil as sh
+import argparse
+
+parser=argparse.ArgumentParser(prog="rapidArt")
+parser.add_argument('--realigned4d', required=True, help='motion-corrected 4d fMRI input to check for intensity spikes')
+parser.add_argument('--motion_par', required=True, help='6-column motion parameters. If --motion_source not specified, we expect format should be [Rx Ry Rz Dx Dy Dz] in radians and mm (ala mcflirt).')
+parser.add_argument('--motion_source', required=False, choices=['fsl', 'FSL', 'nipy', 'NIPY', 'NiPy', 'afni', 'AFNI', 'spm', 'SPM'], help='Origin of motion parameters -- used to determine order and data type of 6 columns.')
+parser.add_argument('--mask', required=False, default='spm_global', help='Brain mask file used to compute intensity within brain voxels. Default is an automask')
+parser.add_argument('--norm_threshold', required=False, default=1.0, type=float, help='Motion norm threshold used to detect motion-related outliers (uses combined movement parameters.')
+parser.add_argument('--zintensity_threshold', required=False, default=3.0, type=float, help='Z-score of global signal intensity used to identify intensity spikes.')
+parser.add_argument('--output_dir', required=False, type=string, help='Name of directory for artifact detection outputs.')
+
+cmdInput = parser.parse_args()
+
+ad = ArtifactDetect()
+ad.inputs.realigned_files = cmdInput.realigned4d
+ad.inputs.realignment_parameters = cmdInput.motion_par
+if cmdInput.motion_source == "nipy" or cmdInput.motion_source == "NIPY":
+    cmdInput.motion_source="NiPy" #nipype is picky
+else:
+    cmdInput.motion_source=cmdInput.motion_source.upper()
+
+ad.inputs.parameter_source = cmdInput.motion_source
+ad.inputs.norm_threshold = cmdInput.norm_threshold
+
+#for identifying motion spikes, use differenced time series (i.e., relative motion).
+#for intensity spikes, look at threshold relative to whole time series (i.e., absolute intensity).
+#this corresponds to [True, False] -- difference motion, don't difference intensity
+ad.inputs.use_differences = [True, False] 
+ad.inputs.zintensity_threshold = cmdInput.zintensity_threshold
+
+ad.inputs.use_norm=True #combine motion parameters and look at norm (overall displacement)
+
+
+if cmdInput.mask == 'spm_global':
+    ad.inputs.mask_type=cmdInput.mask
+else:
+    ad.inputs.mask_type='file'
+    ad.inputs.mask_file=cmdInput.mask
+
+#add options for what outputs to create
+
+ad.run()
+
+if isdefined(cmdInput.output_dir):
+    p, f = os.path.split(cmdInput.realigned4d)
+    fbase = f.split('.')
+    if len(fbase) > 2 and (fbase[-1].lower() == "gz" and fbase[-2].lower() == "nii"):
+        fbase = '.'.join(fbase[:-2])
+    elif len(fbase) > 1 and fbase[-1].lower() == "nii":
+        fbase = '.'.join(fbase[:-1])
+    else:
+        print "Can't determine file name of input properly."
+        exit(1)
+
+    if not p: #no path provided to script
+        outdir = cmdInput.output_dir #just use the output dir as is (whether abs or rel)
+    elif os.path.isabs(cmdInput.output_dir):
+        outdir = cmdInput.output_dir #absolute dir for output overrides relevance of 4d location
+    else:
+        outdir = os.path.join(p, cmdInput.output_dir) #output is relative to directory of the 4d input
+
+    if not os.path.exists(outdir):
+        os.makedirs(outdir)
+
+    #rapid art generates the following files:
+    #norm.tmd_10128.txt
+    #mask.tmd_10128.nii.gz
+    #global_intensity.tmd_10128.txt
+    #art.tmd_10128_outliers.txt
+    #stats.tmd_10128.txt
+    #plot.tmd_10128.png
+
+    #os.path.join(p, '.'.join(['norm', fbase, 'txt'])
+    #if os.path.exists(
+    
+
+     #   artifactfile = os.path.join(output_dir, ''.join(('art.', filename,
+      #                                                   '_outliers.txt')))
+     #   intensityfile = os.path.join(output_dir, ''.join(('global_intensity.',
+     #                                                     filename, '.txt')))
+      #  statsfile = os.path.join(output_dir, ''.join(('stats.', filename,
+    #                                                  '.txt')))
+      #  normfile = os.path.join(output_dir, ''.join(('norm.', filename,
+   #                                                  '.txt')))
+      #  plotfile = os.path.join(output_dir, ''.join(('plot.', filename, '.',
+  #                                                   self.inputs.plot_type)))
+     #   displacementfile = os.path.join(output_dir, ''.join(('disp.',
+ #                                                            filename, ext)))
+      #  maskfile = os.path.join(output_dir, ''.join(('mask.', filename, ext)))
+
+
+
+
+#    if os.path.exists(
+
+#os.path.join(output_dir, ''.join(('art.', filename,
+#                                                         '_outliers.txt')))
+
+    #tdir = os.path.join(dname, 'mats')
+    #   norm.tmd_10128.txt
+    #sh.move(
+
