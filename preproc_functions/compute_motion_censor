@@ -31,7 +31,6 @@ function compute_motion_censor {
 	matname="motion_info/${outbase}.mat"
 	imgname="-p motion_info/${metric}.png"
 	metname="-s motion_info/${metric}.txt"
-	allmats="${allmats} ${matname}" #list of output matrices
 
 	#force lower case
 	metric=$( echo $metric | awk '{print tolower($0)}' )
@@ -51,7 +50,7 @@ function compute_motion_censor {
 		    local rcmd1="relrms <- read.table('motion_info/motion_relrms_mm')\$V1;"
 		    local rcmd2="censormat=do.call(cbind, sapply(1:length(relrms), function(x) { if (abs(relrms[x]) > $thresh) {"
 		    local rcmd3="v <- rep(0, length(relrms)); v[x] <- 1; v } else { NULL } }));"
-		    local rcmd4="write.table(censormat, file='$matname', col.names=FALSE, row.names=FALSE)"
+		    local rcmd4="if (!is.null(censormat)) { write.table(censormat, file='$matname', col.names=FALSE, row.names=FALSE) }"
 		    local rcmd="$rcmd1 $rcmd2 $rcmd3 $rcmd4" 
 
 		    Rscript -e "$rcmd"
@@ -61,6 +60,8 @@ function compute_motion_censor {
 		echo "Unsupported metric to fsl_motion_outliers: $metric" && exit 1;;
 	esac
 
+	#only add matrix to set if it exists (i.e., if some volumes exceeded threshold)
+	[ -f "${matname}" ] && allmats="${allmats} ${matname}" #list of output matrices
 
     done
     IFS="${OLDIFS}"

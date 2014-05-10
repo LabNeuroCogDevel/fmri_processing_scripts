@@ -216,6 +216,11 @@ if [ $cleanup_only -eq 1 ]; then
     exit 0
 fi
 
+if [ -f "${dotfile}_complete" ]; then
+    echo -e "\n--- preprocessFunctional already complete.\n"
+    exit 0
+fi
+
 # write to an incomplete file (later to be changed to complete if process finishes)
 echo -e "$thiscommandinfo " > ${dotfile}_incomplete
 
