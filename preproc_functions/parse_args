@@ -34,6 +34,8 @@ function parse_args {
     no_st=0
     no_smooth=0
     no_warp=0
+    nuisance_regression=0
+    nuisance_regressors=
     ref_vol=  #don't set a motion correction reference volume by default
     rescalingMethod="10000_globalmedian" #scale whole brain 4D by single constant to normalize median to 10000.
     sliceAcquisition= #never assume slice acquistion order. Force definition or use auto-detect from DICOM.
@@ -205,6 +207,10 @@ function parse_args {
 	elif [ $1 = -no_warp ]; then
 	    no_warp=1
 	    shift 1
+	elif [ $1 = -nuisance_regression ]; then
+	    nuisance_regression=1
+	    nuisance_regressors="${2}"
+	    shift 2
 	elif [ $1 = -ref_vol ] ; then
             ref_vol="${2}"
             shift 2
