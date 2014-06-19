@@ -1,39 +1,136 @@
 #!/bin/bash
 
-function compute_motion_censor {
-    #parse -censor_motion syntax
+function nuisance_regression {
+    #parse -nuisance_regression syntax
 
     [ "$nuisance_regression" -eq 0 ] && return 0
 
     [ -f .nuisance_regression_complete ] && return 0
 
+    declare -a nuisancecols #files to be 
+
     #parse regressors of interest
     OLDIFS="${IFS}"
     IFS=',' read -ra reg <<< "$nuisance_regressors"
     for r in "${reg[@]}"; do
+	if [[ "$r" =~ ^(6motion|rx|ry|rz|tx|ty|tz|)$ && ! -f ".motion_demean" ]]; then 
+	    #compute de-meaned motion parameters for nuisance regression
+	    1d_tool.py -overwrite -infile motion.par -set_nruns 1 \
+		-demean -write .motion_demean	    
+	fi
 
-	if [[ "$r" =~ ^(6motion|d6motion|rx|ry|rz|tx|ty|tz|)$ && ! -f "n ]]; then 
-echo "true"; fi
+	if [[ "$r" =~ ^(d6motion|drx|dry|drz|dtx|dty|dtz|)$ && ! -f ".motion_deriv" ]]; then 
+	    #compute motion parameter derivatives for nuisance regression
+	    1d_tool.py -overwrite -infile motion.par -set_nruns 1 \
+		-derivative -demean -write .motion_deriv
+	fi
 
-drx|dry|drz|dtx|dty|dtz
+	if [[ "$r" =~ ^(csf|dcsf)$ && ! -f ".csf_ts" ]]; then
+	    #fast segmentation should have been run during preprocessMprage
+	    #use seg_0 for csf
+	    #re-run FAST here if needed
+	    [ $( imtest "${mprageBet_base}_fast_seg_0" ) -eq 0 ] && rel "fast -o \"${mprageBet_base}_fast\" \"${mprageBet_base}\""
+
+	    #erode CSF mask twice to avoid any partial volume effects
+	    rel "fslmaths ${mprageBet_base}_fast_seg_0 -eroF -eroF .csf_ero2x -odt char"
+	    
+	    #check that at least 250 voxels are present in mask to get a reasonable sampling distribution of CSF timeseries
+	    local nvox=$( 3dBrickStat -non-zero -count .csf_ero2x )
+
+	    if [ $nvox -lt 250 ]; then
+		#go back to a 1x erosion
+		rel "fslmaths ${mprageBet_base}_fast_seg_0 -eroF .csf_ero1x -odt char"
+
+		#obtain timeseries from functional warped to structural space (during coregistration)
+		rel "3dmaskave -mask .csf_ero1x -q func_to_struct > .csf_ts"
+	    else
+		rel "3dmaskave -mask .csf_ero2x -q func_to_struct > .csf_ts"
+	    fi
+	fi
+
+	if [[ "$r" =~ ^(wm|dwm)$ && ! -f ".wm_ts" ]]; then
+	    #fast segmentation should have been run during preprocessMprage
+	    #use seg_2 for wm
+	    #re-run FAST here if needed
+	    [ $( imtest "${mprageBet_base}_fast_seg_2" ) -eq 0 ] && rel "fast -o \"${mprageBet_base}_fast\" \"${mprageBet_base}\""
+
+	    #erode WM mask twice to avoid any partial volume effects
+	    rel "fslmaths ${mprageBet_base}_fast_seg_2 -eroF -eroF .wm_ero2x -odt char"
+	    
+	    #check that at least 500 voxels are present in mask to get a reasonable sampling distribution of WM timeseries
+	    local nvox=$( 3dBrickStat -non-zero -count .wm_ero2x )
+
+	    if [ $nvox -lt 500 ]; then
+		#go back to a 1x erosion
+		rel "fslmaths ${mprageBet_base}_fast_seg_0 -eroF .wm_ero1x -odt char"
+
+		#obtain timeseries from functional warped to structural space (during coregistration)
+		rel "3dmaskave -mask .csf_ero1x -q func_to_struct > .wm_ts"
+	    else
+		rel "3dmaskave -mask .csf_ero2x -q func_to_struct > .wm_ts"
+	    fi
+	fi
+
+	#global signal
+	if [[ "$r" =~ ^(gs|dgs)$ && ! -f ".gs_ts" ]]; then
+	    #erode the tight skull-stripped brain mask from the structural scan to identify brain voxels
+	    rel "fslmaths ${mprageBet_base} -bin -eroF -eroF .brainmask_ero2x -odt char" #eroding the binarized mprage_bet
+
+	    rel "3dmaskave -mask .brainmask_ero2x -q func_to_struct > .gs_ts"
+	fi
+
+
+	#uniq=($(printf "%s\n" "${ids[@]}" | sort -u));
 
 	case "$r" in 
 	    6motion)
- 
-		metric="--${metric}" #add double hyphen for compatibility with fsl_motion_outliers
-		[ -n "$thresh" ] && thresh="--thresh=${thresh}" #format for fsl_motion_outliers
-		rel "fsl_motion_outliers -i \"$funcFile\" -o \"$matname\" $metric $thresh $imgname $metname";;
+		nuisancecols+=(".motion_demean[0]")
+		nuisancecols+=(".motion_demean[1]")
+		nuisancecols+=(".motion_demean[2]")
+		nuisancecols+=(".motion_demean[3]")
+		nuisancecols+=(".motion_demean[4]")
+		nuisancecols+=(".motion_demean[5]")
+		;;
+	    rx)
+		nuisancecols+=(".motion_demean[0]");;
+	    ry)
+		nuisancecols+=(".motion_demean[1]");;
+	    rz)
+		nuisancecols+=(".motion_demean[2]");;
+	    tx)
+		nuisancecols+=(".motion_demean[3]");;
+	    ty)
+		nuisancecols+=(".motion_demean[4]");;
+	    tz)
+		nuisancecols+=(".motion_demean[5]");;
+	    d6motion)
+		nuisancecols+=(".motion_deriv[0]")
+		nuisancecols+=(".motion_deriv[1]")
+		nuisancecols+=(".motion_deriv[2]")
+		nuisancecols+=(".motion_deriv[3]")
+		nuisancecols+=(".motion_deriv[4]")
+		nuisancecols+=(".motion_deriv[5]")
+		;;
+	    drx)
+		nuisancecols+=(".motion_deriv[0]");;
+	    dry)
+		nuisancecols+=(".motion_deriv[1]");;
+	    drz)
+		nuisancecols+=(".motion_deriv[2]");;
+	    dtx)
+		nuisancecols+=(".motion_deriv[3]");;
+	    dty)
+		nuisancecols+=(".motion_deriv[4]");;
+	    dtz)
+		nuisancecols+=(".motion_deriv[5]");;
+	    
+		
 
 	esac
-    done
-    IFS="${OLDIFS}"
 
 
-        if [[ $spec == *=* ]]; then
-            #has equals sign
-            metric=${spec/=*/} #before the equals
-            thresh=${spec/*=/} #after the equals
-            outbase="${metric}_${thresh}"
+}
+
 
 
 ####
@@ -53,13 +150,7 @@ if [ ! -f ${t2dir}/nuisance_regressors/${sid}_nuisance_set_100voxelmean.1D ]; th
 
     [ ! -d nuisance_regressors ] && mkdir nuisance_regressors
 
-    #not sure why de-meaning is included here (keep for now)
-    1d_tool.py -overwrite -infile ${t2dir}/m_${t2base}.par -set_nruns 1 \
-        -demean -write ${t2dir}/nuisance_regressors/${sid}_motion_demean.1D
      
-    #compute motion parameter derivatives (for use in regression)
-    1d_tool.py -overwrite -infile ${t2dir}/nuisance_regressors/${sid}_motion_demean.1D -set_nruns 1 \
-           -derivative -demean -write ${t2dir}/nuisance_regressors/${sid}_motion_deriv.1D
 
     #compute nuisance set for all scalings
     for t in 100voxelmean 1000globmedian 1000globmean 1000globmode; do
