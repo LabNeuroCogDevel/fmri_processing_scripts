@@ -7,6 +7,7 @@ function parse_args {
     #initialize defaults
     funcFile=
     smoothing_kernel="5"
+    bandpass_filter=0 #no bandpass by default
     betFrac=0.3 #default fractional intensity threshold
     cleanup=0
     cleanup_only=0
@@ -23,7 +24,7 @@ function parse_args {
     fm_cfg=
     funcStructFlirtDOF="bbr" #boundary-based registration in FSL 5.0+
     funcWarpInterp="spline"
-    hpFilter=80
+    hpFilter=80 #default to 80 TR high-pass filter
     logFile="preprocessFunctional.log"
     mc_first= #default to empty
     mc_movie=0
@@ -97,6 +98,12 @@ function parse_args {
 	    funcFile="${2}"
 	    funcNifti="${funcFile}" #retains file extension
 	    shift 2
+	elif [ $1 = -bandpass_filter ]; then
+	    no_hp=1 #bandpass and high-pass are mutually exclusive
+	    bandpass_filter=1
+	    bpLow="${2}"
+	    bpHigh="${3}"
+	    shift 3
 	elif [ $1 = -bet_frac ]; then
 	    betFrac="${2}"
 	    shift 2

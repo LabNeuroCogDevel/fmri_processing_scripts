@@ -69,6 +69,10 @@ Command line options:
   -no_smooth: Do not perform spatial smoothing.
   -no_st: Do not perform slice timing correction.
   -no_warp: Maintain native space and resolution of input image. Do not warp to a template.
+  -nuisance_regression: regress out signals that are not of interest (most relevant to resting-state processing).
+        Comma-delimited list that can include: 6motion, rx, ry, rz, tx, ty, tz, wm (white matter), csf (cerebrospinal fluid), 
+        gs (global signal). Derivatives of any of these can be added by using the prefix "d" (e.g., dcsf).
+        If bandpass filtering is specified, nuisance regression is done by 3dBandpass. Otherwise, use 3dDetrend.
   -ref_vol: Reference volume to be used in motion correction. Will default to mean volume if not passed.
   -rescaling_method: The method used to normalize voxel intensities. Options are:
         -rescaling_method 10000_globalmedian (FSL's default, rescale the 4d file by a single quantity: 10000/[global median])

@@ -1,25 +1,40 @@
 #!/bin/bash
 
 function nuisance_regression {
-    #parse -nuisance_regression syntax
+    #handle nuisance regression and/or bandpass filtering
 
-    [ "$nuisance_regression" -eq 0 ] && return 0
+    [[ "$nuisance_regression" -eq 0 && "$bandpass_filter" -eq 0 ]] && return 0 #neither step
 
-    [ -f .nuisance_regression_complete ] && return 0
+    preNRBP="${prefix}${funcNifti}"
+    
+    local todo=
+    if [[ "$nuisance_regression" -eq 1 && "$bandpass_filter" -eq 1 ]]; then todo="br" #bandpass and regression
+    elif [ "$nuisance_regression" -eq 1 ]; then todo="r" #regression only
+    else todo="b" #bandpass alone
+    fi
 
-    declare -a nuisancecols #files to be 
+    postNRBP="${todo}${prefix}${funcNifti}"   
+
+    #check whether requisite steps are complete
+    [[ -f .nuisance_regression_complete && todo=r ]] && return 0
+    [[ -f .bandpass_filter_complete && todo=b ]] && return 0
+    [[ -f .nuisance_regression_complete && -f .bandpass_filter_complete && todo=br ]] && return 0
+
+    #todo: handle bp only
+
+    declare -a nuisancecols #nuisance regressors to be concatenated
 
     #parse regressors of interest
     OLDIFS="${IFS}"
     IFS=',' read -ra reg <<< "$nuisance_regressors"
     for r in "${reg[@]}"; do
-	if [[ "$r" =~ ^(6motion|rx|ry|rz|tx|ty|tz|)$ && ! -f ".motion_demean" ]]; then 
+	if [[ "$r" =~ ^(6motion|rx|ry|rz|tx|ty|tz)$ && ! -f ".motion_demean" ]]; then 
 	    #compute de-meaned motion parameters for nuisance regression
 	    1d_tool.py -overwrite -infile motion.par -set_nruns 1 \
 		-demean -write .motion_demean	    
 	fi
 
-	if [[ "$r" =~ ^(d6motion|drx|dry|drz|dtx|dty|dtz|)$ && ! -f ".motion_deriv" ]]; then 
+	if [[ "$r" =~ ^(d6motion|drx|dry|drz|dtx|dty|dtz)$ && ! -f ".motion_deriv" ]]; then 
 	    #compute motion parameter derivatives for nuisance regression
 	    1d_tool.py -overwrite -infile motion.par -set_nruns 1 \
 		-derivative -demean -write .motion_deriv
@@ -46,6 +61,8 @@ function nuisance_regression {
 	    else
 		rel "3dmaskave -mask .csf_ero2x -q func_to_struct > .csf_ts"
 	    fi
+
+	    rel "1d_tool.py -overwrite -infile .csf_ts -derivative -write .csf_ts_deriv"
 	fi
 
 	if [[ "$r" =~ ^(wm|dwm)$ && ! -f ".wm_ts" ]]; then
@@ -69,6 +86,8 @@ function nuisance_regression {
 	    else
 		rel "3dmaskave -mask .csf_ero2x -q func_to_struct > .wm_ts"
 	    fi
+
+	    rel "1d_tool.py -overwrite -infile .wm_ts -derivative -write .wm_ts_deriv"
 	fi
 
 	#global signal
@@ -77,10 +96,8 @@ function nuisance_regression {
 	    rel "fslmaths ${mprageBet_base} -bin -eroF -eroF .brainmask_ero2x -odt char" #eroding the binarized mprage_bet
 
 	    rel "3dmaskave -mask .brainmask_ero2x -q func_to_struct > .gs_ts"
+	    rel "1d_tool.py -overwrite -infile .gs_ts -derivative -write .gs_ts_deriv"
 	fi
-
-
-	#uniq=($(printf "%s\n" "${ids[@]}" | sort -u));
 
 	case "$r" in 
 	    6motion)
@@ -123,72 +140,40 @@ function nuisance_regression {
 		nuisancecols+=(".motion_deriv[4]");;
 	    dtz)
 		nuisancecols+=(".motion_deriv[5]");;
-	    
-		
-
+	    wm)
+		nuisancecols+=(".wm_ts");;
+	    dwm)
+		nuisancecols+=(".wm_ts_deriv");;
+	    csf)
+		nuisancecols+=(".csf_ts");;
+	    dcsf)
+		nuisancecols+=(".csf_ts_deriv");;
+	    gs)
+		nuisancecols+=(".gs_ts");;
+	    dgs)
+		nuisancecols+=(".gs_ts_deriv");;	    
 	esac
 
+    done
+    IFS="${OLDIFS}"
+
+    nuisance_concat=$(printf "%s\n" "${ids[@]}" | sort -u) #only keep unique columns
+    rel "1dcat -overwrite $nuisance_concat > .nuisance_regressors"
+    
+    if [ $bandpass_filter -eq 1 ]; then
+        rel "3dBandpass -input \"$preNRBP\" -mask \"${subjMask}\" \
+		-prefix \"$postNRBP\" -ort .nuisance_regressors $bpLow $bpHigh"
+    else
+        rel "3dDetrend -verb -polort 2 -vector .nuisance_regressors \
+		-prefix \"$postNRBP\" \"$preNRBP\""
+	
+	#need to mask detrend by brain mask as with 3dBandpass
+	rel "fslmaths \"$postNRBP\" -mas \"$subjMask\" \"postNRBP\""
+    fi
+    
+    rel "date > .nuisance_regression_complete"
+    
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
 
 }
-
-
-
-####
-##STEP 4: Obtain estimates of WM and Vent signal for nuisance regression
-#compute WM, GM, and Ventricle signal from FreeSurfer aseg file
-
-#NB: An important issue here is that the Vent and WM signals will have full frequency spectra because these have not been
-#bandpassed yet. Thus, it's possible the Power pipeline also introduces high-frequency noise due to spectral incomparability between
-#the fMRI signal and the WM and Vent regressors.
-
-#This is solved here by computing the WM and Vent signals from nswktm data in full frequencies, but then using 3dBandpass,
-#which will bandpass WM and Vent prior to regression.
-
-if [ ! -f ${t2dir}/nuisance_regressors/${sid}_nuisance_set_100voxelmean.1D ]; then
-    
-    cd ${t2dir}
-
-    [ ! -d nuisance_regressors ] && mkdir nuisance_regressors
-
-     
-
-    #compute nuisance set for all scalings
-    for t in 100voxelmean 1000globmedian 1000globmean 1000globmode; do
-	#First, we need to upsample the data to 1mm voxels to compute WM and Vent signals, as these masks are at 1mm
-	if [ ! -f ${t2dir}/nswktm_${t2base}_6_${t}_1mm.nii.gz ]; then
-	        flirt -in ${t2dir}/nswktm_${t2base}_6_${t}.nii.gz \
-		    -ref ${t1dir}/${sid}_t1_1mm_mni152.nii.gz \
-		    -applyxfm -init ${FSLDIR}/etc/flirtsch/ident.mat \
-		    -out ${t2dir}/nswktm_${t2base}_6_${t}_1mm -paddingsize 0.0 -interp nearestneighbour
-
-		#FSL is a bad little boy and strips away the TR. Bring it back!
-		    3drefit -TR $TR nswktm_${t2base}_6_${t}_1mm.nii.gz
-		    fi
-
-        #average voxels within preprocessed functional data
-	3dmaskave -mask ${t1dir}/${sid}_WM_mask_mni_erod+tlrc -q ${t2dir}/nswktm_${t2base}_6_${t}_1mm.nii.gz > ${t2dir}/nuisance_regressors/${sid}_WM_${t}.1D
-	3dmaskave -mask ${t1dir}/${sid}_Vent_mask_mni_erod+tlrc -q ${t2dir}/nswktm_${t2base}_6_${t}_1mm.nii.gz > ${t2dir}/nuisance_regressors/${sid}_Vent_${t}.1D
-	3dmaskave -mask 'SELF' -q ${t2dir}/nswktm_${t2base}_6_${t}_1mm.nii.gz > ${t2dir}/nuisance_regressors/${sid}_Global_${t}.1D
-
-        #compute derivatives of wm, vent, global
-	1d_tool.py -overwrite -infile ${t2dir}/nuisance_regressors/${sid}_WM_${t}.1D -derivative -write ${t2dir}/nuisance_regressors/${sid}_WM_${t}_deriv.1D
-	1d_tool.py -overwrite -infile ${t2dir}/nuisance_regressors/${sid}_Vent_${t}.1D -derivative -write ${t2dir}/nuisance_regressors/${sid}_Vent_${t}_deriv.1D
-	1d_tool.py -overwrite -infile ${t2dir}/nuisance_regressors/${sid}_Global_${t}.1D -derivative -write ${t2dir}/nuisance_regressors/${sid}_Global_${t}_deriv.1D
-
-        #compute set of nuisance regressors per normalization
-	1dcat -overwrite ${t2dir}/nuisance_regressors/${sid}_WM_${t}.1D \
-	        ${t2dir}/nuisance_regressors/${sid}_Vent_${t}.1D \
-	        ${t2dir}/nuisance_regressors/${sid}_Global_${t}.1D \
-	        ${t2dir}/nuisance_regressors/${sid}_WM_${t}_deriv.1D \
-	        ${t2dir}/nuisance_regressors/${sid}_Vent_${t}_deriv.1D \
-	        ${t2dir}/nuisance_regressors/${sid}_Global_${t}_deriv.1D \
-	        ${t2dir}/nuisance_regressors/${sid}_motion_demean.1D \
-	        ${t2dir}/nuisance_regressors/${sid}_motion_deriv.1D > ${t2dir}/nuisance_regressors/${sid}_nuisance_set_${t}.1D
-
-	1dcat -overwrite ${t2dir}/nuisance_regressors/${sid}_WM_${t}.1D \
-	        ${t2dir}/nuisance_regressors/${sid}_Vent_${t}.1D \
-	        ${t2dir}/nuisance_regressors/${sid}_WM_${t}_deriv.1D \
-	        ${t2dir}/nuisance_regressors/${sid}_Vent_${t}_deriv.1D \
-	        ${t2dir}/nuisance_regressors/${sid}_motion_demean.1D \
-	        ${t2dir}/nuisance_regressors/${sid}_motion_deriv.1D > ${t2dir}/nuisance_regressors/${sid}_nuisance_set_noglobal_${t}.1D
-    done
