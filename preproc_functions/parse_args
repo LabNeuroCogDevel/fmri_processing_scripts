@@ -47,6 +47,7 @@ function parse_args {
     thresholdMethod="98_2"
     tr= #never assume a TR. Force definition or use auto-detect from DICOM.
     templateBrain="$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" #default to new 2009 MNI
+    waveletDespike=0
 
     #figure out file extension for FSL programs
     if [ -z $FSLOUTPUTTYPE ]; then
@@ -310,6 +311,9 @@ function parse_args {
 		echo -e "Unrecognized -warp_interpolation parameter: ${2}.\n  Options are: sinc, spline, or trilinear."
 		exit 1
 	    fi
+	elif [ $1 = -wavelet_despike ]; then
+	    waveletDespike=1
+	    despike=1
 	else
 	    #printHelp
 	    echo -e "----------------\n\n"

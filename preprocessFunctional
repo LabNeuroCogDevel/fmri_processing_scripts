@@ -145,6 +145,7 @@ EndOfHelp
 #Changelog:
 #07/01/2014
 # - Incorporate nuisance regression and bandpass filtering steps
+# - Incorporate wavelet despiking (Patel et al. 2014 NI)
 #04/27/2014
 # - MAJOR OVERHAUL: worker functions for each processing step abstracted to separate files in preproc_functions/
 # - Can resume run by just typing preprocessFunctional at the prompt and answering "y" for resume.
@@ -255,12 +256,28 @@ numVols=$( fslhd ${funcFile} | grep '^dim4' | perl -pe 's/dim4\s+(\d+)/\1/' )
 middleVol=$( echo "$numVols/2" | bc )
 
 #Voxelwise despiking: optional first step
+#Can use 3dDespike (time despiking) or wavelet despiking
 #Especially useful if data will be bandpass filtered
 if [ $despike -eq 1 ]; then
     prefix="d${prefix}"
 
     if [ ! -f ".despike_complete" ]; then
-	rel "3dDespike -overwrite -cut $despikeThresh -prefix \"${prefix}${funcNifti}\" \"${funcNifti}\""
+	if [ $waveletDespiking -eq 1 ]; then
+	    if [ $( uname ) = Darwin ]; then
+		matlabCmd="addpath(genpath('${scriptDir}/wavelet_despike/mac'));"
+	    else
+		matlabCmd="addpath(genpath('${scriptDir}/wavelet_despike/linux_windows'));"
+	    fi
+	    matlabCmd="${matlabCmd} try; 
+WaveletDespike('${funcNifti}', 
+'${prefix}${funcNifti}',
+'LimitRAM, 8); 
+end; quit;
+"
+	    matlab -nodisplay -r $matlabCmd
+	else
+	    rel "3dDespike -overwrite -cut $despikeThresh -prefix \"${prefix}${funcNifti}\" \"${funcNifti}\""
+	fi
 	rel "date > .despike_complete"
     fi
 fi
