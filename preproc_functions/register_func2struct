@@ -58,7 +58,7 @@ function register_func2struct {
 
 		if [ $createBBRFmapWarp -eq 1 ]; then
 		    #also generate a func -> struct image without fmap unwarping in BBR to verify that fieldmap unwarping is helping with coregistration
-		    rel "applywarp -i mc_target -o func_to_struct_nounwarp --premat=func_to_struct.mat --interp=spline -r $mprageBet"
+		    rel "applywarp -i mc_target -o func_to_struct_nounwarp --premat=func_to_struct.mat --interp=spline -r \"$mprageBet\""
 
 		    #when BBR is used, we need to transform the FM into functional space via the inverse of the func -> struct warp
 		    #in the new (epi_reg) approach, the FM is never explicitly aligned to the EPI. This occurs via the func -> struct inverse.
@@ -77,7 +77,8 @@ function register_func2struct {
 
 		    #save unmasked shift map in EPI space
 		    rel "fugue --loadfmap=unwarp/EF_UD_fmap_bbr --mask=unwarp/EF_UD_fmap_bbr_mask --saveshift=unwarp/EF_UD_shift_bbr --unmaskshift --dwell=$dwelltime --unwarpdir=$unwarpdir"
-		    rel "convertwarp -r unwarp/EF_D_mc_target -s unwarp/EF_UD_shift_bbr -o unwarp/EF_UD_warp_bbr --shiftdir=$unwarpdir --relout"		    
+		    rel "convertwarp -r unwarp/EF_D_mc_target -s unwarp/EF_UD_shift_bbr -o unwarp/EF_UD_warp_bbr --shiftdir=$unwarpdir --relout" #warp coefficients in EPI space
+		    rel "convertwarp -r \"$mprageBet\" -s unwarp/EF_UD_shift_bbr -o unwarp/T1_UD_warp_bbr --postmat=func_to_struct.mat --shiftdir=$unwarpdir --relout" #warp coefficients in structural space
 		fi
 	    else
 		rel "BBR EPI-to-T1 requested, but flirt < v6.0. Reverting to typical 6 DOF registration" c

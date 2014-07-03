@@ -50,7 +50,18 @@ function nuisance_regression {
 		-derivative -demean -write .motion_deriv
 	fi
 
-	#TODO: problem is that func_to_struct is just mc_target, not whole volume... could transform structural to functional space using inverse xfm? ...
+	#Use func_to_struct.mat to warp subject functional into structural space.
+    #This mat is generated upstream in register_func2struct, but is only applied to the coregistration target (mc_target), not the 4d functional
+    #Use the $preBet image, which is generated after slice timing and motion correction to derive nuisance time series.
+    if [ $( imtest "func_to_struct_allv" ) -eq 0 ]; then
+	    if [ $( imtest "unwarp/T1_UD_warp_bbr" ) -eq 1 ]; then
+	        #when BBR coregistration is used with fm unwarping, we end up with warp coefficients for func -> struct, not just a .mat file
+	        rel "applywarp -i \"$preBet\" -o func_to_struct_allv -w unwarp/T1_UD_warp_bbr --interp=spline -r \"$mprageBet\""
+	    else
+	        #shouldn't there be a scenario where we also have a nonlinear warp for traditional fm unwarping here?
+	        rel "applywarp -i \"$preBet\" -o func_to_struct_allv --premat=func_to_struct.mat --interp=spline -r \"$mprageBet\""
+	    fi
+    fi    
 
 	if [[ "$r" =~ ^(csf|dcsf)$ && ! -f ".csf_ts" ]]; then
 	    #fast segmentation should have been run during preprocessMprage
@@ -69,9 +80,9 @@ function nuisance_regression {
 		rel "fslmaths ${mprageBet_base}_fast_seg_0 -eroF .csf_ero1x -odt char"
 
 		#obtain timeseries from functional warped to structural space (during coregistration)
-		rel "3dmaskave -mask .csf_ero1x${ext} -q func_to_struct${ext} > .csf_ts"
+		rel "3dmaskave -mask .csf_ero1x${ext} -q func_to_struct_allv${ext} > .csf_ts"
 	    else
-		rel "3dmaskave -mask .csf_ero2x${ext} -q func_to_struct${ext} > .csf_ts"
+		rel "3dmaskave -mask .csf_ero2x${ext} -q func_to_struct_allv${ext} > .csf_ts"
 	    fi
 
 	    rel "1d_tool.py -overwrite -infile .csf_ts -derivative -write .csf_ts_deriv"
@@ -94,9 +105,9 @@ function nuisance_regression {
 		rel "fslmaths ${mprageBet_base}_fast_seg_0 -eroF .wm_ero1x -odt char"
 
 		#obtain timeseries from functional warped to structural space (during coregistration)
-		rel "3dmaskave -mask .wm_ero1x${ext} -q func_to_struct${ext} > .wm_ts"
+		rel "3dmaskave -mask .wm_ero1x${ext} -q func_to_struct_allv${ext} > .wm_ts"
 	    else
-		rel "3dmaskave -mask .wm_ero2x${ext} -q func_to_struct${ext} > .wm_ts"
+		rel "3dmaskave -mask .wm_ero2x${ext} -q func_to_struct_allv${ext} > .wm_ts"
 	    fi
 
 	    rel "1d_tool.py -overwrite -infile .wm_ts -derivative -write .wm_ts_deriv"
@@ -107,7 +118,7 @@ function nuisance_regression {
 	    #erode the tight skull-stripped brain mask from the structural scan to identify brain voxels
 	    rel "fslmaths ${mprageBet_base} -bin -eroF -eroF .brainmask_ero2x -odt char" #eroding the binarized mprage_bet
 
-	    rel "3dmaskave -mask .brainmask_ero2x${ext} -q func_to_struct${ext} > .gs_ts"
+	    rel "3dmaskave -mask .brainmask_ero2x${ext} -q func_to_struct_allv${ext} > .gs_ts"
 	    rel "1d_tool.py -overwrite -infile .gs_ts -derivative -write .gs_ts_deriv"
 	fi
 
