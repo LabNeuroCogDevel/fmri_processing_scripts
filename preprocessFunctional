@@ -262,7 +262,7 @@ if [ $despike -eq 1 ]; then
     prefix="d${prefix}"
 
     if [ ! -f ".despike_complete" ]; then
-	if [ $waveletDespiking -eq 1 ]; then
+	if [ $waveletDespike -eq 1 ]; then
 	    if [ $( uname ) = Darwin ]; then
 		matlabCmd="addpath(genpath('${scriptDir}/wavelet_despike/mac'));"
 	    else
@@ -271,7 +271,7 @@ if [ $despike -eq 1 ]; then
 	    matlabCmd="${matlabCmd} try; 
 WaveletDespike('${funcNifti}', 
 '${prefix}${funcNifti}',
-'LimitRAM, 8); 
+'LimitRAM', 8); 
 end; quit;
 "
 	    matlab -nodisplay -r $matlabCmd

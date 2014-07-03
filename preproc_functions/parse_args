@@ -314,6 +314,7 @@ function parse_args {
 	elif [ $1 = -wavelet_despike ]; then
 	    waveletDespike=1
 	    despike=1
+	    shift 1
 	else
 	    #printHelp
 	    echo -e "----------------\n\n"
