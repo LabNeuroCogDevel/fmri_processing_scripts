@@ -6,7 +6,7 @@ function register_func2struct {
     #note: the default is a 6 dof transformation, which is appropriate for cross-modal registration for a single
     #subject (since the brain should be the same size in T1 and T2*, just need to rotate and translate.
 
-    #as currently written, this creates a warped functional, func_to_struct (perhaps important
+    #as currently written, this creates a warped target functional, func_to_struct (perhaps important
     #for checking the success of the warp), but the important part is the
     #transformation matrix: func_to_struct.mat
 
@@ -14,6 +14,8 @@ function register_func2struct {
     #for BBR coregistration, incorporate fieldmap into coregistration (also results in unwarping coefficients)
     inweight=
     bbrfmap=
+
+    mprageBet_base=$( remove_ext ${mprageBet} ) #skull-stripped mprage image basename
 
     if [ -n "${fm_phase}" ]; then
 
@@ -39,8 +41,6 @@ function register_func2struct {
 	rel "Warping subject mean functional to subject structural (intrasubject)" c
 
 	if [ $funcStructFlirtDOF = "bbr" ]; then
-	    
-	    mprageBet_base=$( remove_ext ${mprageBet} )
 
 	    if [ $bbrCapable -eq 1 ]; then
 		rel "Using boundary-based registration approach to register EPI to T1" c

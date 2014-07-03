@@ -26,6 +26,8 @@ This script depends on the following tools:
 Command line options:
   -4d: The 4d file containing unprocessed functional volumes for a single subject. Required.
   -4d_slice_motion: use 4d simultaneous slice-timing motion correction algorithm (calls sliceMotion4D)
+  -bandpass_filter: Apply bandpass filter to fMRI data using 3dBandpass. Pass low and high cutoff frequencies in Hz.
+        Example: -bandpass_filter 0.009 .08
   -bet_frac: fractional intensity threshold for skull-stripping mean functional (used in func-to-struc warp). Default 0.3.
   -cleanup: Deletes all files used in preprocessing that are unlikely to be needed for analysis
   -cleanup_only: Delete all intermediate files, but do not run any processing steps.
@@ -70,9 +72,10 @@ Command line options:
   -no_st: Do not perform slice timing correction.
   -no_warp: Maintain native space and resolution of input image. Do not warp to a template.
   -nuisance_regression: regress out signals that are not of interest (most relevant to resting-state processing).
-        Comma-delimited list that can include: 6motion, rx, ry, rz, tx, ty, tz, wm (white matter), csf (cerebrospinal fluid), 
+        Comma-delimited list (no spaces!) that can include: 6motion, rx, ry, rz, tx, ty, tz, wm (white matter), csf (cerebrospinal fluid), 
         gs (global signal). Derivatives of any of these can be added by using the prefix "d" (e.g., dcsf).
-        If bandpass filtering is specified, nuisance regression is done by 3dBandpass. Otherwise, use 3dDetrend.
+        If bandpass filtering is specified, nuisance regression is done by 3dBandpass (Hallquist et al. 2013, NeuroImage). Otherwise, use 3dDetrend.
+        Example: -nuisance_regression 6motion,csf,wm,dcsf,dwm
   -ref_vol: Reference volume to be used in motion correction. Will default to mean volume if not passed.
   -rescaling_method: The method used to normalize voxel intensities. Options are:
         -rescaling_method 10000_globalmedian (FSL's default, rescale the 4d file by a single quantity: 10000/[global median])
@@ -140,6 +143,8 @@ EndOfHelp
 #Last updated: 04/06/2014
 #
 #Changelog:
+#07/01/2014
+# - Incorporate nuisance regression and bandpass filtering steps
 #04/27/2014
 # - MAJOR OVERHAUL: worker functions for each processing step abstracted to separate files in preproc_functions/
 # - Can resume run by just typing preprocessFunctional at the prompt and answering "y" for resume.
@@ -188,6 +193,8 @@ source "${scriptDir}/preproc_functions/warp_to_template"
 source "${scriptDir}/preproc_functions/spatial_smooth"
 source "${scriptDir}/preproc_functions/highpass_filter"
 source "${scriptDir}/preproc_functions/intensity_normalization"
+source "${scriptDir}/preproc_functions/nuisance_regression"
+
 
 set -e #exit if any error occurs (stop processing)
 
@@ -338,6 +345,9 @@ highpass_filter                # preproc_functions/highpass_filter
 
 # normalize intensities (to allow for comparability across subjects)
 intensity_normalization
+
+# handle nuisance regression and/or bandpass filtering
+nuisance_regression
 
 
 #####

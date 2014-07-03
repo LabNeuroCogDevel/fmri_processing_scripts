@@ -5,7 +5,7 @@ function nuisance_regression {
 
     [[ "$nuisance_regression" -eq 0 && "$bandpass_filter" -eq 0 ]] && return 0 #neither step
 
-    preNRBP="${prefix}${funcNifti}"
+    preNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
     
     local todo=
     if [[ "$nuisance_regression" -eq 1 && "$bandpass_filter" -eq 1 ]]; then todo="br" #bandpass and regression
@@ -13,14 +13,24 @@ function nuisance_regression {
     else todo="b" #bandpass alone
     fi
 
-    postNRBP="${todo}${prefix}${funcNifti}"   
+    prefix="${todo}${prefix}"
+    postNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
 
     #check whether requisite steps are complete
     [[ -f .nuisance_regression_complete && todo=r ]] && return 0
     [[ -f .bandpass_filter_complete && todo=b ]] && return 0
     [[ -f .nuisance_regression_complete && -f .bandpass_filter_complete && todo=br ]] && return 0
 
-    #todo: handle bp only
+    #todo: handle bp only separately
+    if [ $todo = b ]; then
+	rel "3dBandpass -input \"$preNRBP\" -mask \"${subjMask}${ext}\" \
+		-prefix \"$postNRBP\" $bpLow $bpHigh"
+
+	rel "date > .bandpass_filter_complete"
+	return 0
+    fi
+
+    #handle regression or bp + regression
 
     declare -a nuisancecols #nuisance regressors to be concatenated
 
@@ -40,6 +50,8 @@ function nuisance_regression {
 		-derivative -demean -write .motion_deriv
 	fi
 
+	#TODO: problem is that func_to_struct is just mc_target, not whole volume... could transform structural to functional space using inverse xfm? ...
+
 	if [[ "$r" =~ ^(csf|dcsf)$ && ! -f ".csf_ts" ]]; then
 	    #fast segmentation should have been run during preprocessMprage
 	    #use seg_0 for csf
@@ -50,16 +62,16 @@ function nuisance_regression {
 	    rel "fslmaths ${mprageBet_base}_fast_seg_0 -eroF -eroF .csf_ero2x -odt char"
 	    
 	    #check that at least 250 voxels are present in mask to get a reasonable sampling distribution of CSF timeseries
-	    local nvox=$( 3dBrickStat -non-zero -count .csf_ero2x )
+	    local nvox=$( 3dBrickStat -non-zero -count .csf_ero2x${ext} )
 
 	    if [ $nvox -lt 250 ]; then
 		#go back to a 1x erosion
 		rel "fslmaths ${mprageBet_base}_fast_seg_0 -eroF .csf_ero1x -odt char"
 
 		#obtain timeseries from functional warped to structural space (during coregistration)
-		rel "3dmaskave -mask .csf_ero1x -q func_to_struct > .csf_ts"
+		rel "3dmaskave -mask .csf_ero1x${ext} -q func_to_struct${ext} > .csf_ts"
 	    else
-		rel "3dmaskave -mask .csf_ero2x -q func_to_struct > .csf_ts"
+		rel "3dmaskave -mask .csf_ero2x${ext} -q func_to_struct${ext} > .csf_ts"
 	    fi
 
 	    rel "1d_tool.py -overwrite -infile .csf_ts -derivative -write .csf_ts_deriv"
@@ -75,16 +87,16 @@ function nuisance_regression {
 	    rel "fslmaths ${mprageBet_base}_fast_seg_2 -eroF -eroF .wm_ero2x -odt char"
 	    
 	    #check that at least 500 voxels are present in mask to get a reasonable sampling distribution of WM timeseries
-	    local nvox=$( 3dBrickStat -non-zero -count .wm_ero2x )
+	    local nvox=$( 3dBrickStat -non-zero -count .wm_ero2x${ext} )
 
 	    if [ $nvox -lt 500 ]; then
 		#go back to a 1x erosion
 		rel "fslmaths ${mprageBet_base}_fast_seg_0 -eroF .wm_ero1x -odt char"
 
 		#obtain timeseries from functional warped to structural space (during coregistration)
-		rel "3dmaskave -mask .csf_ero1x -q func_to_struct > .wm_ts"
+		rel "3dmaskave -mask .wm_ero1x${ext} -q func_to_struct${ext} > .wm_ts"
 	    else
-		rel "3dmaskave -mask .csf_ero2x -q func_to_struct > .wm_ts"
+		rel "3dmaskave -mask .wm_ero2x${ext} -q func_to_struct${ext} > .wm_ts"
 	    fi
 
 	    rel "1d_tool.py -overwrite -infile .wm_ts -derivative -write .wm_ts_deriv"
@@ -95,7 +107,7 @@ function nuisance_regression {
 	    #erode the tight skull-stripped brain mask from the structural scan to identify brain voxels
 	    rel "fslmaths ${mprageBet_base} -bin -eroF -eroF .brainmask_ero2x -odt char" #eroding the binarized mprage_bet
 
-	    rel "3dmaskave -mask .brainmask_ero2x -q func_to_struct > .gs_ts"
+	    rel "3dmaskave -mask .brainmask_ero2x${ext} -q func_to_struct${ext} > .gs_ts"
 	    rel "1d_tool.py -overwrite -infile .gs_ts -derivative -write .gs_ts_deriv"
 	fi
 
@@ -157,12 +169,14 @@ function nuisance_regression {
     done
     IFS="${OLDIFS}"
 
-    nuisance_concat=$(printf "%s\n" "${ids[@]}" | sort -u) #only keep unique columns
+    nuisance_concat=$(printf "%s\n" "${nuisancecols[@]}" | sort -u) #only keep unique columns
     rel "1dcat -overwrite $nuisance_concat > .nuisance_regressors"
     
     if [ $bandpass_filter -eq 1 ]; then
-        rel "3dBandpass -input \"$preNRBP\" -mask \"${subjMask}\" \
+        rel "3dBandpass -input \"$preNRBP\" -mask \"${subjMask}${ext}\" \
 		-prefix \"$postNRBP\" -ort .nuisance_regressors $bpLow $bpHigh"
+
+	rel "date > .bandpass_filter_complete"
     else
         rel "3dDetrend -verb -polort 2 -vector .nuisance_regressors \
 		-prefix \"$postNRBP\" \"$preNRBP\""
