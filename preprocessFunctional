@@ -26,7 +26,7 @@ This script depends on the following tools:
 Command line options:
   -4d: The 4d file containing unprocessed functional volumes for a single subject. Required.
   -4d_slice_motion: use 4d simultaneous slice-timing motion correction algorithm (calls sliceMotion4D)
-  -bandpass_filter: Apply bandpass filter to fMRI data using 3dBandpass. Pass low and high cutoff frequencies in Hz.
+  -bandpass_filter: Apply bandpass filter to fMRI data using 3dBandpass. Specify low and high cutoff frequencies in Hz.
         Example: -bandpass_filter 0.009 .08
   -bet_frac: fractional intensity threshold for skull-stripping mean functional (used in func-to-struc warp). Default 0.3.
   -cleanup: Deletes all files used in preprocessing that are unlikely to be needed for analysis
@@ -111,6 +111,10 @@ Command line options:
         -warp_interpolation sinc. Provides higher quality non-blurry resampling relative to trilinear, but is slower. N.B. Only works well when the subject's
                functional mask is precise and contains only brain voxels. Otherwise, sinc is prone to stretching the warp strangely.
         -warp_interpolation trilinear. Faster method, but somewhat blurry.
+  -wavelet_despike: Apply wavelet despiking as first step in pipeline to remove frequency-dependent nonstationary events in fMRI time series (Patel 2014 NeuroImage).
+        Note: This is an alternative to 3dDespike and should generally be preferred because it removes intensity artifacts in frequency space, which is useful
+        because head movement often produces artifacts that are spread in time (spin history).
+        
 
 The major steps in the processing pipeline are, in order:
   1)   Intensity despiking (optional) - d
@@ -146,6 +150,7 @@ EndOfHelp
 #07/01/2014
 # - Incorporate nuisance regression and bandpass filtering steps
 # - Incorporate wavelet despiking (Patel et al. 2014 NI)
+# - Better cleanup of intermediate files using -cleanup_only (looks in .preproc_cmd for settings)
 #04/27/2014
 # - MAJOR OVERHAUL: worker functions for each processing step abstracted to separate files in preproc_functions/
 # - Can resume run by just typing preprocessFunctional at the prompt and answering "y" for resume.
@@ -270,11 +275,15 @@ if [ $despike -eq 1 ]; then
 	    fi
 	    matlabCmd="${matlabCmd} try; 
 WaveletDespike('${funcNifti}', 
-'${prefix}${funcNifti}',
+'${prefix}${funcFile}',
 'LimitRAM', 8); 
 end; quit;
 "
-	    matlab -nodisplay -r $matlabCmd
+	    rel "matlab -nodisplay -r \"$matlabCmd\""
+
+	    rel "mv \"${prefix}${funcFile}_wds.nii.gz\" \"${prefix}${funcFile}.nii.gz\"" #move despiked file to d_funcfile
+	    rel "mv \"${prefix}${funcFile}_noise.nii.gz\" \"${prefix}${funcFile}_wavelet_noise.nii.gz\""
+	    rel "mv \"${prefix}${funcFile}_SP.txt\" \"${prefix}${funcFile}_spike_percentage.txt\""
 	else
 	    rel "3dDespike -overwrite -cut $despikeThresh -prefix \"${prefix}${funcNifti}\" \"${funcNifti}\""
 	fi

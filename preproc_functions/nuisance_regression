@@ -193,7 +193,7 @@ function nuisance_regression {
 		-prefix \"$postNRBP\" \"$preNRBP\""
 	
 	#need to mask detrend by brain mask as with 3dBandpass
-	rel "fslmaths \"$postNRBP\" -mas \"$subjMask\" \"postNRBP\""
+	rel "fslmaths \"$postNRBP\" -mas \"$subjMask\" \"$postNRBP\""
     fi
     
     rel "date > .nuisance_regression_complete"

@@ -21,6 +21,8 @@ function _picture {
 }
 
 function deleteFile() {
+    #echo "to del: $1"
+
     #delete a file, if it exists
     if [ -f "$1" ]; then
 	rel "rm -f \"$1\""
@@ -120,88 +122,137 @@ function cleanup_preprocessFunctional {
 	upre=""
     fi
 
-    echo "dspre: $dspre"
-    echo "upre: $upre"
-    echo "smoothing_suffix: $smoothing_suffix"
+    #echo "dspre: $dspre"
+    #echo "upre: $upre"
+    #echo "smoothing_suffix: $smoothing_suffix"
+    #echo "ext: $ext"
 
     #interleaved stream
-    deleteFile t${dspre}_${funcFile}.nii.gz
-    deleteFile mt${dspre}_${funcFile}.nii.gz
-    deleteFile ${upre}mt${dspre}_${funcFile}.nii.gz
-    deleteFile ${upre}mt${dspre}_${funcFile}_mean_reg.nii.gz
-    deleteFile k${upre}mt${dspre}_${funcFile}.nii.gz
-    deleteFile k${upre}mt${dspre}_tmean_mask.nii.gz
-    deleteFile ${wpre}k${upre}mt${dspre}_${funcFile}.nii.gz
-    deleteFile ${wpre}k${upre}mt${dspre}_${funcFile}_extents_mask.nii.gz
-    deleteFile s${wpre}k${upre}mt${dspre}_${funcFile}${smoothing_suffix}.nii.gz
-    deleteFile fs${wpre}k${upre}mt${dspre}_${funcFile}${smoothing_suffix}.nii.gz
+    deleteFile t${dspre}_${funcFile}${ext}
+    deleteFile mt${dspre}_${funcFile}${ext}
+    deleteFile ${upre}mt${dspre}_${funcFile}${ext}
+    deleteFile ${upre}mt${dspre}_${funcFile}_mean_reg${ext}
+    deleteFile k${upre}mt${dspre}_${funcFile}${ext}
+    deleteFile k${upre}mt${dspre}_tmean_mask${ext}
+    deleteFile ${wpre}k${upre}mt${dspre}_${funcFile}${ext}
+    deleteFile ${wpre}k${upre}mt${dspre}_${funcFile}_extents_mask${ext}
+    deleteFile s${wpre}k${upre}mt${dspre}_${funcFile}${smoothing_suffix}${ext}
+    deleteFile fs${wpre}k${upre}mt${dspre}_${funcFile}${smoothing_suffix}${ext}
 
-    deleteFile k${upre}mt${dspre}_${funcFile}_Tmin.nii.gz
-    deleteFile k${upre}mt${dspre}_${funcFile}_Tmin_10pctThr.nii.gz
-    deleteFile ${upre}mt${dspre}_tmean.nii.gz
-    deleteFile k${upre}mt${dspre}_tmean.nii.gz
-    deleteFile ${wpre}k${upre}mt${dspre}_tmean.nii.gz
-    deleteFile fs${wpre}k${upre}mt${dspre}_mean_float.nii.gz
-    deleteFile k${upre}mt${dspre}_${funcFile}_98_2_mask.nii.gz
-    deleteFile k${upre}mt${dspre}_${funcFile}_98_2_mask_dil1x.nii.gz
-    deleteFile k${upre}mt${dspre}_${funcFile}_masked.nii.gz
-    deleteFile s${wpre}k${upre}mt${dspre}_${funcFile}${smoothing_suffix}_usan_size.nii.gz
+    deleteFile k${upre}mt${dspre}_${funcFile}_Tmin${ext}
+    deleteFile k${upre}mt${dspre}_${funcFile}_Tmin_10pctThr${ext}
+    deleteFile ${upre}mt${dspre}_${funcFile}_tmean${ext}
+    deleteFile k${upre}mt${dspre}_${funcFile}_tmean${ext}
+    deleteFile ${wpre}k${upre}mt${dspre}_${funcFile}_tmean${ext}
+    deleteFile fs${wpre}k${upre}mt${dspre}_mean_float${ext}
+    deleteFile k${upre}mt${dspre}_${funcFile}_98_2_mask${ext}
+    deleteFile k${upre}mt${dspre}_${funcFile}_98_2_mask_dil1x${ext}
+    deleteFile k${upre}mt${dspre}_${funcFile}_masked${ext}
+    deleteFile s${wpre}k${upre}mt${dspre}_${funcFile}${smoothing_suffix}_usan_size${ext}
+
+    #with one-step warp, often get files such as wuktmd where FM unwarping and MNI warp are adjacent
+    deleteFile mt${dspre}_${funcFile}${ext}
+    deleteFile mt${dspre}_${funcFile}_mean_reg${ext}
+    deleteFile kmt${dspre}_${funcFile}${ext}
+    deleteFile kmt${dspre}_tmean_mask${ext}
+    deleteFile ${wpre}${upre}kmt${dspre}_${funcFile}${ext}
+    deleteFile ${wpre}${upre}kmt${dspre}_${funcFile}_extents_mask${ext}
+    deleteFile s${wpre}${upre}kmt${dspre}_${funcFile}${smoothing_suffix}${ext}
+    deleteFile fs${wpre}${upre}kmt${dspre}_${funcFile}${smoothing_suffix}${ext}
+
+    deleteFile k$mt${dspre}_${funcFile}_Tmin${ext}
+    deleteFile k$mt${dspre}_${funcFile}_Tmin_10pctThr${ext}
+    deleteFile mt${dspre}_${funcFile}_tmean${ext}
+    deleteFile kmt${dspre}_${funcFile}_tmean${ext}
+    deleteFile ${wpre}${upre}kmt${dspre}_${funcFile}_tmean${ext}
+    deleteFile fs${wpre}${upre}kmt${dspre}_mean_float${ext}
+    deleteFile kmt${dspre}_${funcFile}_98_2_mask${ext}
+    deleteFile kmt${dspre}_${funcFile}_98_2_mask_dil1x${ext}
+    deleteFile kmt${dspre}_${funcFile}_masked${ext}
+    deleteFile s${wpre}${upre}kmt${dspre}_${funcFile}${smoothing_suffix}_usan_size${ext}
+
 
     #sequential stream
-    deleteFile m${dspre}_${funcFile}.nii.gz
-    deleteFile m${dspre}_${funcFile}_mean_reg.nii.gz
-    deleteFile ${upre}m${dspre}_${funcFile}.nii.gz
-    deleteFile t${upre}m${dspre}_${funcFile}.nii.gz
-    deleteFile kt${upre}m${dspre}_${funcFile}.nii.gz
-    deleteFile kt${upre}m${dspre}_tmean_mask.nii.gz
-    deleteFile ${wpre}kt${upre}m${dspre}_${funcFile}.nii.gz
-    deleteFile ${wpre}kt${upre}m${dspre}_${funcFile}_extents_mask.nii.gz
-    deleteFile s${wpre}kt${upre}m${dspre}_${funcFile}${smoothing_suffix}.nii.gz
-    deleteFile fs${wpre}kt${upre}m${dspre}_${funcFile}${smoothing_suffix}.nii.gz
+    deleteFile m${dspre}_${funcFile}${ext}
+    deleteFile m${dspre}_${funcFile}_mean_reg${ext}
+    deleteFile ${upre}m${dspre}_${funcFile}${ext}
+    deleteFile t${upre}m${dspre}_${funcFile}${ext}
+    deleteFile kt${upre}m${dspre}_${funcFile}${ext}
+    deleteFile kt${upre}m${dspre}_tmean_mask${ext}
+    deleteFile ${wpre}kt${upre}m${dspre}_${funcFile}${ext}
+    deleteFile ${wpre}kt${upre}m${dspre}_${funcFile}_extents_mask${ext}
+    deleteFile s${wpre}kt${upre}m${dspre}_${funcFile}${smoothing_suffix}${ext}
+    deleteFile fs${wpre}kt${upre}m${dspre}_${funcFile}${smoothing_suffix}${ext}
 
-    deleteFile kt${upre}m${dspre}_${funcFile}_Tmin.nii.gz
-    deleteFile kt${upre}m${dspre}_${funcFile}_Tmin_10pctThr.nii.gz
-    deleteFile t${upre}m${dspre}_tmean.nii.gz
-    deleteFile kt${upre}m${dspre}_tmean.nii.gz
-    deleteFile ${wpre}kt${upre}m${dspre}_tmean.nii.gz
-    deleteFile fs${wpre}kt${upre}m${dspre}_mean_float.nii.gz
-    deleteFile kt${upre}m${dspre}_${funcFile}_98_2_mask.nii.gz
-    deleteFile kt${upre}m${dspre}_${funcFile}_98_2_mask_dil1x.nii.gz
-    deleteFile kt${upre}m${dspre}_${funcFile}_mask.nii.gz
-    deleteFile kt${upre}m${dspre}_${funcFile}_masked.nii.gz
-    deleteFile s${wpre}kt${upre}m${dspre}_${funcFile}${smoothing_suffix}_usan_size.nii.gz
+    deleteFile kt${upre}m${dspre}_${funcFile}_Tmin${ext}
+    deleteFile kt${upre}m${dspre}_${funcFile}_Tmin_10pctThr${ext}
+    deleteFile t${upre}m${dspre}_${funcFile}_tmean${ext}
+    deleteFile kt${upre}m${dspre}_${funcFile}_tmean${ext}
+    deleteFile ${wpre}kt${upre}m${dspre}_${funcFile}_tmean${ext}
+    deleteFile fs${wpre}kt${upre}m${dspre}_mean_float${ext}
+    deleteFile kt${upre}m${dspre}_${funcFile}_98_2_mask${ext}
+    deleteFile kt${upre}m${dspre}_${funcFile}_98_2_mask_dil1x${ext}
+    deleteFile kt${upre}m${dspre}_${funcFile}_mask${ext}
+    deleteFile kt${upre}m${dspre}_${funcFile}_masked${ext}
+    deleteFile s${wpre}kt${upre}m${dspre}_${funcFile}${smoothing_suffix}_usan_size${ext}
 
-    deleteFile ${preSmooth}_mask_allbrain.nii.gz
-    deleteFile ${preSmooth}_mask_edgecorrection.nii.gz
+    #with one-step warp, often get files such as wuktmd where FM unwarping and MNI warp are adjacent
+    deleteFile m${dspre}_${funcFile}${ext}
+    deleteFile tm${dspre}_${funcFile}${ext}
+    deleteFile ktm${dspre}_${funcFile}${ext}
+    deleteFile ktm${dspre}_tmean_mask${ext}
+    deleteFile ${wpre}${upre}ktm${dspre}_${funcFile}${ext}
+    deleteFile ${wpre}${upre}ktm${dspre}_${funcFile}_extents_mask${ext}
+    deleteFile s${wpre}${upre}ktm${dspre}_${funcFile}${smoothing_suffix}${ext}
+    deleteFile fs${wpre}${upre}ktm${dspre}_${funcFile}${smoothing_suffix}${ext}
+
+    deleteFile ktm${dspre}_${funcFile}_Tmin${ext}
+    deleteFile ktm${dspre}_${funcFile}_Tmin_10pctThr${ext}
+    deleteFile tm${dspre}_${funcFile}_tmean${ext}
+    deleteFile ktm${dspre}_${funcFile}_tmean${ext}
+    deleteFile ${wpre}${upre}ktm${dspre}_${funcFile}_tmean${ext}
+    deleteFile fs${wpre}${upre}ktm${dspre}_mean_float${ext}
+    deleteFile ktm${dspre}_${funcFile}_98_2_mask${ext}
+    deleteFile ktm${dspre}_${funcFile}_98_2_mask_dil1x${ext}
+    deleteFile ktm${dspre}_${funcFile}_mask${ext}
+    deleteFile ktm${dspre}_${funcFile}_masked${ext}
+    deleteFile s${wpre}${upre}ktm${dspre}_${funcFile}${smoothing_suffix}_usan_size${ext}
+
+    deleteFile ${preSmooth}_mask_allbrain${ext}
+    deleteFile ${preSmooth}_mask_edgecorrection${ext}
 
     #general files
-    deleteFile mc_mean_vol_target.nii.gz
-    deleteFile premc_mean_vol.nii.gz
+    deleteFile mc_mean_vol_target${ext}
+    deleteFile premc_mean_vol${ext}
 
     deleteFile func_to_struct.mat
     deleteFile func_to_struct_init.mat #6 dof transform prior to BBR
-    deleteFile func_to_struct.nii.gz
+    deleteFile fmap2epi_bbr.mat
+    deleteFile struct_to_func.mat
+    deleteFile func_to_struct${ext}
+    deleteFile func_to_struct_allv${ext}
+    deleteFile func_to_struct_nounwarp${ext}
 
-    deleteFile mask_${funcFile}_Tmin_10pctThr.nii.gz
+    deleteFile mask_${funcFile}_Tmin_10pctThr${ext}
 
-    deleteFile ${prefix}tmean${smoothing_suffix}.nii.gz
+    deleteFile ${prefix}tmean${smoothing_suffix}${ext}
 
     #some more here...
-    deleteFile "${threshMask}_2struct.nii.gz"
-    deleteFile *98_2_mask_dil1x_outOfAnatBounds.nii.gz
-    deleteFile templateMask.nii.gz
+    deleteFile "${threshMask}_2struct${ext}"
+    deleteFile *98_2_mask_dil1x_outOfAnatBounds${ext}
+    deleteFile templateMask${ext}
 
-    [[ $constrainToTemplate = [Nn] ]] && deleteFile *98_2_mask_dil1x_templateTrim.nii.gz
+    [[ $constrainToTemplate = [Nn] ]] && deleteFile *98_2_mask_dil1x_templateTrim${ext}
 
-    deleteFile func_to_standard_warp_allv.nii.gz #onestep_warp when warp is not volume-wise
+    deleteFile func_to_standard_warp_allv${ext} #onestep_warp when warp is not volume-wise
 
     rm -rf mcOrig
     rm -rf unwarptemps #intermediate fieldmap files
 
-    deleteFile example_func.nii.gz
-    deleteFile premc_mean_vol.nii.gz
-    deleteFile mc_initial.nii.gz #initial motion correction to mean functional
-    deleteFile mc_target_mask.nii.gz #brain mask for mc_target used for rmsdiff in motion_plots
+    deleteFile example_func${ext}
+    deleteFile premc_mean_vol${ext}
+    deleteFile mc_initial${ext} #initial motion correction to mean functional
+    deleteFile mc_target_mask${ext} #brain mask for mc_target used for rmsdiff in motion_plots
 
     deleteFile "*${funcFile}*_rel_mean.rms" #shouldn't be necessary anymore since we compute rms ourselves
     deleteFile "*${funcFile}*_abs_mean.rms"

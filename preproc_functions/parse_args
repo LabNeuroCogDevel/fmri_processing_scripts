@@ -88,10 +88,25 @@ function parse_args {
 	    printHelp
 	    exit 0
 	fi
+    elif [[ $# -eq 1 && $1 = -cleanup_only ]]; then
+	cleanup_only=1
+	cleanup=1
+
+	if [ -f .preproc_cmd ]; then
+	    read cmd < .preproc_cmd
+	    set -f #disable wildcard expansion so that -dicom patterns don't get expanded
+	    set -- $cmd #change positional parameters to stored settings
+	    set +f #re-enable wildcard expansion as usual
+	else
+	    echo "-cleanup_only specified, but no known preprocessing call in .preproc_cmd."
+	    exit 1
+	fi		
     else
 	#write the parameter settings to file
 	echo "$@" > .preproc_cmd #for resuming failed run.
     fi
+
+    #echo "about to process with cmd: $@"
 
     #process command line parameters
     while [ _$1 != _ ] ; do
@@ -112,6 +127,8 @@ function parse_args {
 	    cleanup=1
 	    shift 1
 	elif [ $1 = -cleanup_only ]; then
+	    #I'm a bit dubious about letting -cleanup_only be passed alongside the rest of a call, rather than
+	    #relying on the .preproc_cmd code above, but keeping this for now.
 	    cleanup_only=1
 	    cleanup=1
 	    shift 1
@@ -266,6 +283,8 @@ function parse_args {
 	    deleteFile ".despike_complete"
 	    deleteFile ".fmunwarp_complete"
 	    deleteFile ".prepare_fieldmap_complete"
+	    deleteFile ".nuisance_regression_complete"
+	    deleteFile ".bandpass_filter_complete"
 	    deleteFile ".preprocessfunctional_complete"
 	    shift 1
 	elif [ $1 = -smoothing_kernel ] ; then

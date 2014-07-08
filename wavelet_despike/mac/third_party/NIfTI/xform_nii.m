@@ -67,7 +67,7 @@ function [nii,obQ] = xform_nii(nii, tolerance, preferredForm)
    %
    
    % Added Ameera X Patel, 10th Feb 2014
-   obQ=0
+   obQ=0;
    
    nii.original.hdr = nii.hdr;
 
@@ -353,7 +353,7 @@ function [hdr, orient] = change_hdr(hdr, tolerance, preferredForm)
             msg = [msg '      image, but I don''t suggest this.' char(10) char(10)];
             msg = [msg '   To get help, please type:' char(10) char(10) '   help reslice_nii.m' char(10)];
             msg = [msg '   help load_untouch_nii.m' char(10) '   help load_nii.m'];
-            error(msg);
+            fprintf('%s\n', msg);
             % Added Ameera X Patel, 10th Feb 2014
             obQ=1; nii=[]; return
          end
@@ -430,7 +430,7 @@ function [hdr, orient] = change_hdr(hdr, tolerance, preferredForm)
             msg = [msg '      image, but I don''t suggest this.' char(10) char(10)];
             msg = [msg '   To get help, please type:' char(10) char(10) '   help reslice_nii.m' char(10)];
             msg = [msg '   help load_untouch_nii.m' char(10) '   help load_nii.m'];
-            error(msg);
+            fprintf('%s\n', msg);
             % Added Ameera X Patel, 10th Feb 2014
             obQ=1; nii=[]; return
          end
