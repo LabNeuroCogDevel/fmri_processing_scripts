@@ -214,7 +214,8 @@ parse_args "$@"
 
 if [ -n "${logFile}" ]; then
     if [ -f "${logFile}" ]; then
-	mtime=$( stat -f "%Sm" -t "%Y%m%d_%H%M" "${logFile}" )
+	#stat and date are not portable across Linux and BSD...
+        [ $( uname ) = Darwin ] && mtime=$( stat -f "%Sm" -t "%Y%m%d_%H%M" "${logFile}" ) || mtime=$( date -r "${logFile}" +%Y%m%d_%H%M )
 	mv "${logFile}" "${logFile}_${mtime}"
     fi
     #add absolute path to log file location
