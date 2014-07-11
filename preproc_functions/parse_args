@@ -1,5 +1,29 @@
 #!/bin/bash
 
+function rm_completefiles {
+    rel "\nStarting over...\n\nRe-running all preprocessing steps\n" c
+    deleteFile ".reorient2std_complete"
+    deleteFile ".motion_censor_complete"
+    deleteFile ".motion_plots_complete"
+    deleteFile ".slice_timing_complete"
+    deleteFile ".motion_correction_complete"
+    deleteFile ".median_intensity"
+    deleteFile ".pct2"
+    deleteFile ".skull_strip_complete"
+    deleteFile ".func2struct_complete"
+    deleteFile ".warp_complete"
+    deleteFile ".smoothing_complete"
+    deleteFile ".temporal_filtering_complete"
+    deleteFile ".rescaling_complete"
+    deleteFile ".thresholding_complete"
+    deleteFile ".despike_complete"
+    deleteFile ".fmunwarp_complete"
+    deleteFile ".prepare_fieldmap_complete"
+    deleteFile ".nuisance_regression_complete"
+    deleteFile ".bandpass_filter_complete"
+    deleteFile ".preprocessfunctional_complete"
+}
+
 function parse_args {
     #parse input arguments, initialize default parameter settings
     #when called from preprocessFunctional, must pass "$@", which is all input parameters to script
@@ -88,9 +112,13 @@ function parse_args {
 	    printHelp
 	    exit 0
 	fi
-    elif [[ $# -eq 1 && $1 = -cleanup_only ]]; then
-	cleanup_only=1
-	cleanup=1
+    elif [ $# -eq 1 ]; then
+	if [ $1 = -cleanup_only ]; then
+	    cleanup_only=1
+	    cleanup=1
+	elif [ $1 = -startover ]; then
+	    rm_completefiles
+	fi
 
 	if [ -f .preproc_cmd ]; then
 	    read cmd < .preproc_cmd
@@ -98,9 +126,9 @@ function parse_args {
 	    set -- $cmd #change positional parameters to stored settings
 	    set +f #re-enable wildcard expansion as usual
 	else
-	    echo "-cleanup_only specified, but no known preprocessing call in .preproc_cmd."
+	    echo "-cleanup_only or -startover specified alone, but no known preprocessing call in .preproc_cmd."
 	    exit 1
-	fi		
+	fi
     else
 	#write the parameter settings to file
 	echo "$@" > .preproc_cmd #for resuming failed run.
@@ -265,27 +293,7 @@ function parse_args {
 	    smoother="${2}"
 	    shift 2
 	elif [ $1 = -startover ]; then
-	    echo -e "\nStarting over...\n\nRe-running all preprocessing steps\n"
-	    deleteFile ".reorient2std_complete"
-	    deleteFile ".motion_censor_complete"
-	    deleteFile ".motion_plots_complete"
-	    deleteFile ".slice_timing_complete"
-	    deleteFile ".motion_correction_complete"
-	    deleteFile ".median_intensity"
-	    deleteFile ".pct2"
-	    deleteFile ".skull_strip_complete"
-	    deleteFile ".func2struct_complete"
-	    deleteFile ".warp_complete"
-	    deleteFile ".smoothing_complete"
-	    deleteFile ".temporal_filtering_complete"
-	    deleteFile ".rescaling_complete"
-	    deleteFile ".thresholding_complete"
-	    deleteFile ".despike_complete"
-	    deleteFile ".fmunwarp_complete"
-	    deleteFile ".prepare_fieldmap_complete"
-	    deleteFile ".nuisance_regression_complete"
-	    deleteFile ".bandpass_filter_complete"
-	    deleteFile ".preprocessfunctional_complete"
+	    rm_completefiles
 	    shift 1
 	elif [ $1 = -smoothing_kernel ] ; then
             smoothing_kernel="${2}"
