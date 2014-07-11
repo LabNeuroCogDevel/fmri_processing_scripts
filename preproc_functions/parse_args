@@ -103,6 +103,10 @@ function parse_args {
 	#check for resume
 	if [ -f .preproc_cmd ]; then
 	    read cmd < .preproc_cmd
+	    #delete -startover from positional parameters, if present
+	    #if running -cleanup_only, don't want to delete .*complete files.
+	    #if running -startover, don't need to run rm_completefiles again.
+	    cmd="${cmd/-startover/}"
 	    echo -e "\npreprocessFunctional called initially with parameters below:\n\n"
 	    echo "$cmd"
 	    local resume=
@@ -133,6 +137,7 @@ function parse_args {
 
 	if [ -f .preproc_cmd ]; then
 	    read cmd < .preproc_cmd
+	    cmd="${cmd/-startover/}"
 	    set -f #disable wildcard expansion so that -dicom patterns don't get expanded
 	    set -- $cmd #change positional parameters to stored settings
 	    set +f #re-enable wildcard expansion as usual
