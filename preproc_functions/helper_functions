@@ -47,14 +47,14 @@ function rel() {
 	cmdExit=$?
     else
 	#echo command to screen with dashes to offset text visually
-	echo "----  ${cmd}"
+	echo -e "----  ${cmd}"
     fi
     
     if [ -n "${logFile}" ]; then
 	if [ $comment -eq 1 ]; then
 	    cmd="## ${cmd}"
 	fi
-	echo "${cmd}" >> "${logFile}"
+	echo -e "${cmd}" >> "${logFile}"
     fi
 
     return $cmdExit
