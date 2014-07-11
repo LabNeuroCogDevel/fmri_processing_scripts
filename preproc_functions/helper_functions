@@ -141,8 +141,8 @@ function cleanup_preprocessFunctional {
 
     deleteFile k${upre}mt${dspre}_${funcFile}_Tmin${ext}
     deleteFile k${upre}mt${dspre}_${funcFile}_Tmin_10pctThr${ext}
-    deleteFile ${upre}mt${dspre}_${funcFile}_tmean${ext}
-    deleteFile k${upre}mt${dspre}_${funcFile}_tmean${ext}
+    deleteFile ${upre}mt${dspre}_tmean${ext}
+    deleteFile k${upre}mt${dspre}_tmean${ext}
     deleteFile ${wpre}k${upre}mt${dspre}_${funcFile}_tmean${ext}
     deleteFile fs${wpre}k${upre}mt${dspre}_mean_float${ext}
     deleteFile k${upre}mt${dspre}_${funcFile}_98_2_mask${ext}
@@ -162,8 +162,8 @@ function cleanup_preprocessFunctional {
 
     deleteFile k$mt${dspre}_${funcFile}_Tmin${ext}
     deleteFile k$mt${dspre}_${funcFile}_Tmin_10pctThr${ext}
-    deleteFile mt${dspre}_${funcFile}_tmean${ext}
-    deleteFile kmt${dspre}_${funcFile}_tmean${ext}
+    deleteFile mt${dspre}_tmean${ext}
+    deleteFile kmt${dspre}_tmean${ext}
     deleteFile ${wpre}${upre}kmt${dspre}_${funcFile}_tmean${ext}
     deleteFile fs${wpre}${upre}kmt${dspre}_mean_float${ext}
     deleteFile kmt${dspre}_${funcFile}_98_2_mask${ext}
@@ -186,8 +186,8 @@ function cleanup_preprocessFunctional {
 
     deleteFile kt${upre}m${dspre}_${funcFile}_Tmin${ext}
     deleteFile kt${upre}m${dspre}_${funcFile}_Tmin_10pctThr${ext}
-    deleteFile t${upre}m${dspre}_${funcFile}_tmean${ext}
-    deleteFile kt${upre}m${dspre}_${funcFile}_tmean${ext}
+    deleteFile t${upre}m${dspre}_tmean${ext}
+    deleteFile kt${upre}m${dspre}_tmean${ext}
     deleteFile ${wpre}kt${upre}m${dspre}_${funcFile}_tmean${ext}
     deleteFile fs${wpre}kt${upre}m${dspre}_mean_float${ext}
     deleteFile kt${upre}m${dspre}_${funcFile}_98_2_mask${ext}
@@ -208,8 +208,8 @@ function cleanup_preprocessFunctional {
 
     deleteFile ktm${dspre}_${funcFile}_Tmin${ext}
     deleteFile ktm${dspre}_${funcFile}_Tmin_10pctThr${ext}
-    deleteFile tm${dspre}_${funcFile}_tmean${ext}
-    deleteFile ktm${dspre}_${funcFile}_tmean${ext}
+    deleteFile tm${dspre}_tmean${ext}
+    deleteFile ktm${dspre}_tmean${ext}
     deleteFile ${wpre}${upre}ktm${dspre}_${funcFile}_tmean${ext}
     deleteFile fs${wpre}${upre}ktm${dspre}_mean_float${ext}
     deleteFile ktm${dspre}_${funcFile}_98_2_mask${ext}
@@ -248,6 +248,7 @@ function cleanup_preprocessFunctional {
 
     rm -rf mcOrig
     rm -rf unwarptemps #intermediate fieldmap files
+    [ -d mc_mats ] && rm -rf mc_mats #original motion transformation matrices
 
     deleteFile example_func${ext}
     deleteFile premc_mean_vol${ext}
