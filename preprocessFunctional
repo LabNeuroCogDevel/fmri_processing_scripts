@@ -242,12 +242,12 @@ fi
 # write to an incomplete file (later to be changed to complete if process finishes)
 echo -e "$thiscommandinfo " > ${dotfile}_incomplete
 
-#check for required files and settings
-check_requirements
-
 #handle conversion of dicom to nifti
 #this step will be skipped when -4d is passed in
 dicom_to_nifti # preproc_functions/dicom_to_nifti
+
+#check for required files and settings
+check_requirements
 
 #reorient images to match LPI/RPI orientation, which is useful to prevent huge rotations/translations in warp
 prefix="_" #tracks file prefix indicating which processing steps have been performed

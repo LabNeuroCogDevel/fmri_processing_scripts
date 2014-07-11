@@ -78,10 +78,7 @@ function dicom_to_nifti {
 		exit 1
 	    fi
 
-	    #set run parameters based on auto-detected settings
-	    tr=${detectTR}
-	    sliceAcquisition=${detectSliceOrder}
-
+	    #tr and sliceAcquisition parameters will be created downstream in check_requirements based on .detect_tr and .detect_sliceorder
 	    echo "${detectTR}" > .detect_tr
 	    echo "${detectSliceOrder}" > .detect_sliceorder
 	    
