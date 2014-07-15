@@ -81,11 +81,10 @@ function correct_motion {
 	rel "mcflirt -in $( remove_ext \"${preMC}\" ) -o $( remove_ext \"${postMC}\" ) -reffile mc_target ${mcflirtSinc} -mats -plots"
 
 	#motion parameters should be renamed motion.par
-	mv $prefix*.par motion.par
+	mv -f $prefix*.par motion.par
 	
 	#volumewise affine transforms should be relocated with mc/
-
-	mv $prefix*.mat $mcMats
+	mv -f $prefix*.mat $mcMats
     fi
 
     rel "date > .motion_correction_complete"

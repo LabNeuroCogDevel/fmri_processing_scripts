@@ -126,8 +126,12 @@ The major steps in the processing pipeline are, in order:
   7)   Smoothing - s
   8)   High-pass filtering - f
   9)   Intensity normalization - n
+  10)  Nuisance regression (optional) - r
+  11)  Bandpass filtering (optional) - b
 
-Note that if the slice acquisition order is sequential, then motion correction is applied before slice timing correction.
+Note that if the slice acquisition order is sequential, then the default is to appply motion correction before slice timing correction, whereas for
+interleaved acquisition, the default is slice timing first. The order of these steps can be explicitly specified using -st_first, -mc_first, or -no_st.
+Altnernatively, consider -4d_slice_motion, which performs both steps at once and is likely more effective than conventional methods.
 
 Characters are prepended as a prefix to the 4d filename, such that the final processed file will have a
 prefix such as nfswkmtd, indicating the sequence of processing steps, from right to left.
@@ -147,6 +151,8 @@ EndOfHelp
 #Last updated: 04/06/2014
 #
 #Changelog:
+#07/10/2014
+# - Allow preprocessFunctional -startover call, which starts the pipeline again based on cached setttings in .preproc_cmd
 #07/01/2014
 # - Incorporate nuisance regression and bandpass filtering steps
 # - Incorporate wavelet despiking (Patel et al. 2014 NI)
@@ -242,12 +248,12 @@ fi
 # write to an incomplete file (later to be changed to complete if process finishes)
 echo -e "$thiscommandinfo " > ${dotfile}_incomplete
 
-#check for required files and settings
-check_requirements
-
 #handle conversion of dicom to nifti
 #this step will be skipped when -4d is passed in
 dicom_to_nifti # preproc_functions/dicom_to_nifti
+
+#check for required files and settings
+check_requirements
 
 #reorient images to match LPI/RPI orientation, which is useful to prevent huge rotations/translations in warp
 prefix="_" #tracks file prefix indicating which processing steps have been performed
