@@ -280,7 +280,12 @@ WaveletDespike('${funcNifti}',
 'LimitRAM', 8); 
 end; quit;
 "
+
+	    #need to unset display on Linux (at least wallace) to avoid matlab exiting on subsequent runs of the script
+	    OLDDISPLAY="${DISPLAY}"
+	    unset DISPLAY
 	    rel "matlab -nodisplay -r \"$matlabCmd\""
+	    export DISPLAY="${OLDDISPLAY}"
 
 	    rel "mv \"${prefix}${funcFile}_wds.nii.gz\" \"${prefix}${funcFile}.nii.gz\"" #move despiked file to d_funcfile
 	    rel "mv \"${prefix}${funcFile}_noise.nii.gz\" \"${prefix}${funcFile}_wavelet_noise.nii.gz\""
