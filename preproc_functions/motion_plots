@@ -65,7 +65,7 @@ function motion_plots {
 	    -u 1 -w 1000 -h 400 -a absolute,relative -o motion_info/disp.png"
 
 	if [ $mc_movie -eq 1 ]; then
-	    rel "create4DMovie -input \"${preMC}\" -input2 \"${postMC}\" -output \"motion_info/${funcFile}_motion.mp4\" -fps 10 -njobs 2"
+	    rel "create4DMovie -input \"${preMC}\" -input2 \"${postMC}\" -output \"motion_info/${funcFile}_motion.mp4\" -fps 10 -njobs 2 -midslice_only"
 	fi
 
 	date > .motion_plots_complete

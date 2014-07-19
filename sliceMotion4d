@@ -16,12 +16,14 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser(prog='sliceMotion4d')
 parser.add_argument('--inputs', '-i', nargs='+', required=True, help='One or more 4d fMRI inputs to realign and interpolate (multiple runs are co-registered to each other)')
 parser.add_argument('--tr', '-t', required=True, type=float, help='The repetition time (TR) of the acquisition sequence in seconds.')
-parser.add_argument('--loops', '-l', required=False, type=int, default=5, help='Number of within-run realignment loops to run. Default is 5')
+parser.add_argument('--loops', '-l', required=False, type=str, default='5,1', help='Number of within-run realignment loops to run. Default is 5,1 indicating 5 loops at coarse subsampling, 1 at fine (see --speedup).')
+parser.add_argument('--speedup', required=False, type=str, default='5,2', help='Comma-separated list of spatial subsampling factor for computing affine transforms. Default is 5,2, indicating 5x subsampling (coarse), then 2x subsampling (fine)')
+parser.add_argument('--bw_loops', required=False, type=str, default='5,1', help='Number of between-run realignment loops to run (only relevant with multiple --inputs). Default is 5,1 indicating 5 between-run loops at coarse subsampling, 1 at fine (see --speedup).')
 parser.add_argument('--slice_times', '-s', nargs='+', required=True, help='Time of acquisition for each slice (starting with bottom slice). Common options: ascending, descending, interleaved. Can also be multiple arguments specifying time of each slice (in seconds): 0 0.25 0.5 0.75 ... Can also be a comma-delimited file containing the exact timings (in seconds): sliceTimes.1D')
 parser.add_argument('--slice_direction', '-d', required=False, type=str, default='z', help='Direction of slice acquisition: x, y, or z. Default is z')
 parser.add_argument('--prefix', '-p', required=False, type=str, default='mt_', help='File prefix for resampled data. Default is mt_')
 parser.add_argument('--mats', '-m', action="store_true", required=False, default=False, help='Whether to output affine transformation matrices.')
-parser.add_argument('--dtype', '-f', required=False, type=str, default="int16", help='Data type for saved nifti images (int16, float32, float64). Default is int16')
+parser.add_argument('--dtype', required=False, type=str, default="int16", help='Data type for saved nifti images (int16, float32, float64). Default is int16')
 parser.add_argument('--plots', action="store_true", required=False, default=False, help='Create a plot of motion parameters as a .png file.')
 parser.add_argument('--siemens', action="store_true", required=False, default=False, help='Whether data were acquired on a Siemens scanner, which has a strange slice order for interleaved sequences depending on number of slices.')
 
@@ -68,6 +70,16 @@ else:
     elif cmdInput.slice_direction.lower() == "z":
         slice_direction=2
 
+wiLoops=map(int, cmdInput.loops.split(',')) #convert input to list
+speedup=map(int, cmdInput.speedup.split(','))
+bwLoops=map(int, cmdInput.bw_loops.split(','))
+
+#verify comparable lengths for loops and speedup
+l1 = len(wiLoops)
+if any(len(lst) != l1 for lst in [speedup, bwLoops]):
+    print "--loops, --speedup, and --bw_loops must all be of the same length"
+    exit(1)
+
 # process data type
 if not cmdInput.dtype.lower() in ('int16', 'float32', 'float64'):
     print "--dtype must be one of int16, float32, float64."
@@ -86,7 +98,9 @@ R = SpaceTimeRealign(runs, tr=cmdInput.tr, slice_times=slice_times, slice_info=s
 
 # estimate motion and slice timing realignment
 # hard code multi-run alignment to use 5 loops
-R.estimate(loops=cmdInput.loops, between_loops=5, refscan=None)
+# Jul2014: For now, estimating transforms in two steps: at 5x subsampling (spatially coarse), then at 2x subsampling (spatially fine)
+# This is slower, but should improve accuracy of image coregistration. At some point, need to allow for tuple syntax
+R.estimate(loops=wiLoops, between_loops=bwLoops, refscan=None, speedup=speedup)
 
 # resample data
 ra_runs = R.resample()

@@ -18,6 +18,7 @@ Command line options:
   -fps: Speed of the movie in frames per second.                  Default: 10
   -njobs: Number of jobs to run in parallel to generate images.   Default: 16
   -scale: How big to make the images (arbitrary multiples)        Default: 3
+  -midslice_only: Only display middle slice for axial, sagittal, and coronal.
   
 Example call:
   create4DMovie -input 10802func.nii.gz -output 10802_timeMovie.mpg -fps 8 -njobs 5
@@ -36,13 +37,17 @@ fi
 
 input2=
 njobs=16
+midslice_only=0
 while [ _$1 != _ ] ; do
-    if [ $1 = -input ] ; then
+    if [ $1 = -input ]; then
 	input="${2}"
 	shift 2
-    elif [ $1 = -input2 ] ; then
+    elif [ $1 = -input2 ]; then
 	input2="${2}"
 	shift 2
+    elif [ $1 = -midslice_only ]; then
+	midslice_only=1
+	shift 1
     elif [ $1 = -njobs ]; then
 	njobs=$2
 	shift 2
@@ -65,7 +70,11 @@ done
 
 [ -z "${output}" ] && output="fmri_movie.mp4"
 [ -z "${fps}" ] && fps=10
-[ -z "${scale}" ] && scale=3
+if [[ -z "${scale}" && midslice_only == 0 ]]; then
+    scale=3
+else
+    scale=5
+fi
 [ -z "${input}" ] && echo "-input not specified." && exit 1
 [ ! -r "${input}" ] && echo "Unable to find file: ${input}" && exit 1
 [[ -n "${input2}" && ! -r "${input2}" ]] && echo "Unable to find file: ${input2}" && exit 1
@@ -118,26 +127,30 @@ do
 	#fslroi ${input} i1vol${v} $v 1
 	#3dbucket is faster than fslroi (~2x)
 	3dbucket "${input}[$v]" -prefix "i1vol${v}${ext}" 2> /dev/null
-	
-	slicer i1vol${v} -s ${scale} -z 0.15 i1ax1_${v}.png -z 0.30 i1ax2_${v}.png -z 0.50 i1ax3_${v}.png -z 0.70 i1ax4_${v}.png -z 0.85 i1ax5_${v}.png \
-	    -x 0.25 i1sag1_${v}.png -x 0.35 i1sag2_${v}.png -x 0.45 i1sag3_${v}.png -x 0.50 i1sag4_${v}.png \
-	    -x 0.55 i1sag5_${v}.png -x 0.65 i1sag6_${v}.png -x 0.75 i1sag7_${v}.png -y 0.20 i1cor1_${v}.png \
-	    -y 0.30 i1cor2_${v}.png -y 0.40 i1cor3_${v}.png -y 0.50 i1cor4_${v}.png -y 0.60 i1cor5_${v}.png \
-	    -y 0.70 i1cor6_${v}.png -y 0.80 i1cor7_${v}.png
+
+	if [ $midslice_only -eq 0 ]; then
+	    slicer i1vol${v} -s ${scale} -z 0.15 i1ax1_${v}.png -z 0.30 i1ax2_${v}.png -z 0.50 i1ax3_${v}.png -z 0.70 i1ax4_${v}.png -z 0.85 i1ax5_${v}.png \
+		-x 0.25 i1sag1_${v}.png -x 0.35 i1sag2_${v}.png -x 0.45 i1sag3_${v}.png -x 0.50 i1sag4_${v}.png \
+		-x 0.55 i1sag5_${v}.png -x 0.65 i1sag6_${v}.png -x 0.75 i1sag7_${v}.png -y 0.20 i1cor1_${v}.png \
+		-y 0.30 i1cor2_${v}.png -y 0.40 i1cor3_${v}.png -y 0.50 i1cor4_${v}.png -y 0.60 i1cor5_${v}.png \
+		-y 0.70 i1cor6_${v}.png -y 0.80 i1cor7_${v}.png
+	else
+	    slicer i1vol${v} -s ${scale} -z 0.50 i1ax1_${v}.png -x 0.50 i1sag1_${v}.png -y 0.50 i1cor1_${v}.png
+	fi
+	    
 
 	#create image for volume number of same size as axial
 	convert -background black -fill white \
             -size $( identify -ping -format '%wx%h' i1ax1_${v}.png ) -pointsize 72 -gravity center -density 72 \
             label:${v} i1volnum_${v}.png
-	
-	#-z 0.40 i1ax6_${v}.png -z 0.45 i1ax7_${v}.png -z 0.50 i1ax8_${v}.png -z 0.55 i1ax9_${v}.png \
-	#-z 0.60 i1ax10_${v}.png -z 0.65 i1ax11_${v}.png -z 0.70 i1ax12_${v}.png -z 0.75 i1ax13_${v}.png \
-	
-	#pngappend i1ax1_${v}.png + i1ax2_${v}.png + i1ax3_${v}.png + i1ax4_${v}.png + i1ax5_${v}.png + i1ax6_${v}.png + \
-	
-	pngappend i1ax1_${v}.png + i1ax2_${v}.png + i1ax3_${v}.png + i1ax4_${v}.png + i1ax5_${v}.png + i1volnum_${v}.png - \
-	    i1sag1_${v}.png + i1sag2_${v}.png + i1sag3_${v}.png + i1sag4_${v}.png + i1sag5_${v}.png + i1sag6_${v}.png - \
-	    i1cor1_${v}.png + i1cor2_${v}.png + i1cor3_${v}.png + i1cor4_${v}.png + i1cor5_${v}.png + i1cor6_${v}.png + i1cor7_${v}.png i1vol$( printf '%03d' ${v} ).png
+		
+	if [ $midslice_only -eq 0 ]; then
+	    pngappend i1ax1_${v}.png + i1ax2_${v}.png + i1ax3_${v}.png + i1ax4_${v}.png + i1ax5_${v}.png + i1volnum_${v}.png - \
+		i1sag1_${v}.png + i1sag2_${v}.png + i1sag3_${v}.png + i1sag4_${v}.png + i1sag5_${v}.png + i1sag6_${v}.png - \
+		i1cor1_${v}.png + i1cor2_${v}.png + i1cor3_${v}.png + i1cor4_${v}.png + i1cor5_${v}.png + i1cor6_${v}.png + i1cor7_${v}.png i1vol$( printf '%03d' ${v} ).png
+	else
+	    pngappend i1ax1_${v}.png + i1sag1_${v}.png + i1cor1_${v}.png + i1volnum_${v}.png i1vol$( printf '%03d' ${v} ).png
+	fi
 
 	#add label
 	montage -label "-input: $input" i1vol$( printf '%03d' ${v} ).png -pointsize 42 -geometry +0+0 i1vol$( printf '%03d' ${v} ).png
@@ -145,26 +158,28 @@ do
 	if [ -n "${input2}" ]; then
 	    3dbucket "${input}[$v]" -prefix "i2vol${v}${ext}" 2> /dev/null
 	    
+	    if [ $midslice_only -eq 0 ]; then
 	    slicer i2vol${v} -s ${scale} -z 0.15 i2ax1_${v}.png -z 0.30 i2ax2_${v}.png -z 0.50 i2ax3_${v}.png -z 0.70 i2ax4_${v}.png -z 0.85 i2ax5_${v}.png \
 		-x 0.25 i2sag1_${v}.png -x 0.35 i2sag2_${v}.png -x 0.45 i2sag3_${v}.png -x 0.50 i2sag4_${v}.png \
 		-x 0.55 i2sag5_${v}.png -x 0.65 i2sag6_${v}.png -x 0.75 i2sag7_${v}.png -y 0.20 i2cor1_${v}.png \
 		-y 0.30 i2cor2_${v}.png -y 0.40 i2cor3_${v}.png -y 0.50 i2cor4_${v}.png -y 0.60 i2cor5_${v}.png \
 		-y 0.70 i2cor6_${v}.png -y 0.80 i2cor7_${v}.png
+	    else
+		slicer i2vol${v} -s ${scale} -z 0.50 i2ax1_${v}.png -x 0.50 i2sag1_${v}.png -y 0.50 i2cor1_${v}.png
+	    fi
 
 	    #create image for volume number of same size as axial
 	    #convert -background black -fill white \
 	    #	-size $( identify -ping -format '%wx%h' i2ax1_${v}.png ) -pointsize 72 -gravity center -density 72 \
 	    #	label:${v} i2volnum_${v}.png
 		    
-	    #-z 0.40 i2ax6_${v}.png -z 0.45 i2ax7_${v}.png -z 0.50 i2ax8_${v}.png -z 0.55 i2ax9_${v}.png \
-	    #-z 0.60 i2ax10_${v}.png -z 0.65 i2ax11_${v}.png -z 0.70 i2ax12_${v}.png -z 0.75 i2ax13_${v}.png \
-	    
-	    #pngappend i2ax1_${v}.png + i2ax2_${v}.png + i2ax3_${v}.png + i2ax4_${v}.png + i2ax5_${v}.png + i2ax6_${v}.png + \
-	    
-	    #+ i2volnum_${v}.png
-	    pngappend i2ax1_${v}.png + i2ax2_${v}.png + i2ax3_${v}.png + i2ax4_${v}.png + i2ax5_${v}.png - \
-		i2sag1_${v}.png + i2sag2_${v}.png + i2sag3_${v}.png + i2sag4_${v}.png + i2sag5_${v}.png + i2sag6_${v}.png - \
-		i2cor1_${v}.png + i2cor2_${v}.png + i2cor3_${v}.png + i2cor4_${v}.png + i2cor5_${v}.png + i2cor6_${v}.png + i2cor7_${v}.png i2vol$( printf '%03d' ${v} ).png
+	    if [ $midslice_only -eq 0 ]; then
+		pngappend i2ax1_${v}.png + i2ax2_${v}.png + i2ax3_${v}.png + i2ax4_${v}.png + i2ax5_${v}.png - \
+		    i2sag1_${v}.png + i2sag2_${v}.png + i2sag3_${v}.png + i2sag4_${v}.png + i2sag5_${v}.png + i2sag6_${v}.png - \
+		    i2cor1_${v}.png + i2cor2_${v}.png + i2cor3_${v}.png + i2cor4_${v}.png + i2cor5_${v}.png + i2cor6_${v}.png + i2cor7_${v}.png i2vol$( printf '%03d' ${v} ).png
+	    else
+		pngappend i2ax1_${v}.png + i2sag1_${v}.png + i2cor1_${v}.png i2vol$( printf '%03d' ${v} ).png
+	    fi
 	    
 	    rm -f i2ax*_${v}.png i2sag*_${v}.png i2cor*_${v}.png i2volnum_${v}.png i2vol${v}.nii.gz
 
