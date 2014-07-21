@@ -271,7 +271,6 @@ middleVol=$( echo "$numVols/2" | bc )
 #Can use 3dDespike (time despiking) or wavelet despiking
 #Especially useful if data will be bandpass filtered
 if [ $despike -eq 1 ]; then
-    prefix="d${prefix}"
 
     if [ ! -f ".despike_complete" ]; then
 	if [ $waveletDespike -eq 1 ]; then
@@ -281,8 +280,8 @@ if [ $despike -eq 1 ]; then
 		matlabCmd="addpath(genpath('${scriptDir}/wavelet_despike/linux_windows'));"
 	    fi
 	    matlabCmd="${matlabCmd} try; 
-WaveletDespike('${funcNifti}', 
-'${prefix}${funcFile}',
+WaveletDespike('${prefix}${funcFile}${ext}', 
+'d${prefix}${funcFile}',
 'LimitRAM', 8); 
 end; quit;
 "
@@ -297,10 +296,12 @@ end; quit;
 	    rel "mv \"${prefix}${funcFile}_noise.nii.gz\" \"${prefix}${funcFile}_wavelet_noise.nii.gz\""
 	    rel "mv \"${prefix}${funcFile}_SP.txt\" \"${prefix}${funcFile}_spike_percentage.txt\""
 	else
-	    rel "3dDespike -overwrite -cut $despikeThresh -prefix \"${prefix}${funcNifti}\" \"${funcNifti}\""
+	    rel "3dDespike -overwrite -cut $despikeThresh -prefix \"d${prefix}${funcFile}${ext}\" \"${prefix}${funcFile}${ext}\""
 	fi
 	rel "date > .despike_complete"
     fi
+
+    prefix="d${prefix}"
 fi
 
 ######
