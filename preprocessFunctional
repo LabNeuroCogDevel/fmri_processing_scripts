@@ -292,9 +292,9 @@ end; quit;
 	    rel "matlab -nodisplay -r \"$matlabCmd\""
 	    export DISPLAY="${OLDDISPLAY}"
 
-	    rel "mv \"${prefix}${funcFile}_wds.nii.gz\" \"${prefix}${funcFile}.nii.gz\"" #move despiked file to d_funcfile
-	    rel "mv \"${prefix}${funcFile}_noise.nii.gz\" \"${prefix}${funcFile}_wavelet_noise.nii.gz\""
-	    rel "mv \"${prefix}${funcFile}_SP.txt\" \"${prefix}${funcFile}_spike_percentage.txt\""
+	    rel "mv \"d${prefix}${funcFile}_wds.nii.gz\" \"d${prefix}${funcFile}.nii.gz\"" #move despiked file to d_funcfile
+	    rel "mv \"d${prefix}${funcFile}_noise.nii.gz\" \"d${prefix}${funcFile}_wavelet_noise.nii.gz\""
+	    rel "mv \"d${prefix}${funcFile}_SP.txt\" \"d${prefix}${funcFile}_spike_percentage.txt\""
 	else
 	    rel "3dDespike -overwrite -cut $despikeThresh -prefix \"d${prefix}${funcFile}${ext}\" \"${prefix}${funcFile}${ext}\""
 	fi
