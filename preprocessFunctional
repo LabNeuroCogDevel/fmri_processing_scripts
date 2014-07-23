@@ -282,7 +282,7 @@ if [ $despike -eq 1 ]; then
 	    matlabCmd="${matlabCmd} try; 
 WaveletDespike('${prefix}${funcFile}${ext}', 
 'd${prefix}${funcFile}',
-'LimitRAM', 8); 
+'LimitRAM', 4); 
 end; quit;
 "
 
