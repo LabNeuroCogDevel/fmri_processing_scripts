@@ -123,7 +123,7 @@ do
     done
 
     { 
-	echo "processing volume: $v"
+	#echo "processing volume: $v"
 	#fslroi ${input} i1vol${v} $v 1
 	#3dbucket is faster than fslroi (~2x)
 	3dbucket "${input}[$v]" -prefix "i1vol${v}${ext}" 2> /dev/null

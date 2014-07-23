@@ -311,7 +311,7 @@ rel "fslreorient2std $nifti $nifti"
 
 #need to set default after processing options and dicom import
 #to account for reference choice and filename
-if [ -z $outputFile ]; then outputFile=${T1}_nonlinear_warp_${reference}; fi
+if [ -z "$outputFile" ]; then outputFile="${T1}_nonlinear_warp_${reference}"; fi
 
 #adapted from fsl_anat to create a blurred image by downsampling
 quick_smooth() {
@@ -421,9 +421,9 @@ rel "Using warp resolution of $wr mm" c
 #Note: fsl_anat generates a mask from the template brain_mask by -fillh -dilF.
 #Previously FSL tools used the dil mask that had been dilated 2x -dilF -dilF.
 #Not sure of the relevance (the fsl_anat way leads to a smaller mask).
-if [ $( imtest $outputFile ) -eq 0 ]; then
+if [ $( imtest "$outputFile" ) -eq 0 ]; then
     rel "fnirt --ref=$unbettedRefBrain --refmask=$refMask --in=${T1}_biascorr --aff=$flirtAffCoef \
-	--fout=${outputFile}\"_warpfield\" --cout=${T1}\"_warpcoef\" --iout=$outputFile \
+	--fout=\"$( remove_ext ${outputFile} )_warpfield\" --cout=\"${T1}_warpcoef\" --iout=\"$outputFile\" \
 	--config=$fnirtConfig --logout=${T1}_to_${reference}_fnirt_settings.log --warpres=${wr},${wr},${wr} -v"
 fi
 
