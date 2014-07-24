@@ -156,7 +156,7 @@ do
 	montage -label "-input: $input" i1vol$( printf '%03d' ${v} ).png -pointsize 42 -geometry +0+0 i1vol$( printf '%03d' ${v} ).png
 
 	if [ -n "${input2}" ]; then
-	    3dbucket "${input}[$v]" -prefix "i2vol${v}${ext}" 2> /dev/null
+	    3dbucket "${input2}[$v]" -prefix "i2vol${v}${ext}" 2> /dev/null
 	    
 	    if [ $midslice_only -eq 0 ]; then
 	    slicer i2vol${v} -s ${scale} -z 0.15 i2ax1_${v}.png -z 0.30 i2ax2_${v}.png -z 0.50 i2ax3_${v}.png -z 0.70 i2ax4_${v}.png -z 0.85 i2ax5_${v}.png \
