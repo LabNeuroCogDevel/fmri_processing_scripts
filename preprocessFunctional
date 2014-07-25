@@ -41,7 +41,7 @@ Command line options:
         -delete_dicom yes. (deletes DICOM files)
         -delete_dicom archive. (compresses files into archive file): functional_dicom.tar.gz.
   -deoblique_all: Deoblique all functional datasets (3dWarp -deoblique) after all preprocessing complete.
-  -despike: Interpolate intensity spikes using 3dDespike. Occurs early in pipeline.
+  -despike: Interpolate intensity spikes using 3dDespike. Occurs after motion correction and slice timing correction.
   -despike_thresh: Cut thresholds for 3dDespike (how much to despike). Default to 2.5 and 4.0.
   -dicom: The file pattern to match all dicom files to be converted to nifti. Must be in quotes.
         Example: -dicom "MR*" (This parameter is an alternative to passing the 4d nifti file using -4d)
@@ -111,7 +111,7 @@ Command line options:
         -warp_interpolation sinc. Provides higher quality non-blurry resampling relative to trilinear, but is slower. N.B. Only works well when the subject's
                functional mask is precise and contains only brain voxels. Otherwise, sinc is prone to stretching the warp strangely.
         -warp_interpolation trilinear. Faster method, but somewhat blurry.
-  -wavelet_despike: Apply wavelet despiking as first step in pipeline to remove frequency-dependent nonstationary events in fMRI time series (Patel 2014 NeuroImage).
+  -wavelet_despike: Apply wavelet despiking after motion correction and slice timing correction to remove frequency-dependent nonstationary events in fMRI time series (Patel 2014 NeuroImage).
         Note: This is an alternative to 3dDespike and should generally be preferred because it removes intensity artifacts in frequency space, which is useful
         because head movement often produces artifacts that are spread in time (spin history).
         
@@ -148,9 +148,18 @@ EndOfHelp
 }
 
 #Written: 5/18/2010
-#Last updated: 04/06/2014
+#Last updated: 07/24/2014
 #
 #Changelog:
+#07/24/2014
+# - Move -wavelet_despike after motion correction and slice timing correction. We want to retain stationary components of fMRI time series
+#   from a voxel that represents the same tissue. Running wavelet despiking before motion correction was sorting the large majority of
+#   overt movement into the noise part. Further analyses on a single subject with severe movement demonstrated that although the spike
+#   percentage was highly consistent for despike before or after motion, the voxelwise time series were not highly correlated (mean r ~ 0.5).
+#   Discussing this with SM, BL, and WF, we agreed that one would like the voxel time series to represent the same tissue over time when running
+#   the despike, although it remains somewhat magical how uni-voxel despiking is essentially parsing out motion with no knowledge of other voxels.
+#   Likewise, some of these arguments apply to time despiking with 3dDespike (e.g., curve fitting a spike using data from a given chunk of tissue
+#   seems like it would give the most meaningful intensities in edited time points).
 #07/10/2014
 # - Allow preprocessFunctional -startover call, which starts the pipeline again based on cached setttings in .preproc_cmd
 #07/01/2014
@@ -195,6 +204,7 @@ source "${scriptDir}/preproc_functions/compute_motion_censor"
 source "${scriptDir}/preproc_functions/correct_slice_timing"
 source "${scriptDir}/preproc_functions/correct_motion"
 source "${scriptDir}/preproc_functions/correct_slice_motion_4d"
+source "${scriptDir}/preproc_functions/despike_timeseries"
 source "${scriptDir}/preproc_functions/motion_plots"
 source "${scriptDir}/preproc_functions/skull_strip_epi"
 source "${scriptDir}/preproc_functions/intensity_threshold"
@@ -267,43 +277,6 @@ fi
 numVols=$( fslhd ${funcFile} | grep '^dim4' | perl -pe 's/dim4\s+(\d+)/\1/' )
 middleVol=$( echo "$numVols/2" | bc )
 
-#Voxelwise despiking: optional first step
-#Can use 3dDespike (time despiking) or wavelet despiking
-#Especially useful if data will be bandpass filtered
-if [ $despike -eq 1 ]; then
-
-    if [ ! -f ".despike_complete" ]; then
-	if [ $waveletDespike -eq 1 ]; then
-	    if [ $( uname ) = Darwin ]; then
-		matlabCmd="addpath(genpath('${scriptDir}/wavelet_despike/mac'));"
-	    else
-		matlabCmd="addpath(genpath('${scriptDir}/wavelet_despike/linux_windows'));"
-	    fi
-	    matlabCmd="${matlabCmd} try; 
-WaveletDespike('${prefix}${funcFile}${ext}', 
-'d${prefix}${funcFile}',
-'LimitRAM', 4); 
-end; quit;
-"
-
-	    #need to unset display on Linux (at least wallace) to avoid matlab exiting on subsequent runs of the script
-	    OLDDISPLAY="${DISPLAY}"
-	    unset DISPLAY
-	    rel "matlab -nodisplay -r \"$matlabCmd\""
-	    export DISPLAY="${OLDDISPLAY}"
-
-	    rel "mv \"d${prefix}${funcFile}_wds.nii.gz\" \"d${prefix}${funcFile}.nii.gz\"" #move despiked file to d_funcfile
-	    rel "mv \"d${prefix}${funcFile}_noise.nii.gz\" \"d${prefix}${funcFile}_wavelet_noise.nii.gz\""
-	    rel "mv \"d${prefix}${funcFile}_SP.txt\" \"d${prefix}${funcFile}_spike_percentage.txt\""
-	else
-	    rel "3dDespike -overwrite -cut $despikeThresh -prefix \"d${prefix}${funcFile}${ext}\" \"${prefix}${funcFile}${ext}\""
-	fi
-	rel "date > .despike_complete"
-    fi
-
-    prefix="d${prefix}"
-fi
-
 ######
 # motion correction
 # slice timing correction
@@ -357,6 +330,9 @@ elif [ $mc_first -eq 1 ]; then
     onestep_warp mc_target #apply MC + FM unwarping before slice timing correction
     correct_slice_timing
 fi
+
+#wavelet or time despiking immediately after motion and slice timing correction
+despike_timeseries
 
 #make plots (and optional movie) of head motion
 motion_plots

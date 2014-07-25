@@ -1,0 +1,48 @@
+#!/bin/bash
+
+function despike_timeseries {
+    local RAM_limit=4 #4GB MATLAB limit (more is faster, but can be a hog when processing in parallel).
+
+    #Voxelwise despiking: optional step
+    #Can use 3dDespike (time despiking) or wavelet despiking
+    #Especially useful if data will be bandpass filtered
+    if [ $despike -eq 1 ]; then
+	preDespike="${prefix}${funcFile}"
+	prefix="d${prefix}" #add d to file prefix to denote despiking
+	postDespike="${prefix}${funcFile}"
+
+	if [ -f ".despike_complete" ]; then
+	    return 0
+	fi
+
+	if [ $waveletDespike -eq 1 ]; then
+	    if [ $( uname ) = Darwin ]; then
+		matlabCmd="addpath(genpath('${scriptDir}/wavelet_despike/mac'));"
+	    else
+		matlabCmd="addpath(genpath('${scriptDir}/wavelet_despike/linux_windows'));"
+	    fi
+	    matlabCmd="${matlabCmd} try; 
+WaveletDespike('${preDespike}${ext}', 
+'${postDespike}',
+'LimitRAM', ${RAM_limit}); 
+end; quit;
+"
+
+	    #need to unset display on Linux (at least wallace) to avoid matlab exiting on subsequent runs of the script
+	    OLDDISPLAY="${DISPLAY}"
+	    unset DISPLAY
+	    rel "matlab -nodisplay -r \"$matlabCmd\""
+	    export DISPLAY="${OLDDISPLAY}"
+
+	    rel "mv \"${postDespike}_wds.nii.gz\" \"${postDespike}.nii.gz\"" #move despiked file to d_funcfile
+	    rel "mv \"${postDespike}_noise.nii.gz\" \"${postDespike}_wavelet_noise.nii.gz\""
+	    rel "mv \"${postDespike}_SP.txt\" \"${postDespike}_spike_percentage.txt\""
+	else
+	    #time despike
+	    rel "3dDespike -overwrite -cut $despikeThresh -prefix \"${postDespike}${ext}\" \"${preDespike}${ext}\""
+	fi
+	rel "date > .despike_complete"
+
+    fi
+
+}
