@@ -39,7 +39,22 @@ function compute_motion_censor {
 	    dvars|fd|refrms|refmse|fdrms) 
 		metric="--${metric}" #add double hyphen for compatibility with fsl_motion_outliers
 		[ -n "$thresh" ] && thresh="--thresh=${thresh}" #format for fsl_motion_outliers
-		rel "fsl_motion_outliers -i \"$funcFile\" -o \"$matname\" $metric $thresh $imgname $metname";;
+
+		local intensMask=
+		local inImg="${funcFile}" #image to pass to fsl_motion_outliers
+
+		if [[ $metric =~ refrms|refmse|dvars ]]; then
+
+		    if [ $despike -eq 1 ]; then
+			inImg="${postDespike}" #compute intensity differences after despiking
+		    else
+			inImg="${postMC}" #intensity differences after motion correction (so that mask applies)
+		    fi
+		    [ $( imtest "mot_intens_mask" ) -eq 0 ) && rel "fslmaths \"${threshMask}\" -eroF -eroF -eroF mot_intens_mask -odt char"
+		    intensMask="-m mot_intens_mask"
+		fi
+
+		rel "fsl_motion_outliers -i \"${inImg}\" -o \"$matname\" $metric $thresh $imgname $metname $intensMask";;
 	    relrms)
 		#relative rms movement (mm) from rmsdiff of movement parameters (displacement)
 		if [ ! -f motion_info/motion_relrms_mm ]; then

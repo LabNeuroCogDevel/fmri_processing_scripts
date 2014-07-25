@@ -337,14 +337,14 @@ despike_timeseries
 #make plots (and optional movie) of head motion
 motion_plots
 
-#compute motion/intensity outliers to be excluded from analysis
-compute_motion_censor
-
 #Skull strip EPI
 skull_strip_epi                # preproc_functions/skull_strip_epi
 
 # Threshold low intensity voxels (further refinement of brain mask)
 intensity_threshold            # preproc_functions/intensity_threshold
+
+#compute motion/intensity outliers to be excluded from analysis
+compute_motion_censor
 
 # Warp functional to template
 # NOTE: This step is skipped for -no_warp.
