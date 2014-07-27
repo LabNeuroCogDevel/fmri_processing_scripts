@@ -50,7 +50,7 @@ function compute_motion_censor {
 		    else
 			inImg="${postMC}" #intensity differences after motion correction (so that mask applies)
 		    fi
-		    [ $( imtest "mot_intens_mask" ) -eq 0 ) && rel "fslmaths \"${threshMask}\" -eroF -eroF -eroF mot_intens_mask -odt char"
+		    [ $( imtest "mot_intens_mask" ) -eq 0 ] && rel "fslmaths \"${threshMask}\" -eroF -eroF -eroF mot_intens_mask -odt char"
 		    intensMask="-m mot_intens_mask"
 		fi
 
