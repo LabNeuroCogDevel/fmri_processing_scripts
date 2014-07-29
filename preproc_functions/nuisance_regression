@@ -2,6 +2,7 @@
 
 function nuisance_regression {
     #handle nuisance regression and/or bandpass filtering
+    #TODO: handle creation of nuisance regressors without applying them. These could then be used in a subsequent GLM.
 
     [[ "$nuisance_regression" -eq 0 && "$bandpass_filter" -eq 0 ]] && return 0 #neither step
 
@@ -21,7 +22,7 @@ function nuisance_regression {
     [[ -f .bandpass_filter_complete && todo=b ]] && return 0
     [[ -f .nuisance_regression_complete && -f .bandpass_filter_complete && todo=br ]] && return 0
 
-    #todo: handle bp only separately
+    #bandpass only
     if [ $todo = b ]; then
 	rel "3dBandpass -input \"$preNRBP\" -mask \"${subjMask}${ext}\" \
 		-prefix \"$postNRBP\" $bpLow $bpHigh"
@@ -51,9 +52,9 @@ function nuisance_regression {
 	fi
 
 	#Use func_to_struct.mat to warp subject functional into structural space.
-    #This mat is generated upstream in register_func2struct, but is only applied to the coregistration target (mc_target), not the 4d functional
-    #Use the $preBet image, which is generated after slice timing and motion correction to derive nuisance time series.
-    if [ $( imtest "func_to_struct_allv" ) -eq 0 ]; then
+	#This mat is generated upstream in register_func2struct, but is only applied to the coregistration target (mc_target), not the 4d functional
+	#Use the $preBet image, which is generated after slice timing and motion correction to derive nuisance time series.
+	if [ $( imtest "func_to_struct_allv" ) -eq 0 ]; then
 	    if [ $( imtest "unwarp/T1_UD_warp_bbr" ) -eq 1 ]; then
 	        #when BBR coregistration is used with fm unwarping, we end up with warp coefficients for func -> struct, not just a .mat file
 	        rel "applywarp -i \"$preBet\" -o func_to_struct_allv -w unwarp/T1_UD_warp_bbr --interp=spline -r \"$mprageBet\""
@@ -61,7 +62,7 @@ function nuisance_regression {
 	        #shouldn't there be a scenario where we also have a nonlinear warp for traditional fm unwarping here?
 	        rel "applywarp -i \"$preBet\" -o func_to_struct_allv --premat=func_to_struct.mat --interp=spline -r \"$mprageBet\""
 	    fi
-    fi    
+	fi    
 
 	if [[ "$r" =~ ^(csf|dcsf)$ && ! -f ".csf_ts" ]]; then
 	    #fast segmentation should have been run during preprocessMprage

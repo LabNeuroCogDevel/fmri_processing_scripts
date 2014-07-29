@@ -51,7 +51,7 @@ function compute_motion_censor {
 			inImg="${postMC}" #intensity differences after motion correction (so that mask applies)
 		    fi
 		    [ $( imtest "mot_intens_mask" ) -eq 0 ] && rel "fslmaths \"${threshMask}\" -eroF -eroF -eroF mot_intens_mask -odt char"
-		    intensMask="-m mot_intens_mask"
+		    intensMask="-m mot_intens_mask --nomoco" #don't run motion correction for intensity metrics (because they are run on post-mc data)
 		fi
 
 		rel "fsl_motion_outliers -i \"${inImg}\" -o \"$matname\" $metric $thresh $imgname $metname $intensMask";;
