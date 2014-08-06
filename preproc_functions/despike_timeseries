@@ -1,7 +1,7 @@
 #!/bin/bash
 
 function despike_timeseries {
-    local RAM_limit=4 #4GB MATLAB limit (more is faster, but can be a hog when processing in parallel).
+    local RAM_limit=3 #3GB MATLAB limit (more is faster, but can be a hog when processing in parallel).
 
     #Voxelwise despiking: optional step
     #Can use 3dDespike (time despiking) or wavelet despiking

@@ -228,6 +228,11 @@ dotfile=.preprocessfunctional
 #setup default values and process all command line inputs
 parse_args "$@"
 
+if [ -f "${dotfile}_complete" ]; then
+    echo -e "\n--- preprocessFunctional already complete.\n"
+    exit 0
+fi
+
 if [ -n "${logFile}" ]; then
     if [ -f "${logFile}" ]; then
 	#stat and date are not portable across Linux and BSD...
@@ -247,11 +252,6 @@ fi
 if [ $cleanup_only -eq 1 ]; then
     echo "Cleaning up intermediate files, then exiting."
     cleanup_preprocessFunctional
-    exit 0
-fi
-
-if [ -f "${dotfile}_complete" ]; then
-    echo -e "\n--- preprocessFunctional already complete.\n"
     exit 0
 fi
 

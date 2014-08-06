@@ -301,6 +301,7 @@ function parse_args {
 	    fi
 	elif [ $1 = -4d_slice_motion ]; then
 	    sliceMotion4D=1
+	    mc_program="sliceMotion4d"
 	    shift 1
 	elif [ $1 = -siemens ]; then
 	    detectSiemens=1
