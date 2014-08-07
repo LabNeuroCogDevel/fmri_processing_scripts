@@ -13,9 +13,9 @@ function compute_motion_censor {
     OLDIFS="${IFS}"
     IFS='/' read -ra cens <<< "$motionCensor"
     for spec in "${cens[@]}"; do
-    #echo "censor motion is $censorMotion"
-    #censorMotion=$( echo $censorMotion | tr "/" " " )
-    #for spec in ${censorMotion}; do
+	#echo "censor motion is $censorMotion"
+	#censorMotion=$( echo $censorMotion | tr "/" " " )
+	#for spec in ${censorMotion}; do
 	if [[ $spec == *=* ]]; then
 	    #has equals sign
 	    metric=${spec/=*/} #before the equals
@@ -86,28 +86,42 @@ function compute_motion_censor {
     #But spike regressors are the opposite (1 where there is a bad volume)
 
     local allcensor=
-    for f in ${allmats}; do
-	fcensor=${f/.mat/_censor.1D}
-	rel "awk '{for ( i=1 ; i<=NF ; i++ ) t+=\$i; print 1 - t; t=0}' $f > $fcensor"
-	allcensor="${allcensor} $fcensor"
-    done
+    if [ -n "$allmats" ]; then
+	#at least one censor mat was created above
+	for f in ${allmats}; do
+	    fcensor=${f/.mat/_censor.1D}
+	    rel "awk '{for ( i=1 ; i<=NF ; i++ ) t+=\$i; print 1 - t; t=0}' $f > $fcensor"
+	    allcensor="${allcensor} $fcensor"
+	done
+    else
+	#no censoring needed at these thresholds. create vector of 1s to indicate all good.
+	#Rscript with newline or tab blows up (some sort of bug). Workaround using writeLines
+	#Rscript -e "x <- read.table(\"${metname/#-s /}\", header=FALSE)\$V1; writeLines(rep(\"1\", length(x)), con='motion_info/allcgood')"
+	awk '{print 1}' ${metname/#-s /} > motion_info/allcgood #easier in awk
+	allcensor=motion_info/allcgood
+    fi
 
     paste $allcensor > motion_info/allcensor_wide.1D
     rel "Making a union file of all motion censoring criteria." c
     #awk call checks whether the sum across the row is equal to the number of columns (indicating all 1=good)
     rel "awk '{ for ( i=1 ; i<=NF ; i++ ) { t+=\$i } if ( t == NF ) { print 1 } else { print 0 }; t=0 }' motion_info/allcensor_wide.1D > motion_info/censor_union.1D"
     rm -f motion_info/allcensor_wide.1D
+    [ -f motion_info/allcgood ] && rm -f motion_info/allcgood
 
     #make a spike regression censor_union.mat file. Need to drop any duplicate spike regressors (if metrics flag same volumes) before writing to disk.
-    paste $allmats > motion_info/allmats_wide.1D
-    local rcmd1="allc <- read.table(\"motion_info/allmats_wide.1D\"); rbad <- which(rowSums(allc) > 1); if (length(rbad) > 0L) { "
-    local rcmd2="cdrop <- unlist(sapply(rbad, function(r) { which(allc[r,] == 1)[-1L] })); allc <- allc[,-1*cdrop] }; "
-    local rcmd3="write.table(allc, file=\"motion_info/censor_union.mat\", row.names=FALSE, col.names=FALSE)"
-    
-    Rscript -e "$rcmd1 $rcmd2 $rcmd3"
+    if [ -n "$allmats" ]; then
+	paste $allmats > motion_info/allmats_wide.1D
+	local rcmd1="allc <- read.table(\"motion_info/allmats_wide.1D\"); rbad <- which(rowSums(allc) > 1); if (length(rbad) > 0L) { "
+	local rcmd2="cdrop <- unlist(sapply(rbad, function(r) { which(allc[r,] == 1)[-1L] })); allc <- allc[,-1*cdrop] }; "
+	local rcmd3="write.table(allc, file=\"motion_info/censor_union.mat\", row.names=FALSE, col.names=FALSE)"
+	
+	Rscript -e "$rcmd1 $rcmd2 $rcmd3"
 
-    rm -f motion_info/allmats_wide.1D
-    
+	rm -f motion_info/allmats_wide.1D
+    else
+	touch motion_info/censor_union.mat #no censoring needed. create empty file
+    fi
+
     date > .motion_censor_complete
 
     return 0
