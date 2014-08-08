@@ -102,9 +102,10 @@ function compute_motion_censor {
     fi
 
     paste $allcensor > motion_info/allcensor_wide.1D
-    rel "Making a union file of all motion censoring criteria." c
+    rel "Making union and intersection files of all motion censoring criteria." c
     #awk call checks whether the sum across the row is equal to the number of columns (indicating all 1=good)
     rel "awk '{ for ( i=1 ; i<=NF ; i++ ) { t+=\$i } if ( t == NF ) { print 1 } else { print 0 }; t=0 }' motion_info/allcensor_wide.1D > motion_info/censor_union.1D"
+    rel "awk '{ for ( i=1 ; i<=NF ; i++ ) { t+=\$i } if ( t == 0 ) { print 0 } else { print 1 }; t=0 }' motion_info/allcensor_wide.1D > motion_info/censor_intersection.1D"
     rm -f motion_info/allcensor_wide.1D
     [ -f motion_info/allcgood ] && rm -f motion_info/allcgood
 
@@ -118,6 +119,14 @@ function compute_motion_censor {
 	Rscript -e "$rcmd1 $rcmd2 $rcmd3"
 
 	rm -f motion_info/allmats_wide.1D
+
+	#use censor_intersection.1D to generate corresponding .mat file.
+	local rcmd1="allc <- read.table(\"motion_info/censor_intersection.1D\")\$V1; badVols <- which(allc == 0); if (length(badVols) > 0L) { "
+	local rcmd2="intmat <- matrix(0, nrow=length(allc), ncol=length(badVols)); for (v in 1:length(badVols)) { intmat[badVols[v], v] <- 1 }; "
+	local rcmd3="write.table(intmat, file=\"motion_info/censor_intersection.mat\", row.names=FALSE, col.names=FALSE) } else { system(\"touch motion_info/censor_intersection.mat\") }"
+
+	Rscript -e "$rcmd1 $rcmd2 $rcmd3"
+
     else
 	touch motion_info/censor_union.mat #no censoring needed. create empty file
     fi
