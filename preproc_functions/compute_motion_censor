@@ -10,7 +10,10 @@ function compute_motion_censor {
     local allmats=        #names of all spike regressor matrices output by fsl_motion_outliers
     local allcensor=      #names of all AFNI-style censor single-column files
 
-    #just replace slashes with spaces so that IFS will capture properly
+    #support either comma-delimited or slash-delimited syntax (prefer commas)
+    motionCensor="${motionCensor//,//}" #replace all commas with slashes
+
+    #replace slashes with spaces so that IFS will capture properly
     OLDIFS="${IFS}"
     IFS='/' read -ra cens <<< "$motionCensor"
     for spec in "${cens[@]}"; do

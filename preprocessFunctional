@@ -60,11 +60,11 @@ Command line options:
   -mc_first: run motion correction before slice timing correction, regardless of slice acquisition order.
   -mc_movie: create .mpg movies of head movement before and after motion correction (depends on create4DMovie).
   -mc_program: what program to use for motion correction. Options: mcflirt, 3dvolreg. Default: 3dvolreg.
-  -motion_censor: A slash-delimited list of motion/intensity metrics for identifying volumes to censor.
+  -motion_censor: A comma-delimited list of motion/intensity metrics for identifying volumes to censor.
         This calls fsl_motion_outliers for each element in the list and generates both spike regressor matrices (.mat)
         and AFNI-style censor 1D files. Available metrics are dvars, fd, fdrms, relrms, refrms, refmse. If an equals sign is included,
         then this is used as the threshold for flagging volumes to exclude. Otherwise,75th pctile + 1.5*IQR is used.
-        Example: -motion_censor fd=0.5/refrms (censor FD at 0.5 or greater, and ref RMS at 75th+1.5*IQR)
+        Example: -motion_censor fd=0.9,dvars=20 (censor FD at 0.9mm or greater, and DVARS at 20)
   -motion_sinc: Complete a 4th stage optimization of motion correction using sinc interpolation (slower but better): y or n. Default y.
   -mprage_bet: The betted structural scan for this participant. Required.
   -no_hp: Do not perform high-pass filtering.
