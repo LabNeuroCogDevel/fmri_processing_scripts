@@ -114,6 +114,7 @@ function parse_args {
 		echo ""
 		read -sn1 -p "Resume run with these settings? (y/n)" resume
 	    done
+	    echo ""
 
 	    if [ $resume = y ]; then
 		set -f #disable wildcard expansion so that -dicom patterns don't get expanded
@@ -133,6 +134,11 @@ function parse_args {
 	    cleanup=1
 	elif [ $1 = -startover ]; then
 	    rm_completefiles
+	elif [ $1 = -resume ]; then
+	    echo "Resuming preprocessing using existing settings."
+	else
+	    echo "Unable to determine what to do with call: preprocessFunctional ${1}"
+	    exit 1
 	fi
 
 	if [ -f .preproc_cmd ]; then

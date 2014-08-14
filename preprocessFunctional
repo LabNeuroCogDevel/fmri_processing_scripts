@@ -80,6 +80,7 @@ Command line options:
   -rescaling_method: The method used to normalize voxel intensities. Options are:
         -rescaling_method 10000_globalmedian (FSL's default, rescale the 4d file by a single quantity: 10000/[global median])
         -rescaling_method 100_voxelmean (Rescale each voxel by 100/[voxel 4d mean]. In principle, approximates % change)
+  -resume: Instructs script to resume preprocessing from the last completed step. Should be passed in as the only parameter: preprocessFunctional -resume.
   -slice_acquisition: The order in which slices were acquired.
         -slice_acquisition seqasc. Sequential ascending (bottom-up)
         -slice_acquisition seqdesc. Sequential descending (top-down)

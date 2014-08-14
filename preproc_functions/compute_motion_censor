@@ -7,7 +7,8 @@ function compute_motion_censor {
 
     [ -f .motion_censor_complete ] && return 0
 
-    allmats=
+    local allmats=        #names of all spike regressor matrices output by fsl_motion_outliers
+    local allcensor=      #names of all AFNI-style censor single-column files
 
     #just replace slashes with spaces so that IFS will capture properly
     OLDIFS="${IFS}"
@@ -75,39 +76,30 @@ function compute_motion_censor {
 		echo "Unsupported metric to fsl_motion_outliers: $metric" && exit 1;;
 	esac
 
-	#only add matrix to set if it exists (i.e., if some volumes exceeded threshold)
-	[ -f "${matname}" ] && allmats="${allmats} ${matname}" #list of output matrices
-
+	#Convert matrices to AFNI -censor style (see 3dDeconvolve)
+	#In AFNI censor, 1 represents good, 0 represents bad.
+	#But spike regressors are the opposite (1 where there is a bad volume)
+	local fcensor="${matname/.mat/_censor.1D}"
+	allcensor="${allcensor} $fcensor" #add censor file for this metric to the list
+	if [ -f "${matname}" ]; then
+	    allmats="${allmats} ${matname}" #only add matrix to censoring set if it exists (i.e., fsl_motion_outliers only generates .mat file if some volumes exceeded threshold)
+	    rel "awk '{for ( i=1 ; i<=NF ; i++ ) t+=\$i; print 1 - t; t=0}' ${matname} > $fcensor" #generate corresponding AFNI censor file
+	else
+	    #generate censor file for this metric indicating no censoring (all 1s)
+	    rel "awk '{print 1}' \"${metname/#-s /}\" > \"${fcensor}\""    #easier in awk
+	fi
     done
     IFS="${OLDIFS}"
 
-    #Convert matrices to AFNI -censor style (see 3dDeconvolve)
-    #In AFNI censor, 1 represents good, 0 represents bad.
-    #But spike regressors are the opposite (1 where there is a bad volume)
-
-    local allcensor=
-    if [ -n "$allmats" ]; then
-	#at least one censor mat was created above
-	for f in ${allmats}; do
-	    fcensor=${f/.mat/_censor.1D}
-	    rel "awk '{for ( i=1 ; i<=NF ; i++ ) t+=\$i; print 1 - t; t=0}' $f > $fcensor"
-	    allcensor="${allcensor} $fcensor"
-	done
-    else
-	#no censoring needed at these thresholds. create vector of 1s to indicate all good.
-	#Rscript with newline or tab blows up (some sort of bug). Workaround using writeLines
-	#Rscript -e "x <- read.table(\"${metname/#-s /}\", header=FALSE)\$V1; writeLines(rep(\"1\", length(x)), con='motion_info/allcgood')"
-	awk '{print 1}' ${metname/#-s /} > motion_info/allcgood #easier in awk
-	allcensor=motion_info/allcgood
-    fi
-
     paste $allcensor > motion_info/allcensor_wide.1D
     rel "Making union and intersection files of all motion censoring criteria." c
-    #awk call checks whether the sum across the row is equal to the number of columns (indicating all 1=good)
+    #awk union call checks whether the sum across the row is equal to the number of columns (indicating all 1=good)
     rel "awk '{ for ( i=1 ; i<=NF ; i++ ) { t+=\$i } if ( t == NF ) { print 1 } else { print 0 }; t=0 }' motion_info/allcensor_wide.1D > motion_info/censor_union.1D"
+
+    #awk intersection call checks whether row sum is 0 across all metrics, indicating convergence that all metrics indicate bad
     rel "awk '{ for ( i=1 ; i<=NF ; i++ ) { t+=\$i } if ( t == 0 ) { print 0 } else { print 1 }; t=0 }' motion_info/allcensor_wide.1D > motion_info/censor_intersection.1D"
+
     rm -f motion_info/allcensor_wide.1D
-    [ -f motion_info/allcgood ] && rm -f motion_info/allcgood
 
     #make a spike regression censor_union.mat file. Need to drop any duplicate spike regressors (if metrics flag same volumes) before writing to disk.
     if [ -n "$allmats" ]; then
@@ -129,6 +121,7 @@ function compute_motion_censor {
 
     else
 	touch motion_info/censor_union.mat #no censoring needed. create empty file
+	touch motion_info/censor_intersection.mat
     fi
 
     date > .motion_censor_complete
