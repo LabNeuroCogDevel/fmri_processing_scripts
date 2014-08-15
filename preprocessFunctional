@@ -149,9 +149,12 @@ EndOfHelp
 }
 
 #Written: 5/18/2010
-#Last updated: 07/24/2014
+#Last updated: 08/15/2014
 #
 #Changelog:
+#08/15/2014
+# - Generate censor_intersection files in motion_info/ directory (using -motion_censor).
+# - Move up check for .preprocessfunctional_complete so that files are untouched.
 #07/24/2014
 # - Move -wavelet_despike after motion correction and slice timing correction. We want to retain stationary components of fMRI time series
 #   from a voxel that represents the same tissue. Running wavelet despiking before motion correction was sorting the large majority of
@@ -226,13 +229,14 @@ datefmt='+%F+%I:%M'
 thiscommandinfo="$0 $@ \n# preprocessFunctional v$(perl -ne 'print $1 if /^#Last updated: (.*)/' $0) \n# Run started $(date $datefmt) "
 dotfile=.preprocessfunctional
 
-#setup default values and process all command line inputs
-parse_args "$@"
-
+#exit script if processing complete
 if [ -f "${dotfile}_complete" ]; then
     echo -e "\n--- preprocessFunctional already complete.\n"
     exit 0
 fi
+
+#setup default values and process all command line inputs
+parse_args "$@"
 
 if [ -n "${logFile}" ]; then
     if [ -f "${logFile}" ]; then
