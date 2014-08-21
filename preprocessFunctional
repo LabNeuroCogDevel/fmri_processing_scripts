@@ -149,9 +149,12 @@ EndOfHelp
 }
 
 #Written: 5/18/2010
-#Last updated: 08/15/2014
+#Last updated: 08/21/2014
 #
 #Changelog:
+#08/21/2014
+# - Moved despiking after skull strip and intensity threshold because we should only despike brain voxels. This also speeds up wavelet despiking
+#   considerably because air voxels are ignored. 
 #08/15/2014
 # - Generate censor_intersection files in motion_info/ directory (using -motion_censor).
 # - Move up check for .preprocessfunctional_complete so that files are untouched.
@@ -336,9 +339,6 @@ elif [ $mc_first -eq 1 ]; then
     correct_slice_timing
 fi
 
-#wavelet or time despiking immediately after motion and slice timing correction
-despike_timeseries
-
 #make plots (and optional movie) of head motion
 motion_plots
 
@@ -347,6 +347,10 @@ skull_strip_epi                # preproc_functions/skull_strip_epi
 
 # Threshold low intensity voxels (further refinement of brain mask)
 intensity_threshold            # preproc_functions/intensity_threshold
+
+#wavelet or time despiking after motion and slice timing correction, as well as intensity thresholding
+#want to zero non-brain voxels prior to despiking so that small fluctuations in air voxels are not flagged
+despike_timeseries
 
 #compute motion/intensity outliers to be excluded from analysis
 compute_motion_censor
