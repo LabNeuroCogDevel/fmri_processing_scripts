@@ -122,7 +122,7 @@ The major steps in the processing pipeline are, in order:
   2)   Field map unwarping (optional) - u
   3)   Slice timing correction - t
   4)   Motion correction - m
-  5)   Skull stripping - k
+  5)   Skull stripping and intensity thresholding - k
   6)   Co-registration and warping to standard space - w
   7)   Smoothing - s
   8)   High-pass filtering - f
@@ -149,9 +149,14 @@ EndOfHelp
 }
 
 #Written: 5/18/2010
-#Last updated: 08/21/2014
+#Last updated: 08/25/2014
 #
 #Changelog:
+#08/25/2014
+# - Despiking was not being carried forward because warp was using postST data variable. Now that despiking comes after ST and MC, this was
+#   not being incorporated in warp_to_template.
+# - Also, integrated skull_strip_epi and intensity_threshold into one function. Since these share the common goal of defining a brain mask,
+#   it was confusing to maintain them separately.
 #08/21/2014
 # - Moved despiking after skull strip and intensity threshold because we should only despike brain voxels. This also speeds up wavelet despiking
 #   considerably because air voxels are ignored. 
@@ -213,8 +218,7 @@ source "${scriptDir}/preproc_functions/correct_motion"
 source "${scriptDir}/preproc_functions/correct_slice_motion_4d"
 source "${scriptDir}/preproc_functions/despike_timeseries"
 source "${scriptDir}/preproc_functions/motion_plots"
-source "${scriptDir}/preproc_functions/skull_strip_epi"
-source "${scriptDir}/preproc_functions/intensity_threshold"
+source "${scriptDir}/preproc_functions/skullstrip_threshold"
 source "${scriptDir}/preproc_functions/register_func2struct"
 source "${scriptDir}/preproc_functions/prepare_fieldmap"
 source "${scriptDir}/preproc_functions/onestep_warp"
@@ -342,11 +346,8 @@ fi
 #make plots (and optional movie) of head motion
 motion_plots
 
-#Skull strip EPI
-skull_strip_epi                # preproc_functions/skull_strip_epi
-
-# Threshold low intensity voxels (further refinement of brain mask)
-intensity_threshold            # preproc_functions/intensity_threshold
+#Skull strip and intensity threshold EPI
+skullstrip_threshold           # preproc_functions/skullstrip_threshold
 
 #wavelet or time despiking after motion and slice timing correction, as well as intensity thresholding
 #want to zero non-brain voxels prior to despiking so that small fluctuations in air voxels are not flagged

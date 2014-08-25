@@ -262,6 +262,8 @@ function cleanup_preprocessFunctional {
     #file containing individual volumes of 4d dataset after fslsplit (used for MC+unwarping)
     [ -d episplit ] && rm -rf episplit
 
+    deleteFile epi_bet${ext}
+
     deleteFile mot_intens_mask${ext} #used by fsl_motion_outliers
 
 }

@@ -7,7 +7,7 @@ function despike_timeseries {
     #Can use 3dDespike (time despiking) or wavelet despiking
     #Especially useful if data will be bandpass filtered
     if [ $despike -eq 1 ]; then
-	preDespike="${prefix}${funcFile}"
+	preDespike="${postSS}" #despiking input is thresholded + skull-stripped functional from prior step
 	prefix="d${prefix}" #add d to file prefix to denote despiking
 	postDespike="${prefix}${funcFile}"
 

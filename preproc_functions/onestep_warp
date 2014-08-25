@@ -110,7 +110,7 @@ function onestep_warp {
 	    echo "Unable to figure out what warp was intended."
 	    exit 1
 	fi
-    elif [ $warp_target = standard ]; then
+    elif [ $warp_target = standard ]; then #warp to standard space
 	if [[ -z "${fm_phase}" && $no_warp -eq 1 ]]; then
 	    #Combination 4: motion correction alone. In this case, do nothing because motion correction alone was performed upstream (by 3dvolreg or mcflirt)
 	    #  $warp_target = standard
@@ -145,9 +145,13 @@ function onestep_warp {
 	    #              
 	    #  Conditions: a) -mc_first (motion correction and optional fieldmap unwarping performed prior to slice timing)
 
-	    #for mc_first, steps before warp to template are MC + FM + ST. Hence postST is what to warp to template
-	    #for sliceMotion4D, steps before warp are MC + ST. So postST is also the right file
-	    towarp="${postST}"
+	    #for mc_first, steps before warp to template are MC + FM + ST + SS.
+	    #for sliceMotion4D without FM, steps before warp are MC + ST + SS.
+	    if [ $despike -eq 1 ]; then		
+		towarp="${postDespike}" #warp functionals after despiking: dktm_
+	    else
+		towarp="${postSS}" #warp functionals after skull strip + intensity: ktm_funcfile
+	    fi
 
 	    volwise=0
 	    rel "Warp to $warp_target alone via $warpCoef." c
@@ -158,9 +162,13 @@ function onestep_warp {
 	    #Combination 3: fieldmap unwarp + warp to standard (not volume-wise)
 	    #  $warp_target = standard
 	    #  Conditions: a) fieldmap provided (-fm_phase) AND
-	    #              b) data already motion-corrected, typically by -4d_slice_motion
+	    #              b) data already motion-corrected by -4d_slice_motion
 
-	    towarp="${postMC}" #motion correction already done upstream
+	    if [ $despike -eq 1 ]; then		
+		towarp="${postDespike}" #warp functionals after despiking: dktm_
+	    else
+		towarp="${postSS}" #warp functionals after skull strip + intensity: ktm_funcfile
+	    fi
 
 	    volwise=0
 	    rel "Fieldmap unwarping + warp to $warp_target in one interpolation" c
@@ -197,7 +205,7 @@ function onestep_warp {
     # --ref: Reference brain. Note that the dimensions and voxel sizes of the
     #   ref parameter become the dimensions and voxel sizes for the resulting images.
     # --in: The input is the slice-timed, motion-corrected, skull-stripped,
-    #   thresholded 4D functional file: kmt_$funcFile_masked.
+    #   thresholded 4D functional file: kmt_$funcFile.
     # --out: The warped 4D functionals file to create: wkmt_$funcFile
     # --premat: An affine (linear) transformation matrix to be applied to
     #   each volume prior to the nonlinear warp. This is important so that
