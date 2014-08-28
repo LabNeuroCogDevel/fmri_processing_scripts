@@ -38,6 +38,13 @@ function rel() {
 	comment=1
     fi
     
+    if [ -n "${logFile}" ]; then
+	if [ $comment -eq 1 ]; then
+	    cmd="## ${cmd}"
+	fi
+	echo -e "${cmd}" >> "${logFile}"
+    fi
+
     if [ $comment -eq 0 ]; then
 	#echo command to screen verbatim
 	echo ${cmd}
@@ -50,13 +57,6 @@ function rel() {
 	echo -e "----  ${cmd}"
     fi
     
-    if [ -n "${logFile}" ]; then
-	if [ $comment -eq 1 ]; then
-	    cmd="## ${cmd}"
-	fi
-	echo -e "${cmd}" >> "${logFile}"
-    fi
-
     return $cmdExit
 }
 
