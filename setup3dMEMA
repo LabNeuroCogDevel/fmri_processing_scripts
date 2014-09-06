@@ -165,7 +165,7 @@ else
     #subjinlist=$( echo "$covs" | grep -Ec "^(subj,.*|.*,subj,.*|.*,subj)$" )
 
     #line above allows subject anywhere in covariate cols, but really needs to be first
-    subjinlist=$( echo "$covs" | grep -Ec "^subj,.*$" )
+    subjinlist=$( echo "$covs" | grep -Ec "^subj,*.*$" )
 
     if [ ! $subjinlist -eq 1 ]; then
 	echo "Did not detect subj as first field in covs. Adding automatically."
@@ -197,9 +197,15 @@ else
 
     #now that we have temp files for each covariate, paste together the columns
     paste $covlist > .3dMEMA_cov
-
+      
     rm $covlist
 
+fi
+
+covline="-covariates .3dMEMA_cov"
+if [ $(awk 'END{print NF}' .3dMEMA_cov) -eq 1 ]; then
+    echo "No covariates. One-sample t-test style analysis"
+    covline=""
 fi
 
 #handle removal of excluded subjects from mema covariate file
@@ -245,7 +251,7 @@ export AFNI_AUTOGZIP=YES
 export AFNI_COMPRESSOR=GZIP
 
 3dMEMA $remainder \\
--covariates .3dMEMA_cov \\
+$covline \\
 -mask mask+tlrc \\
 -set $glmContrast \\
 EOF
@@ -259,6 +265,11 @@ IFS=$'\n'
 
 for subj in $subjvec; do
     #need to grep sub-briks of interest
+    if [ ! -f "${statBrikDir}/${subj}${statBrikSuffix}.HEAD" ]; then
+	echo "Unable to locate stat brik file for subject $subj"
+	exit 1
+    fi
+
     coefMatch=($( 3dinfo -verb "${statBrikDir}/${subj}${statBrikSuffix}" 2>/dev/null | grep -Ei ".*At sub-brick #[0-9]+ '${glmContrast}#[0-9]+_Coef'"))
 
     if [ ${#coefMatch[@]} -gt 1 ]; then
