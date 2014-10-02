@@ -28,8 +28,6 @@ function compute_nuisance_regressors {
     IFS="${OLDIFS}"
     reg=$( printf "%s\n" "${reg[@]}" | sort -u ) #eliminate any duplicate regressors
 
-    rel "Creating ${nuisance_file} containing regressors as columns: $reg" c
-
     for r in $reg; do
 	if [[ "$r" =~ ^(6motion|rx|ry|rz|tx|ty|tz)$ && ! -f ".motion_demean" ]]; then 
 	    #compute de-meaned motion parameters for nuisance regression
@@ -79,7 +77,7 @@ function compute_nuisance_regressors {
 	    rel "1d_tool.py -overwrite -infile .csf_ts -derivative -write .csf_ts_deriv"
 
 	    #cleanup some intermediate files
-	    #rel "imrm .csf_pve_thr0p9 .csf_pve_thr0p9_ero1 .csf_pve_clustsize .csf_pve_clustsize_noero"
+	    rel "imrm .csf_pve_thr0p9 .csf_pve_thr0p9_ero1 .csf_pve_clustsize .csf_pve_clustsize_noero"
 	fi
 
 	if [[ "$r" =~ ^(wm|dwm)$ && ! -f ".wm_ts" ]]; then
@@ -121,7 +119,7 @@ function compute_nuisance_regressors {
 	    rel "1d_tool.py -overwrite -infile .wm_ts -derivative -write .wm_ts_deriv"
 
 	    #cleanup some intermediate files
-	    #rel "imrm .wm_pve_thr0p9 .wm_pve_thr0p9_ero2 .wm_pve_thr0p9_ero1 .wm_pve_clustsize .wm_pve_clustsize_noero_ero1"
+	    rel "imrm .wm_pve_thr0p9 .wm_pve_thr0p9_ero2 .wm_pve_thr0p9_ero1 .wm_pve_clustsize .wm_pve_clustsize_noero_ero1"
 	fi
 
 	#global signal
@@ -194,6 +192,7 @@ function compute_nuisance_regressors {
 
     done
 
+    rel "Creating ${nuisance_file} containing regressors as columns: ${nuisancecols[*]}" c
     rel "1dcat -overwrite ${nuisancecols[@]} > ${nuisance_file}"
     
 }
