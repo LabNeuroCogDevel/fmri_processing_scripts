@@ -1,5 +1,11 @@
 #!/bin/bash
 #Changes to preprocessFunctional
+#03/24/2014
+# - remove separate motion plots step. Always compute motion parameters (and plots) based on position of motion correction in pipeline.
+# - abstracted motion correction, slice timing, and fieldmap to preproc_functions.
+# - added -cleanup_only option to cleanup intermediate files without running any processing steps.
+# - switched to fslreorient2std for resampling to RPI/LPI
+# - apply reorientation to fieldmap and magnitude images, as needed
 #03/10/2014
 # - change default high-pass filter cutoff to 80 volumes. So if user does not specify, it should be quite gentle.
 # - add MNI_2.3mm template target for MB 2.3mm data.

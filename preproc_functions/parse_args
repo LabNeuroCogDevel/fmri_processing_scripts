@@ -23,6 +23,7 @@ function rm_completefiles {
     deleteFile ".skull_strip_complete"
     deleteFile ".func2struct_complete"
     deleteFile ".warp_complete"
+    deleteFile ".compute_warp_complete"
     deleteFile ".smoothing_complete"
     deleteFile ".temporal_filtering_complete"
     deleteFile ".rescaling_complete"
@@ -46,6 +47,7 @@ function parse_args {
     betFrac=0.3 #default fractional intensity threshold
     cleanup=0
     cleanup_only=0
+    compute_warp=0 #used for -compute_warp_only. Specifies to compute warp to template without applying it to preprocessed data.
     constrainToTemplate="y"
     deoblique_all=0
     despike=0
@@ -61,7 +63,7 @@ function parse_args {
     funcWarpInterp="spline"
     hpFilter=80 #default to 80 TR high-pass filter
     logFile="preprocessFunctional.log"
-    mc_first= #default to empty
+    mc_first=0
     mc_movie=0
     mc_program="3dvolreg"
     motionCensor=
@@ -71,7 +73,8 @@ function parse_args {
     no_smooth=0
     no_warp=0
     nuisance_regression=0
-    nuisance_regressors=
+    nuisance_compute=0
+    nuisance_file=.nuisance_regressors
     ref_vol=  #don't set a motion correction reference volume by default
     rescalingMethod="10000_globalmedian" #scale whole brain 4D by single constant to normalize median to 10000.
     sliceAcquisition= #never assume slice acquistion order. Force definition or use auto-detect from DICOM.
@@ -83,6 +86,8 @@ function parse_args {
     tr= #never assume a TR. Force definition or use auto-detect from DICOM.
     templateBrain="$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" #default to new 2009 MNI
     waveletDespike=0
+    waveletM1000=0
+    waveletThreshold=10
 
     #figure out file extension for FSL programs
     if [ -z $FSLOUTPUTTYPE ]; then
@@ -181,6 +186,10 @@ function parse_args {
 	    #relying on the .preproc_cmd code above, but keeping this for now.
 	    cleanup_only=1
 	    cleanup=1
+	    shift 1
+	elif [ $1 = -compute_warp_only ]; then
+	    no_warp=1
+	    compute_warp=1
 	    shift 1
 	elif [ $1 = -custom_slice_times ]; then
 	    sliceTimesFile="$2"
@@ -282,6 +291,13 @@ function parse_args {
 	elif [ $1 = -no_warp ]; then
 	    no_warp=1
 	    shift 1
+	elif [ $1 = -nuisance_file ]; then
+	    nuisance_file="${2}"
+	    shift 2
+	elif [ $1 = -nuisance_compute ]; then
+	    nuisance_compute=1
+	    nuisance_regressors="${2}"
+	    shift 2
 	elif [ $1 = -nuisance_regression ]; then
 	    nuisance_regression=1
 	    nuisance_regressors="${2}"
@@ -326,6 +342,7 @@ function parse_args {
 	    mc_first=0
 	    shift 1
 	elif [ $1 = -template_brain ]; then
+	    templateName="${2}"
 	    case $2 in
 		Tal_3mm) templateBrain="$HOME/standard/talairach_fsl_mni152/TalFSL_MNI152_T1_3mm_brain" ;;
 		MNI_FSL_3mm) templateBrain="$HOME/standard/fsl_mni152/MNI152_T1_3mm_brain" ;;
@@ -365,6 +382,12 @@ function parse_args {
 	    waveletDespike=1
 	    despike=1
 	    shift 1
+	elif [ $1 = -wavelet_m1000 ]; then
+	    waveletM1000=1
+	    shift 1
+	elif [ $1 = -wavelet_threshold ]; then
+	    waveletThreshold="${2}"
+	    shift 2
 	else
 	    #printHelp
 	    echo -e "----------------\n\n"

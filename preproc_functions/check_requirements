@@ -39,8 +39,9 @@ function check_requirements {
     fi
 
     #check for existence of required files
-    #mprageBet and warpCoef only required if warping to a standard template. Thus, don't require for -no_warp runs.
-    if [ $no_warp -eq 0 ]; then
+    #mprageBet and warpCoef only required if warping to a standard template (or just computing via -compute_warp_only).
+    #Thus, don't require for pure -no_warp runs.
+    if [[ $no_warp -eq 0 && $compute_warp -eq 0 ]]; then
 	if [ -z $mprageBet ]; then
 	    echo -e "Betted mprage file parameter not provided.\nPass using the -mprage_bet parameter.\nExiting.\n"
 	    exit 1

@@ -1,44 +1,36 @@
 #!/bin/bash
 
-function nuisance_regression {
-    #handle nuisance regression and/or bandpass filtering
-    #TODO: handle creation of nuisance regressors without applying them. These could then be used in a subsequent GLM.
+function warp_structmask_to_func {
+    structvol="${1}"
+    outvol="${2}"
 
-    [[ "$nuisance_regression" -eq 0 && "$bandpass_filter" -eq 0 ]] && return 0 #neither step
-
-    preNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
-    
-    local todo=
-    if [[ "$nuisance_regression" -eq 1 && "$bandpass_filter" -eq 1 ]]; then todo="br" #bandpass and regression
-    elif [ "$nuisance_regression" -eq 1 ]; then todo="r" #regression only
-    else todo="b" #bandpass alone
+    #warp anatomical mask into functional space
+    if [ $( imtest "unwarp/T1_UD_warp_bbr" ) -eq 1 ]; then
+	rel "Using inverse of unwarp/T1_UD_warp_bbr to warp $structvol into functional space with distortion" c
+	[ ! -f "unwarp/struct_to_func_transform_and_distort${ext}" ] && rel "invwarp -w unwarp/T1_UD_warp_bbr -o unwarp/struct_to_func_transform_and_distort -r unwarp/EF_D_mc_target"
+	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --warp=unwarp/struct_to_func_transform_and_distort"
+    else
+	rel "Using struct_to_func transform to warp csf mask into functional space" c
+	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --premat=struct_to_func.mat"
     fi
 
-    prefix="${todo}${prefix}"
-    postNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
+}
 
-    #check whether requisite steps are complete
-    [[ -f .nuisance_regression_complete && todo=r ]] && return 0
-    [[ -f .bandpass_filter_complete && todo=b ]] && return 0
-    [[ -f .nuisance_regression_complete && -f .bandpass_filter_complete && todo=br ]] && return 0
-
-    #bandpass only
-    if [ $todo = b ]; then
-	rel "3dBandpass -input \"$preNRBP\" -mask \"${subjMask}${ext}\" \
-		-prefix \"$postNRBP\" $bpLow $bpHigh"
-
-	rel "date > .bandpass_filter_complete"
-	return 0
-    fi
-
-    #handle regression or bp + regression
-
+function compute_nuisance_regressors {
     declare -a nuisancecols #nuisance regressors to be concatenated
 
-    #parse regressors of interest
+    #if despiking was applied, use this file for extracting CSF, WM, GS time series. Otherwise, use the file after skull strip, motion, and slice timing
+    [ -n "${postDespike}" ] && local func_ts="${postDespike}" || local func_ts="${postSS}"
+
+    #parse comma-delimited regressors of interest into array
     OLDIFS="${IFS}"
     IFS=',' read -ra reg <<< "$nuisance_regressors"
-    for r in "${reg[@]}"; do
+    IFS="${OLDIFS}"
+    reg=$( printf "%s\n" "${reg[@]}" | sort -u ) #eliminate any duplicate regressors
+
+    rel "Creating ${nuisance_file} containing regressors as columns: $reg" c
+
+    for r in $reg; do
 	if [[ "$r" =~ ^(6motion|rx|ry|rz|tx|ty|tz)$ && ! -f ".motion_demean" ]]; then 
 	    #compute de-meaned motion parameters for nuisance regression
 	    1d_tool.py -overwrite -infile motion.par -set_nruns 1 \
@@ -51,55 +43,43 @@ function nuisance_regression {
 		-derivative -demean -write .motion_deriv
 	fi
 
-	#Use func_to_struct.mat to warp subject functional into structural space.
-	#This mat is generated upstream in register_func2struct, but is only applied to the coregistration target (mc_target), not the 4d functional
-	#Use the $preBet image, which is generated after slice timing and motion correction to derive nuisance time series.
-	if [ $( imtest "func_to_struct_allv" ) -eq 0 ]; then
-	    
-	    #generate dowsampled mprage for applywarp 
-	    #3dresample -inset $mprageBet -master $templateBrain -prefix mprage_ds.nii.gz	    	
-
-	    if [ $( imtest "unwarp/T1_UD_warp_bbr" ) -eq 1 ]; then
-	        #when BBR coregistration is used with fm unwarping, we end up with warp coefficients for func -> struct, not just a .mat file
-	        #KH: preSS is the preBet image, SS= skullstrip
-			# using the template brain so doesnt upsample. There should be probalby be an option for native space. 
-	        rel "applywarp -i \"$preSS\" -o func_to_struct_allv -w unwarp/T1_UD_warp_bbr --interp=spline -r template_brain.nii"
-	    else
-	        #shouldn't there be a scenario where we also have a nonlinear warp for traditional fm unwarping here?
-	        #KH: #preSS is the preBet image
-	        rel "applywarp -i \"$preSS\" -o func_to_struct_allv --premat=func_to_struct.mat --interp=spline -r template_brain.nii"
-	    fi
-	fi    
-
 	if [[ "$r" =~ ^(csf|dcsf)$ && ! -f ".csf_ts" ]]; then
 	    #fast segmentation should have been run during preprocessMprage
-	    #use seg_0 for csf
+	    #use pve_0 for csf
 	    #re-run FAST here if needed
-	    #KH: need to use the -g flag to output binary mask
 	    [ $( imtest "${mprageBet_base}_fast_seg_0" ) -eq 0 ] && rel "fast -g -o \"${mprageBet_base}_fast\" \"${mprageBet_base}\""
 
-	    #erode CSF mask twice to avoid any partial volume effects
-	    rel "fslmaths ${mprageBet_base}_fast_seg_0 -eroF -eroF .csf_ero2x -odt char"
+	    warp_structmask_to_func "${mprageBet_base}_fast_pve_0" .csf_pve
+
+	    #threshold at 0.9 to ensure that only voxels likely to be csf are retained	    
+	    rel "fslmaths .csf_pve -thr 0.9 -bin .csf_pve_thr0p9"
+
+	    #erode csf mask once to reduce risk of partial volume
+	    rel "3dmask_tool -overwrite -input .csf_pve_thr0p9${ext} -dilate_result -1 -prefix .csf_pve_thr0p9_ero1${ext}"
+
+	    #cluster csf mask and only retain clusters of 5 or more contiguous voxels
+	    rel "cluster -i .csf_pve_thr0p9_ero1 -t 1.0 --osize=.csf_pve_clustsize --no_table"	    
+	    rel "fslmaths .csf_pve_clustsize -thr 5.01 -bin -mas ${postSS}_tmean_mask .csf_mask -odt char" #multiply by tight brain mask to eliminate non-brain voxels
 	    
-	    #check that at least 250 voxels are present in mask to get a reasonable sampling distribution of CSF timeseries
-	    local nvox=$( 3dBrickStat -non-zero -count .csf_ero2x${ext} )
+	    #if fewer than 30 CSF voxels (in functional space) are present, revert to a non-dilated csf mask
+	    #too few voxels may result in a weird sampling distribution of CSF voxels
+	    local nvox=$( 3dBrickStat -non-zero -count .csf_mask${ext} )
 
-	    if [ $nvox -lt 250 ]; then
-		#go back to a 1x erosion
-		rel "fslmaths ${mprageBet_base}_fast_seg_0 -eroF .csf_ero1x -odt char"
+	    if [ $nvox -lt 30 ]; then
+		rel "Warning: fewer than 30 CSF voxels were found in .csf_mask. Reverting to a non-dilated mask" c	
+		rel "cluster -i .csf_pve_thr0p9 -t 1.0 --osize=.csf_pve_clustsize_noero --no_table"
+		rel "fslmaths .csf_pve_clustsize_noero -thr 15.01 -bin -mas ${postSS}_tmean_mask .csf_mask_noero -odt char"
 
-		#resample mask to match dimension of the functional data
-		rel "3dresample -inset .csf_ero1x${ext} -prefix .csf_ds_ero1x${ext} -master func_to_struct_allv${ext}" 
-		#obtain timeseries from functional warped to structural space (during coregistration)
-		rel "3dmaskave -mask .csf_ds_ero1x${ext} -q func_to_struct_allv${ext} > .csf_ts"
+		#obtain CSF timeseries from CSF mask in functional space
+		rel "3dmaskave -mask .csf_mask_noero${ext} -q ${func_ts}${ext} > .csf_ts"
 	    else
-		
-		#resample mask
-		rel "3dresample -inset .csf_ero2x${ext} -prefix .csf_ds_ero2x${ext} -master func_to_struct_allv${ext}"
-		rel "3dmaskave -mask .csf_ds_ero2x${ext} -q func_to_struct_allv${ext} > .csf_ts"
+		rel "3dmaskave -mask .csf_mask${ext} -q ${func_ts}${ext} > .csf_ts"
 	    fi
 
 	    rel "1d_tool.py -overwrite -infile .csf_ts -derivative -write .csf_ts_deriv"
+
+	    #cleanup some intermediate files
+	    #rel "imrm .csf_pve_thr0p9 .csf_pve_thr0p9_ero1 .csf_pve_clustsize .csf_pve_clustsize_noero"
 	fi
 
 	if [[ "$r" =~ ^(wm|dwm)$ && ! -f ".wm_ts" ]]; then
@@ -108,34 +88,52 @@ function nuisance_regression {
 	    #re-run FAST here if needed
 	    [ $( imtest "${mprageBet_base}_fast_seg_2" ) -eq 0 ] && rel "fast -g -o \"${mprageBet_base}_fast\" \"${mprageBet_base}\""
 
-	    #erode WM mask twice to avoid any partial volume effects
-	    rel "fslmaths ${mprageBet_base}_fast_seg_2 -eroF -eroF .wm_ero2x -odt char"
-	    
-	    #check that at least 500 voxels are present in mask to get a reasonable sampling distribution of WM timeseries
-	    local nvox=$( 3dBrickStat -non-zero -count .wm_ero2x${ext} )
+	    warp_structmask_to_func "${mprageBet_base}_fast_pve_2" .wm_pve
 
-	    if [ $nvox -lt 500 ]; then
-		#go back to a 1x erosion
-		rel "fslmaths ${mprageBet_base}_fast_seg_0 -eroF .wm_ero1x -odt char"
+	    #threshold at 0.9 to ensure that only voxels likely to be csf are retained	    
+	    rel "fslmaths .wm_pve -thr 0.9 -bin .wm_pve_thr0p9"
+
+	    #erode wm mask twice to reduce risk of partial volume
+	    #more contiguous wm voxels than csf voxels -- hence 2x dilation works well in general as a start to retain deep cerebral white matter
+	    rel "3dmask_tool -overwrite -input .wm_pve_thr0p9${ext} -dilate_result -2 -prefix .wm_pve_thr0p9_ero2${ext}"
+
+	    #cluster wm mask and only retain clusters of 20 or more contiguous voxels
+	    rel "cluster -i .wm_pve_thr0p9_ero2 -t 1.0 --osize=.wm_pve_clustsize --no_table"
+	    rel "fslmaths .wm_pve_clustsize -thr 20.01 -bin -mas ${postSS}_tmean_mask .wm_mask -odt char"
+	    
+	    #check that at least 100 voxels are present in mask to get a reasonable sampling distribution of WM timeseries
+	    local nvox=$( 3dBrickStat -non-zero -count .wm_mask${ext} )
+
+	    if [ $nvox -lt 100 ]; then
+		#go back to a 1x erosion, but up voxel clusters to 100 minimum
+		rel "Warning: fewer than 100 WM voxels were found in .wm_mask. Reverting to a 1x eroded WM mask" c
+		rel "3dmask_tool -overwrite -input .wm_pve_thr0p9${ext} -dilate_result -1 -prefix .wm_pve_thr0p9_ero1${ext}"
 		
-		rel "3dresample -inset .wm_ero1x${ext} -prefix .wm_ds_ero1x${ext} -master func_to_struct_allv${ext}" 
-		#obtain timeseries from functional warped to structural space (during coregistration)
-		rel "3dmaskave -mask .wm_ds_ero1x${ext} -q func_to_struct_allv${ext} > .wm_ts"
+		rel "cluster -i .wm_pve_thr0p9_ero1 -t 1.0 --osize=.wm_pve_clustsize_ero1 --no_table"
+		rel "fslmaths .wm_pve_clustsize_ero1 -thr 50.01 -bin -mas ${postSS}_tmean_mask .wm_mask_ero1 -odt char"
+
+		#obtain average WM timeseries from WM mask in functional space
+		rel "3dmaskave -mask .wm_mask_ero1${ext} -q ${func_ts}${ext} > .wm_ts"
 	    else
-		rel "3dresample -inset .wm_ero2x${ext} -prefix .wm_ds_ero2x${ext} -master func_to_struct_allv${ext}" 
-		rel "3dmaskave -mask .wm_ds_ero2x${ext} -q func_to_struct_allv${ext} > .wm_ts"
+		rel "3dmaskave -mask .wm_mask${ext} -q ${func_ts}${ext} > .wm_ts"
 	    fi
 
 	    rel "1d_tool.py -overwrite -infile .wm_ts -derivative -write .wm_ts_deriv"
+
+	    #cleanup some intermediate files
+	    #rel "imrm .wm_pve_thr0p9 .wm_pve_thr0p9_ero2 .wm_pve_thr0p9_ero1 .wm_pve_clustsize .wm_pve_clustsize_noero_ero1"
 	fi
 
 	#global signal
 	if [[ "$r" =~ ^(gs|dgs)$ && ! -f ".gs_ts" ]]; then
 	    #erode the tight skull-stripped brain mask from the structural scan to identify brain voxels
-	    rel "fslmaths ${mprageBet_base} -bin -eroF -eroF .brainmask_ero2x -odt char" #eroding the binarized mprage_bet
-		
-		rel "3dresample -inset .brainmask_ero2x${ext} -prefix .brainmask_ds_ero2x${ext} -master func_to_struct_allv${ext}" 
-	    rel "3dmaskave -mask .brainmask_ds_ero2x${ext} -q func_to_struct_allv${ext} > .gs_ts"
+	    rel "fslmaths ${mprageBet_base} -bin -eroF -eroF .brainmask_ero2x_anat -odt char" #eroding the binarized mprage_bet
+
+	    warp_structmask_to_func .brainmask_ero2x_anat .brainmask_ero2x
+
+	    rel "fslmaths .brainmask_ero2x -mas ${postSS}_tmean_mask .brainmask_ero2x -odt char" #mask by functional brain mask
+
+	    rel "3dmaskave -mask .brainmask_ero2x${ext} -q ${func_ts}${ext} > .gs_ts"
 	    rel "1d_tool.py -overwrite -infile .gs_ts -derivative -write .gs_ts_deriv"
 	fi
 
@@ -195,25 +193,55 @@ function nuisance_regression {
 	esac
 
     done
-    IFS="${OLDIFS}"
 
-    nuisance_concat=$(printf "%s\n" "${nuisancecols[@]}" | sort -u) #only keep unique columns
-    rel "1dcat -overwrite $nuisance_concat > .nuisance_regressors"
+    rel "1dcat -overwrite ${nuisancecols[@]} > ${nuisance_file}"
     
-    if [ $bandpass_filter -eq 1 ]; then
-        rel "3dBandpass -input \"$preNRBP\" -mask \"${subjMask}${ext}\" \
-		-prefix \"$postNRBP\" -ort .nuisance_regressors $bpLow $bpHigh"
+}
+
+function nuisance_regression {
+    #handle nuisance regression and/or bandpass filtering
+    [[ "$nuisance_compute" -eq 0 && "$nuisance_regression" -eq 0 && "$bandpass_filter" -eq 0 ]] && return 0 #no nuisance or bandpass, exit
+
+    preNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
+    
+    local todo=
+    if [[ "$nuisance_regression" -eq 1 && "$bandpass_filter" -eq 1 ]]; then todo="br" #bandpass and regression
+    elif [ "$nuisance_regression" -eq 1 ]; then todo="r" #regression only
+    elif [ "$bandpass_filter" -eq 1 ]; then todo="b" #bandpass alone
+    fi
+
+    prefix="${todo}${prefix}"
+    postNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
+
+    #check whether requisite steps are complete
+    [[ -f .nuisance_regression_complete && $todo=r ]] && return 0
+    [[ -f .bandpass_filter_complete && $todo=b ]] && return 0
+    [[ -f .nuisance_regression_complete && -f .bandpass_filter_complete && $todo=br ]] && return 0
+
+    if [[ ! -f "${nuisance_file}" && ( $nuisance_regression == 1 || $nuisance_compute == 1 ) ]]; then
+	compute_nuisance_regressors
+    fi
+
+    #bandpass only
+    if [ "$todo" = "b" ]; then
+	rel "3dBandpass -input \"$preNRBP\" -mask \"${subjMask}${ext}\" \
+		-prefix \"$postNRBP\" $bpLow $bpHigh"
 
 	rel "date > .bandpass_filter_complete"
-    else
-        rel "3dDetrend -verb -polort 2 -vector .nuisance_regressors \
+    elif [ "$todo" = "br" ]; then
+        rel "3dBandpass -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" \
+		-prefix \"$postNRBP\" -ort ${nuisance_file} $bpLow $bpHigh"
+
+	rel "date > .bandpass_filter_complete"
+	rel "date > .nuisance_regression_complete"
+    elif [ "$todo" = "r" ]; then
+        rel "3dDetrend -overwrite -verb -polort 2 -vector ${nuisance_file} \
 		-prefix \"$postNRBP\" \"$preNRBP\""
 	
 	#need to mask detrend by brain mask as with 3dBandpass
 	rel "fslmaths \"$postNRBP\" -mas \"$subjMask\" \"$postNRBP\""
+	rel "date > .nuisance_regression_complete"
     fi
-    
-    rel "date > .nuisance_regression_complete"
     
     #explicit return code needed to avoid implicit status of prior command
     return 0

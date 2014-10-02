@@ -16,15 +16,35 @@ function despike_timeseries {
 	fi
 
 	if [ $waveletDespike -eq 1 ]; then
+
+	    if [ $waveletM1000 -eq 1 ]; then
+		#Per discussion with Ameera Patel, wavelet despiking does best with voxelwise normalization to 1000 at the default spike threshold of 10.
+		#Also, having large variability in intensities across the brain can be difficult for the algorithm because the spike threshold should vary
+		#according to the intrinsic intensity of the time series. Hence, with our 32-channel data that have major bias fields (due to coil geometry)
+		#perform a voxelwise normalization to 1000 prior to despiking, then undo after despiking
+
+		#Only normalize brain voxels to avoid dramatic inflation of spike percentage due to rescaling of air voxels (~0 intensity)
+		rel "Voxelwise normalization to 1000 prior to wavelet despiking so that spike threshold of 10 is appropriate." c
+		rel "fslmaths \"${preDespike}\" -Tmean predespike_tmean_float -odt float"
+		rel "fslmaths \"${preDespike}\" -mul 1000 -div predespike_tmean_float -mas $threshMask predespike -odt float" #brain mask
+
+		#use transformed image for despiking
+		preDespike="predespike_m1000"
+	    else
+		#rel "fslmaths \"${preDespike}\" predespike -odt float" #just copy image
+		rel "ln -sfn \"${preDespike}\" predespike" #symbolic link to image to despike
+	    fi
+
 	    if [ $( uname ) = Darwin ]; then
 		matlabCmd="addpath(genpath('${scriptDir}/wavelet_despike/mac'));"
 	    else
 		matlabCmd="addpath(genpath('${scriptDir}/wavelet_despike/linux_windows'));"
 	    fi
 	    matlabCmd="${matlabCmd} try; 
-WaveletDespike('${preDespike}${ext}', 
-'${postDespike}',
-'LimitRAM', ${RAM_limit}); 
+WaveletDespike('predespike${ext}', 
+'postdespike',
+'LimitRAM', ${RAM_limit},
+'threshold', ${waveletThreshold}); 
 end; quit;
 "
 
@@ -34,9 +54,18 @@ end; quit;
 	    rel "matlab -nodisplay -r \"$matlabCmd\""
 	    export DISPLAY="${OLDDISPLAY}"
 
-	    rel "mv \"${postDespike}_wds.nii.gz\" \"${postDespike}.nii.gz\"" #move despiked file to d_funcfile
-	    rel "mv \"${postDespike}_noise.nii.gz\" \"${postDespike}_wavelet_noise.nii.gz\""
-	    rel "mv \"${postDespike}_SP.txt\" \"${postDespike}_spike_percentage.txt\""
+	    if [ $waveletM1000 -eq 1 ]; then
+		#undo mean 1000 normalization
+		rel "fslmaths postdespike_wds -div 1000 -mul predespike_tmean_float -mas $threshMask ${postDespike}"
+		rel "fslmaths postdespike_noise -div 1000 -mul predespike_tmean_float -mas $threshMask ${postDespike}_wavelet_noise"
+
+		rel "imrm predespike_tmean_float predespike postdespike_wds postdespike_noise"
+	    else
+		rel "mv postdespike_wds.nii.gz \"${postDespike}.nii.gz\"" #move despiked file to d_funcfile
+		rel "mv postdespike_noise.nii.gz \"${postDespike}_wavelet_noise.nii.gz\""
+	    fi
+
+	    rel "mv postdespike_SP.txt \"${postDespike}_spike_percentage.txt\""
 	else
 	    #time despike
 	    rel "3dDespike -overwrite -cut $despikeThresh -prefix \"${postDespike}${ext}\" \"${preDespike}${ext}\""

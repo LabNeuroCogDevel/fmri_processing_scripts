@@ -31,6 +31,8 @@ Command line options:
   -bet_frac: fractional intensity threshold for skull-stripping mean functional (used in func-to-struc warp). Default 0.3.
   -cleanup: Deletes all files used in preprocessing that are unlikely to be needed for analysis
   -cleanup_only: Delete all intermediate files, but do not run any processing steps.
+  -compute_warp_only: Do not warp data to template space, but do compute the nonlinear transformation to template (and FM unwarp).
+        This is useful if one wishes to analyze the data in native space and warp the stats maps to template. This switch also enables -no_warp.
   -constrain_to_template: Constrain brain voxels to the corresponding standard template (e.g., MNI). y or n. Default: y.
   -custom_slice_times: For use with 4d slice timing + motion correction. 
         A csv file containing the times (in seconds summing to TR) of each slice (bottom to top).
@@ -55,7 +57,8 @@ Command line options:
         -func_struc_dof 7.  Rotation x, y, z; Translation x, y, z; Global scaling.
         -func_struc_dof 12. Rotation x, y, z; Translation x, y, z; Scaling x, y, z; Skewing x, y, z.
   -help: Print command help.
-  -hp_filter: high-pass filtering frequency (in volumes). Anything faster than this value will be passed. Default is 80.
+  -hp_filter: high-pass filtering frequency (in volumes). Anything faster than this value will be passed. Default is 80. 
+        Can also be specified in seconds using suffix "s", such as -hp_filter 100s.
   -log: Name for log file that documents each command that is run. Default: preprocessFunctional.log
   -mc_first: run motion correction before slice timing correction, regardless of slice acquisition order.
   -mc_movie: create .mpg movies of head movement before and after motion correction (depends on create4DMovie).
@@ -65,12 +68,15 @@ Command line options:
         and AFNI-style censor 1D files. Available metrics are dvars, fd, fdrms, relrms, refrms, refmse. If an equals sign is included,
         then this is used as the threshold for flagging volumes to exclude. Otherwise,75th pctile + 1.5*IQR is used.
         Example: -motion_censor fd=0.9,dvars=20 (censor FD at 0.9mm or greater, and DVARS at 20)
-  -motion_sinc: Complete a 4th stage optimization of motion correction using sinc interpolation (slower but better): y or n. Default y.
+  -motion_sinc: (mcflirt only) Complete a 4th stage optimization of motion correction using sinc interpolation (slower but better): y or n. Default y.
   -mprage_bet: The betted structural scan for this participant. Required.
   -no_hp: Do not perform high-pass filtering.
   -no_smooth: Do not perform spatial smoothing.
   -no_st: Do not perform slice timing correction.
   -no_warp: Maintain native space and resolution of input image. Do not warp to a template.
+  -nuisance_file: Name of file containing all nuisance regressors specified by -nuisance_regression. Default .nuisance_regressors.
+  -nuisance_compute: same as -nuisance_regression, but only compute the comma-delimited list of nuisance regressors. This does NOT regress any signals out of the data,
+        just creates the file specified by -nuisance_file, which can be used later (e.g., fMRI GLM) to remove nuisance signals.
   -nuisance_regression: regress out signals that are not of interest (most relevant to resting-state processing).
         Comma-delimited list (no spaces!) that can include: 6motion, rx, ry, rz, tx, ty, tz, wm (white matter), csf (cerebrospinal fluid), 
         gs (global signal). Derivatives of any of these can be added by using the prefix "d" (e.g., dcsf).
@@ -115,7 +121,7 @@ Command line options:
   -wavelet_despike: Apply wavelet despiking after motion correction and slice timing correction to remove frequency-dependent nonstationary events in fMRI time series (Patel 2014 NeuroImage).
         Note: This is an alternative to 3dDespike and should generally be preferred because it removes intensity artifacts in frequency space, which is useful
         because head movement often produces artifacts that are spread in time (spin history).
-        
+  -wavelet_threshold: This is the coefficient threshold value used during maxima and minima coefficient definition. Default: 10. See BWT_Documentation.pdf for details.
 
 The major steps in the processing pipeline are, in order:
   1)   Intensity despiking (optional) - d
@@ -149,9 +155,21 @@ EndOfHelp
 }
 
 #Written: 5/18/2010
-#Last updated: 08/25/2014
+#Last updated: 9/24/2014
 #
 #Changelog:
+#09/24/2014
+# -nuisance_compute: Compute nuisance signals (same syntax as -nuisance_regression), but do not apply to the data.
+# -nuisance_file: Provide user ability to name nuisance regressors file
+# - Per discussion with Kai, downsample CSF and WM structural masks to functional space to compute nuisance signals (reduce computation burden)
+# -compute_warp_only: Initial (slightly clunky) implementation of computing warp to standard space without applying it to preprocessed data.
+# -wavelet_m1000: Voxel mean = 1000 normalization prior to wavelet despiking. Per discussion with Ameera Patel, this ensures that the 
+#   spike detection threshold is applied similarly throughout the brain.
+# -wavelet_threshold: Default threshold is 10, per documentation. This is reasonable for resting-state data, but some folks may with
+#   to increase the threshold to decrease denoising.
+# - FSL 5.0.7 removes mean component when high-pass filtering. Need to check FSL version and add this back in for normalization.
+# - Can specify -hp_filter in seconds, such as -hp_filter 128s.
+# - Fix input to onestep_warp for fieldmap only (-no_warp) to grab despiked data, if present.
 #08/25/2014
 # - Despiking was not being carried forward because warp was using postST data variable. Now that despiking comes after ST and MC, this was
 #   not being incorporated in warp_to_template.
@@ -194,17 +212,7 @@ EndOfHelp
 # - median and 2nd %ile not recomputed in the case of re-running script (creates files .pct2 and .median_intensity)
 # - Rename log file if it already exists so that logs are not overwritten.
 #
-#03/24/2014
-# - remove separate motion plots step. Always compute motion parameters (and plots) based on position of motion correction in pipeline.
-# - abstracted motion correction, slice timing, and fieldmap to preproc_functions.
-# - added -cleanup_only option to cleanup intermediate files without running any processing steps.
-# - switched to fslreorient2std for resampling to RPI/LPI
-# - apply reorientation to fieldmap and magnitude images, as needed
-# 
 #For previous changes, see preproc_functions/changelog
-
-#TODO: 
-# - Switch high pass filtering to seconds, not TRs and use bc to calculate #TRs.
 
 #load preprocessing functions
 scriptDir=$( dirname "$0" )
@@ -237,7 +245,7 @@ thiscommandinfo="$0 $@ \n# preprocessFunctional v$(perl -ne 'print $1 if /^#Last
 dotfile=.preprocessfunctional
 
 #exit script if processing complete
-if [ -f "${dotfile}_complete" ]; then
+if [[ -f "${dotfile}_complete" && "$@" != *-startover* ]]; then
     echo -e "\n--- preprocessFunctional already complete.\n"
     exit 0
 fi
@@ -361,6 +369,20 @@ compute_motion_censor
 # NOTE: When relevant, this step also incorporates motion correction and fieldmap correction.
 # These steps are combined so that there is a single interpolation into template space.
 warp_to_template               # preproc_functions/warp_to_template
+
+# handle request for computing, but not applying, warp to standard space.
+# This is useful if one wishes to warp files to template space later (e.g., after GLM),
+# but to complete preprocessing pipeline in native space.
+if [[ $compute_warp -eq 1 && ! -f .compute_warp_complete ]]; then
+
+    # Note: these warp coefficients only represent EPI -> template and do not include fieldmap unwarping or
+    # motion correction. These steps are applied upstream by warp_to_template
+    rel "Computing warp to $warp_target via func_to_struct.mat and $warpCoef." c
+    rel "convertwarp --ref=${templateBrain} --premat=func_to_struct.mat --warp1=$warpCoef \
+		--relout --out=func_to_${templateName}_warpfield"
+    rel "Remember to use --rel with applywarp when applying this file to an image." c
+    date > .compute_warp_complete    
+fi
 
 # spatial smoothing
 spatial_smooth                 # preproc_functions/spatial_smooth

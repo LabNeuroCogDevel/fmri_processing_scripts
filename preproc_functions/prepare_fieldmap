@@ -526,7 +526,11 @@ function prepare_fieldmap {
     # Output grot is just used for creating thumbnails
     rel "Coregister fieldmap files into EPI space (mc_target)" c
 
-    rel "flirt -in EF_D_mc_target -ref FM_D_fmap_mag_brain_siglossed -omat epi2fmap.mat -o grot -dof 6 -refweight FM_D_fmap_sigloss"
+    #use of refweight was leading to gross mis-registration in some subjects (esp. when fmap and epi did not have the same grid and voxel size).
+    #the epi2fmap.mat matrix is only used internally here, but does lead EF_D_mc_target and EF_UD_mc_target to look quite ugly.
+    # -refweight FM_D_fmap_sigloss
+
+    rel "flirt -in EF_D_mc_target -ref FM_D_fmap_mag_brain_siglossed -omat epi2fmap.mat -o grot -dof 6"
     _picture grot "align FM (mag,sigloss in) to epi (ref) (make epi2fmap.mat, use this image for thumbnail)"
 
     # reverse  EF->FM  to get FM->EF (to put all fieldmap stuff in epi space)

@@ -211,7 +211,7 @@ wait
 #ffmpeg complains if height is not divisible by 2
 #thus, rescale slightly
 width=$( identify -ping -format '%w' vol000.png )
-echo "ffmpeg -r ${fps} -i vol%03d.png -c:v libx264 -vf \"fps=${fps},scale=${width}:trunc(ow/a/2)*2,format=yuv420p\" \"${output}\""
-ffmpeg -r ${fps} -i vol%03d.png -c:v libx264 -vf "fps=${fps},scale=${width}:trunc(ow/a/2)*2,format=yuv420p" "${output}"
+echo "ffmpeg -y -r ${fps} -i vol%03d.png -c:v libx264 -vf \"fps=${fps},scale=${width}:trunc(ow/a/2)*2,format=yuv420p\" \"${output}\""
+ffmpeg -y -r ${fps} -i vol%03d.png -c:v libx264 -vf "fps=${fps},scale=${width}:trunc(ow/a/2)*2,format=yuv420p" "${output}"
 
 rm -f vol*.png

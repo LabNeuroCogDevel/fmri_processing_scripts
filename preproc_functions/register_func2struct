@@ -44,7 +44,7 @@ function register_func2struct {
 
 	    if [ $bbrCapable -eq 1 ]; then
 		rel "Using boundary-based registration approach to register EPI to T1" c
-		[ $( imtest "${mprageBet_base}_fast_seg" ) -eq 0 ] && rel "fast -o \"${mprageBet_base}_fast\" \"${mprageBet_base}\"" #segment T1 to create WM
+		[ $( imtest "${mprageBet_base}_fast_seg" ) -eq 0 ] && rel "fast -g -o \"${mprageBet_base}_fast\" \"${mprageBet_base}\"" #segment T1 to create WM
 		[ $( imtest "${mprageBet_base}_fast_wmseg" ) -eq 0 ] && rel "fslmaths ${mprageBet_base}_fast_pve_2 -thr 0.5 -bin ${mprageBet_base}_fast_wmseg" #create binary WM mask
 		
 		#standard 6 parameter EPI-to-T1 registration to get initial estimate of transform
@@ -77,8 +77,8 @@ function register_func2struct {
 
 		    #save unmasked shift map in EPI space
 		    rel "fugue --loadfmap=unwarp/EF_UD_fmap_bbr --mask=unwarp/EF_UD_fmap_bbr_mask --saveshift=unwarp/EF_UD_shift_bbr --unmaskshift --dwell=$dwelltime --unwarpdir=$unwarpdir"
-		    rel "convertwarp -r unwarp/EF_D_mc_target -s unwarp/EF_UD_shift_bbr -o unwarp/EF_UD_warp_bbr --shiftdir=$unwarpdir --relout" #warp coefficients in EPI space
-		    rel "convertwarp -r \"$mprageBet\" -s unwarp/EF_UD_shift_bbr -o unwarp/T1_UD_warp_bbr --postmat=func_to_struct.mat --shiftdir=$unwarpdir --relout" #warp coefficients in structural space
+		    rel "convertwarp -r unwarp/EF_D_mc_target -s unwarp/EF_UD_shift_bbr -o unwarp/EF_UD_warp_bbr --shiftdir=$unwarpdir --relout" #warp coefficients to undistort EPI in functional space
+		    rel "convertwarp -r \"$mprageBet\" -s unwarp/EF_UD_shift_bbr -o unwarp/T1_UD_warp_bbr --postmat=func_to_struct.mat --shiftdir=$unwarpdir --relout" #warp coefficients to undistort and transform EPI into structural space
 		fi
 	    else
 		rel "BBR EPI-to-T1 requested, but flirt < v6.0. Reverting to typical 6 DOF registration" c
