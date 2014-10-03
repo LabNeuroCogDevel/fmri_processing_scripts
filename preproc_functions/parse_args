@@ -63,7 +63,7 @@ function parse_args {
     funcWarpInterp="spline"
     hpFilter=80 #default to 80 TR high-pass filter
     logFile="preprocessFunctional.log"
-    mc_first=0
+    mc_first= #default to empty and choose at stage of motion + slice timing depending on user specification and slice acquisition order
     mc_movie=0
     mc_program="3dvolreg"
     motionCensor=
