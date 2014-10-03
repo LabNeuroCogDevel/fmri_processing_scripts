@@ -55,7 +55,9 @@ function register_func2struct {
 		#N.B.: the epi_reg program uses betted T1 for initial transformation, but the unbetted image for BBR registration!
 		rel "flirt -in mc_target -ref $mprageBet -out func_to_struct -omat func_to_struct.mat -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
 		    -cost bbr -init func_to_struct_init.mat -dof 6 -schedule ${FSLDIR}/etc/flirtsch/bbr.sch $bbrfmap"
-
+		#KH: need the struct_to_func.mat for the nuisance regression, even with no filedmapping.  
+		rel "convert_xfm -inverse -omat struct_to_func.mat func_to_struct.mat"
+		
 		if [ $createBBRFmapWarp -eq 1 ]; then
 		    #also generate a func -> struct image without fmap unwarping in BBR to verify that fieldmap unwarping is helping with coregistration
 		    rel "applywarp -i mc_target -o func_to_struct_nounwarp --premat=func_to_struct.mat --interp=spline -r \"$mprageBet\""
