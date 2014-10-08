@@ -20,7 +20,7 @@ function warp_to_template {
 
 	#echo "calling onestep_warp in warp_to_template"
 
-	[ $mc_first -eq 0 ] && onestep_warp mc_target #for mc_first fmunwarp and motion correction happen before ST
+	[[ $mc_first -eq 0 || $sliceMotion4D -eq 1 ]] && onestep_warp mc_target #for mc_first fmunwarp and motion correction happen before ST
 
     else
 	if [ ! -f .warp_complete ]; then	    

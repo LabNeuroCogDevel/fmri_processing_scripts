@@ -65,7 +65,7 @@ function parse_args {
     logFile="preprocessFunctional.log"
     mc_first= #default to empty and choose at stage of motion + slice timing depending on user specification and slice acquisition order
     mc_movie=0
-    mc_program="3dvolreg"
+    mc_program="mcflirt"
     motionCensor=
     motionSinc="y"
     no_hp=0

@@ -97,7 +97,8 @@ function cleanup_preprocessMprage {
 	${T1}_initfast2_bias ${T1}_initfast2_brain_mask ${T1}_initfast2_brain_mask2 \
 	${T1}_initfast2_restore ${T1}_initfast2_seg ${T1}_initfast_bias \
 	${T1}_initfast_restore ${T1}_initfast_seg ${T1}_fast_bias_vol2 \
-	${T1}_fast_bias_vol32 template_to_subject_warpcoef ${T1}_fast_bias_idxmask
+	${T1}_fast_bias_vol32 template_to_subject_warpcoef ${T1}_fast_bias_idxmask \
+	${T1}_fast_bias ${T1}_fast_bias_init ${T1}_fast_restore ${T1}_fast_seg
 }
 
 

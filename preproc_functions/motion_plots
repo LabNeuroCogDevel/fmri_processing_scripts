@@ -8,11 +8,6 @@ function generate_motion_rms {
     local mats=($( find $mcMats -iname "MAT_*" -type f | sort -n )) #ascending set of motion matrices
     local nmats=${#mats[@]}
 
-    #generate mask of mc_target for use in calculation of rmsdiff
-    rel "bet mc_target.nii.gz mc_target_mask -f 0.3 -n -m -R"
-    imrm mc_target_mask
-    immv mc_target_mask_mask mc_target_mask
-
     #loop over motion matrices and calculate RMS motion relative to identity (absolute) and prior volume (relative)
     #this uses the rmsdiff tool and calculates motion within the brain mask
     #see here: https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=fsl;d9abdb68.1307
