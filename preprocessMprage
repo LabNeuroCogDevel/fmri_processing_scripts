@@ -235,9 +235,13 @@ if [ -n "${logFile}" ]; then
     echo -e "## Call: $thiscommandinfo" >> "${logFile}"
 fi
 
+#if .mprage_nifti file exists, then DICOM -> NIFTI conversion completed and we should read nifti from file
+if [[ -z "$nifti" && -f .mprage_nifti ]]; then
+    read nifti < .mprage_nifti
+fi
 
 #if nifti undefined, assume the dicoms need to be converted
-if [ -z $nifti ]; then
+if [ -z "$nifti" ]; then
     ##############
     #convert dicom files to NIFTI
     rel "Converting DICOM files to NIFTI" c
@@ -280,6 +284,8 @@ if [ -z $nifti ]; then
     if [ -f mprage.nii ]; then
 	rel "gzip -f mprage.nii" #use -f to force overwrite in case where mprage.nii.gz exists, but we want to replace it.
     fi
+
+    echo "mprage.nii.gz" > .mprage_nifti
 
     #Ask user what to do with original DICOM files unless passed on command line
     if [ -z $delDicom ]; then

@@ -62,7 +62,7 @@ Command line options:
   -log: Name for log file that documents each command that is run. Default: preprocessFunctional.log
   -mc_first: run motion correction before slice timing correction, regardless of slice acquisition order.
   -mc_movie: create .mpg movies of head movement before and after motion correction (depends on create4DMovie).
-  -mc_program: what program to use for motion correction. Options: mcflirt, 3dvolreg. Default: 3dvolreg.
+  -mc_program: what program to use for motion correction. Options: mcflirt, 3dvolreg. Default: mcflirt.
   -motion_censor: A comma-delimited list of motion/intensity metrics for identifying volumes to censor.
         This calls fsl_motion_outliers for each element in the list and generates both spike regressor matrices (.mat)
         and AFNI-style censor 1D files. Available metrics are dvars, fd, fdrms, relrms, refrms, refmse. If an equals sign is included,
@@ -124,11 +124,11 @@ Command line options:
   -wavelet_threshold: This is the coefficient threshold value used during maxima and minima coefficient definition. Default: 10. See BWT_Documentation.pdf for details.
 
 The major steps in the processing pipeline are, in order:
-  1)   Intensity despiking (optional) - d
-  2)   Field map unwarping (optional) - u
-  3)   Slice timing correction - t
-  4)   Motion correction - m
-  5)   Skull stripping and intensity thresholding - k
+  1)   Slice timing correction - t
+  2)   Motion correction - m
+  3)   Skull stripping and intensity thresholding - k
+  4)   Intensity/wavelet despiking (optional) - d
+  5)   Field map unwarping (optional) - u
   6)   Co-registration and warping to standard space - w
   7)   Smoothing - s
   8)   High-pass filtering - f

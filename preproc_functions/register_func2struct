@@ -17,6 +17,13 @@ function register_func2struct {
 
     mprageBet_base=$( remove_ext ${mprageBet} ) #skull-stripped mprage image basename
 
+    #generate mask of mc_target for use in calculation of rmsdiff and onestep_warp to mc_target
+    if [ $( imtest mc_target_mask ) -eq 0 ]; then
+	rel "bet mc_target.nii.gz mc_target_mask -f 0.3 -n -m -R"
+	rel "imrm mc_target_mask"
+	rel "immv mc_target_mask_mask mc_target_mask"	
+    fi
+
     if [ -n "${fm_phase}" ]; then
 
 	inweight="-inweight $(pwd)/unwarp/EF_UD_fmap_sigloss"
@@ -56,6 +63,9 @@ function register_func2struct {
 		rel "flirt -in mc_target -ref $mprageBet -out func_to_struct -omat func_to_struct.mat -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
 		    -cost bbr -init func_to_struct_init.mat -dof 6 -schedule ${FSLDIR}/etc/flirtsch/bbr.sch $bbrfmap"
 
+		#KH: need the struct_to_func.mat for nuisance regression. Thus, do not limit to fieldmap transform below.
+		rel "convert_xfm -inverse -omat struct_to_func.mat func_to_struct.mat"
+		
 		if [ $createBBRFmapWarp -eq 1 ]; then
 		    #also generate a func -> struct image without fmap unwarping in BBR to verify that fieldmap unwarping is helping with coregistration
 		    rel "applywarp -i mc_target -o func_to_struct_nounwarp --premat=func_to_struct.mat --interp=spline -r \"$mprageBet\""
@@ -68,7 +78,6 @@ function register_func2struct {
 		    #create EF_UD_warp file used for one-step interpolation to MNI (potentially with MC, too)
 
 		    #invert func_to_struct.mat to generate struct_to_func transformation. Used to get fmap back into EPI space.
-		    rel "convert_xfm -inverse -omat struct_to_func.mat func_to_struct.mat"
 		    rel "convert_xfm -omat fmap2epi_bbr.mat -concat struct_to_func.mat unwarp/fmap2struct.mat" #assemble fmap2epi via fm -> struct + struct -> epi
 
 		    #warp fmap into EPI space using transform fmap2epi_bbr.mat

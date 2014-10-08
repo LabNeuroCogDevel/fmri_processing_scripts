@@ -58,6 +58,8 @@ function correct_motion {
 	rel  "awk "\''{print $2*(3.141593/180),$3*(3.141593/180),$1*(3.141593/180),$5,$6,$4}'\'" 3dvolreg.par > motion.par"
 
 	#create a series of affine transform files to be combined with FUGUE as needed (and match mcflirt -mats output)
+	rel "Warning: 3dvolreg + FUGUE unwarping to combine motion correction and fieldmap does not seem to work well." c
+	rel "I think there is an incompatibility in how the matrices are created, which may reflect a radians/degrees problem or an axis of rotation problem (corner versus center of image)." c
 	mfile=3dvolreg_mats.aff12.1D
 
 	[ ! -d $mcMats ] && mkdir $mcMats
