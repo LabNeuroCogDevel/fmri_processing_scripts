@@ -164,7 +164,7 @@ while [ _$1 != _ ] ; do
     elif [[ $1 = -r || $1 = -template_brain ]]; then
 	reference="${2}"
 	shift 2
-    elif [[ $1 = -warpres ]]; then
+    elif [[ $1 = -warpres || $1 = -w ]]; then
 	wr="${2}"
 	if [[ ! ${wr} =~ ^[0-9]+$ ]]; then
 	    echo "-warpres must be an integer (e.g., 10)."
