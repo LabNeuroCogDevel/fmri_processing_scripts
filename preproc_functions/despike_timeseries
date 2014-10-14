@@ -32,7 +32,7 @@ function despike_timeseries {
 		preDespike="predespike_m1000"
 	    else
 		#rel "fslmaths \"${preDespike}\" predespike -odt float" #just copy image
-		rel "ln -sfn \"${preDespike}\" predespike" #symbolic link to image to despike
+		rel "ln -sfn \"${preDespike}${ext}\" predespike${ext}" #symbolic link to image to despike
 	    fi
 
 	    if [ $( uname ) = Darwin ]; then
