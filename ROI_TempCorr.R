@@ -1,4 +1,4 @@
-#!/usr/bin/Rscript
+#!/usr/bin/env Rscript
 
 printHelp <- function() {
   cat("ROI_TempCorr is a script that computes temporal correlations among ROIs defined by an integer-valued mask (e.g., a set of numbered spheres).",
@@ -58,7 +58,7 @@ if (length(args) == 0L) {
 #defaults
 njobs <- 4
 out_file <- "corr_rois.txt" 
-
+fname_censor1D <- NULL
 corr_method <- "robust"
 roi_reduce <- "pca"
 fisherz <- FALSE
@@ -98,7 +98,7 @@ while (argpos <= length(args)) {
     stopifnot(corr_method %in% c("pearson", "spearman", "robust", "kendall", "mcd", "weighted", "donostah", "M", "pairwiseQC", "pairwiseGK"))    
   } else if (args[argpos] == "-fisherz") {
     fisherz <- TRUE
-    argpos + argpos + 1
+    argpos <- argpos + 1
   } else {
     stop("Not sure what to do with argument: ", args[argpos])
   }
@@ -161,7 +161,7 @@ genCorrMat <- function(roits, method="auto", fisherz=FALSE) {
   #populate lower triangle of correlation matrix
   if (fisherz == TRUE) { 
     message("Applying the Fisher z transformation to correlation coefficients.")
-    corrvec <- arctanh(corrvec)
+    corrvec <- atanh(corrvec)
   }
   rcorMat[lo.tri] <- corrvec
   #duplicate the lower triangle to upper
@@ -241,12 +241,12 @@ if (!is.null(fname_brainmask)) {
   #brain mask and roi mask must be of same dimension
   stopifnot(identical(dim(brainmask)[1:3], dim(roimask)[1:3]))
 
-  message("  ROI voxels before applying brainmask: ", sum(roimask > 0))
+  message("  ROI voxels before applying brainmask: ", sum(roimask > 0, na.rm=TRUE))
   
   #remove non-brain voxels
-  roimask[which(brainmask == 0.0)] <- 0.0
+  roimask[which(brainmask == 0.0)] <- NA_real_
   
-  message("  ROI voxels after applying brainmask:  ", sum(roimask > 0))
+  message("  ROI voxels after applying brainmask:  ", sum(roimask > 0, na.rm=TRUE))
   
 }
 
