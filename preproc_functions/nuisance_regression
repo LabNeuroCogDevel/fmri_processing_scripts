@@ -69,7 +69,7 @@ function compute_nuisance_regressors {
 		rel "fslmaths .csf_pve_clustsize_noero -thr 15.01 -bin -mas ${postSS}_tmean_mask .csf_mask_noero -odt char"
 
 		#obtain CSF timeseries from CSF mask in functional space
-		rel "3dmaskave -mask .csf_mask_noero${ext} -q ${func_ts}${ext} > .csf_ts" || "3dmaskave failed. Unable to extract CSF voxels. Check your mask! .wm_mask_noero${ext}" && exit 1 )
+		rel "3dmaskave -mask .csf_mask_noero${ext} -q ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskave failed. Unable to extract CSF voxels. Check your mask! .wm_mask_noero${ext}" && exit 1 )
 	    else
 		rel "3dmaskave -mask .csf_mask${ext} -q ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskave failed. Unable to extract CSF voxels. Check your mask! .csf_mask${ext}" && exit 1 )
 	    fi
