@@ -54,9 +54,11 @@ EndOfHelp
 
 #Author: Michael Hallquist
 #Written: 5/2/2010
-#Last updated: 4/5/2014
+#Last updated: 10/30/2014
 #
 #Changelog:
+#10/30/2014
+# - added check for initial file extension for NIfTI to make sure that it matches FSLOUTPUTYPE. Otherwise, pipeline may fail to use reoriented file.
 #4/5/2014
 # - added -log parameter to keep a log of processing steps.
 # - generate brain mask from inverse MNI warp to reduce sensitivity to BET (follows fsl_anat)
@@ -226,6 +228,20 @@ if [[ -n $nifti && ! -f $nifti ]]; then
     exit 1
 fi
 
+#figure out file extension for FSL programs
+if [ -z $FSLOUTPUTTYPE ]; then
+    export FSLOUTPUTTYPE=NIFTI_GZ
+fi
+
+if [ $FSLOUTPUTTYPE = NIFTI_GZ ]; then
+    ext=".nii.gz"
+elif [ $FSLOUTPUTTYPE = NIFTI ]; then
+    ext=".nii"
+else
+    echo "Not setup to handle FSLOUTPUTTYPE: $FSLOUTPUTTYPE."
+    exit 1
+fi
+
 if [ -n "${logFile}" ]; then
     if [ -f "${logFile}" ]; then
 	rm -f "${logFile}"
@@ -238,6 +254,22 @@ fi
 #if .mprage_nifti file exists, then DICOM -> NIFTI conversion completed and we should read nifti from file
 if [[ -z "$nifti" && -f .mprage_nifti ]]; then
     read nifti < .mprage_nifti
+fi
+
+#check whether a .nii file was passed in, but FSL is using .nii.gz (or vice versa)
+#in this case it is crucial to gzip or gunzip the file up front so that fslreorient2std overwrites
+#the initial file and the reoriented file is used downstream
+
+#for the moment, I haven't added the same check to preprocessFunctional because it prepends an underscore at the
+#fslreorient2std step, which would avoid the ambiguity problem here.
+if [ -n "$nifti" ]; then
+    if [[ $nifti =~ .*.nii$ && $ext == .nii.gz ]]; then
+	rel "Gzipping initial nifti input image to avoid ambiguous files downstream (FSL expects .nii.gz)" c
+	rel "gzip $nifti"
+    elif [[ $nifti =~ .*.nii.gz$ && $ext == .nii ]]; then
+	rel "Gunzipping initial nifti input image to avoid ambiguous files downstream (FSL expects .nii)" c
+	rel "gunzip $nifti"
+    fi
 fi
 
 #if nifti undefined, assume the dicoms need to be converted
