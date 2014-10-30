@@ -49,35 +49,35 @@ function compute_nuisance_regressors {
 
 	    warp_structmask_to_func "${mprageBet_base}_fast_pve_0" .csf_pve
 
-	    #threshold at 0.9 to ensure that only voxels likely to be csf are retained	    
-	    rel "fslmaths .csf_pve -thr 0.9 -bin .csf_pve_thr0p9"
+	    #threshold at 0.8 to ensure that only voxels likely to be csf are retained	    
+	    rel "fslmaths .csf_pve -thr 0.8 -bin .csf_pve_thr0p8"
 
 	    #erode csf mask once to reduce risk of partial volume
-	    rel "3dmask_tool -overwrite -input .csf_pve_thr0p9${ext} -dilate_result -1 -prefix .csf_pve_thr0p9_ero1${ext}"
+	    rel "3dmask_tool -overwrite -input .csf_pve_thr0p8${ext} -dilate_result -1 -prefix .csf_pve_thr0p8_ero1${ext}"
 
 	    #cluster csf mask and only retain clusters of 5 or more contiguous voxels
-	    rel "cluster -i .csf_pve_thr0p9_ero1 -t 1.0 --osize=.csf_pve_clustsize --no_table"	    
+	    rel "cluster -i .csf_pve_thr0p8_ero1 -t 1.0 --osize=.csf_pve_clustsize --no_table"	    
 	    rel "fslmaths .csf_pve_clustsize -thr 5.01 -bin -mas ${postSS}_tmean_mask .csf_mask -odt char" #multiply by tight brain mask to eliminate non-brain voxels
 	    
-	    #if fewer than 30 CSF voxels (in functional space) are present, revert to a non-dilated csf mask
-	    #too few voxels may result in a weird sampling distribution of CSF voxels
+	    #if fewer than 20 CSF voxels (in functional space) are present, revert to a non-dilated csf mask
+	    #too few voxels may result in undue influece of a given CSF voxel on the mask average
 	    local nvox=$( 3dBrickStat -non-zero -count .csf_mask${ext} )
 
-	    if [ $nvox -lt 30 ]; then
-		rel "Warning: fewer than 30 CSF voxels were found in .csf_mask. Reverting to a non-dilated mask" c	
-		rel "cluster -i .csf_pve_thr0p9 -t 1.0 --osize=.csf_pve_clustsize_noero --no_table"
+	    if [ $nvox -lt 20 ]; then
+		rel "Warning: fewer than 20 CSF voxels were found in .csf_mask. Reverting to a non-dilated mask" c	
+		rel "cluster -i .csf_pve_thr0p8 -t 1.0 --osize=.csf_pve_clustsize_noero --no_table"
 		rel "fslmaths .csf_pve_clustsize_noero -thr 15.01 -bin -mas ${postSS}_tmean_mask .csf_mask_noero -odt char"
 
 		#obtain CSF timeseries from CSF mask in functional space
-		rel "3dmaskave -mask .csf_mask_noero${ext} -q ${func_ts}${ext} > .csf_ts"
+		rel "3dmaskave -mask .csf_mask_noero${ext} -q ${func_ts}${ext} > .csf_ts" || "3dmaskave failed. Unable to extract CSF voxels. Check your mask! .wm_mask_noero${ext}" && exit 1 )
 	    else
-		rel "3dmaskave -mask .csf_mask${ext} -q ${func_ts}${ext} > .csf_ts"
+		rel "3dmaskave -mask .csf_mask${ext} -q ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskave failed. Unable to extract CSF voxels. Check your mask! .csf_mask${ext}" && exit 1 )
 	    fi
 
 	    rel "1d_tool.py -overwrite -infile .csf_ts -derivative -write .csf_ts_deriv"
 
 	    #cleanup some intermediate files
-	    rel "imrm .csf_pve_thr0p9 .csf_pve_thr0p9_ero1 .csf_pve_clustsize .csf_pve_clustsize_noero"
+	    rel "imrm .csf_pve_thr0p8 .csf_pve_thr0p8_ero1 .csf_pve_clustsize .csf_pve_clustsize_noero"
 	fi
 
 	if [[ "$r" =~ ^(wm|dwm)$ && ! -f ".wm_ts" ]]; then
@@ -88,38 +88,38 @@ function compute_nuisance_regressors {
 
 	    warp_structmask_to_func "${mprageBet_base}_fast_pve_2" .wm_pve
 
-	    #threshold at 0.9 to ensure that only voxels likely to be csf are retained	    
-	    rel "fslmaths .wm_pve -thr 0.9 -bin .wm_pve_thr0p9"
+	    #threshold at 0.8 to ensure that only voxels likely to be wm are retained	    
+	    rel "fslmaths .wm_pve -thr 0.8 -bin .wm_pve_thr0p8"
 
-	    #erode wm mask twice to reduce risk of partial volume
+	    #erode wm mask twice to reduce risk of partial WM voxels
 	    #more contiguous wm voxels than csf voxels -- hence 2x dilation works well in general as a start to retain deep cerebral white matter
-	    rel "3dmask_tool -overwrite -input .wm_pve_thr0p9${ext} -dilate_result -2 -prefix .wm_pve_thr0p9_ero2${ext}"
+	    rel "3dmask_tool -overwrite -input .wm_pve_thr0p8${ext} -dilate_result -2 -prefix .wm_pve_thr0p8_ero2${ext}"
 
-	    #cluster wm mask and only retain clusters of 20 or more contiguous voxels
-	    rel "cluster -i .wm_pve_thr0p9_ero2 -t 1.0 --osize=.wm_pve_clustsize --no_table"
-	    rel "fslmaths .wm_pve_clustsize -thr 20.01 -bin -mas ${postSS}_tmean_mask .wm_mask -odt char"
+	    #cluster wm mask and only retain clusters of 15 or more contiguous voxels
+	    rel "cluster -i .wm_pve_thr0p8_ero2 -t 1.0 --osize=.wm_pve_clustsize --no_table"
+	    rel "fslmaths .wm_pve_clustsize -thr 15.01 -bin -mas ${postSS}_tmean_mask .wm_mask -odt char"
 	    
 	    #check that at least 100 voxels are present in mask to get a reasonable sampling distribution of WM timeseries
 	    local nvox=$( 3dBrickStat -non-zero -count .wm_mask${ext} )
 
-	    if [ $nvox -lt 100 ]; then
-		#go back to a 1x erosion, but up voxel clusters to 100 minimum
-		rel "Warning: fewer than 100 WM voxels were found in .wm_mask. Reverting to a 1x eroded WM mask" c
-		rel "3dmask_tool -overwrite -input .wm_pve_thr0p9${ext} -dilate_result -1 -prefix .wm_pve_thr0p9_ero1${ext}"
+	    if [ $nvox -lt 50 ]; then
+		#go back to a 1x erosion, but up voxel clusters to 50 minimum
+		rel "Warning: fewer than 50 WM voxels were found in .wm_mask. Reverting to a 1x eroded WM mask" c
+		rel "3dmask_tool -overwrite -input .wm_pve_thr0p8${ext} -dilate_result -1 -prefix .wm_pve_thr0p8_ero1${ext}"
 		
-		rel "cluster -i .wm_pve_thr0p9_ero1 -t 1.0 --osize=.wm_pve_clustsize_ero1 --no_table"
+		rel "cluster -i .wm_pve_thr0p8_ero1 -t 1.0 --osize=.wm_pve_clustsize_ero1 --no_table"
 		rel "fslmaths .wm_pve_clustsize_ero1 -thr 50.01 -bin -mas ${postSS}_tmean_mask .wm_mask_ero1 -odt char"
 
 		#obtain average WM timeseries from WM mask in functional space
-		rel "3dmaskave -mask .wm_mask_ero1${ext} -q ${func_ts}${ext} > .wm_ts"
+		rel "3dmaskave -mask .wm_mask_ero1${ext} -q ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskave failed. Unable to extract WM voxels. Check your mask! .wm_mask_ero1${ext}" && exit 1 )
 	    else
-		rel "3dmaskave -mask .wm_mask${ext} -q ${func_ts}${ext} > .wm_ts"
-	    fi
+		rel "3dmaskave -mask .wm_mask${ext} -q ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskave failed. Unable to extract WM voxels. Check your mask! .wm_mask${ext}" && exit 1 )
+	    fi    
 
 	    rel "1d_tool.py -overwrite -infile .wm_ts -derivative -write .wm_ts_deriv"
 
 	    #cleanup some intermediate files
-	    rel "imrm .wm_pve_thr0p9 .wm_pve_thr0p9_ero2 .wm_pve_thr0p9_ero1 .wm_pve_clustsize .wm_pve_clustsize_noero_ero1"
+	    rel "imrm .wm_pve_thr0p8 .wm_pve_thr0p8_ero2 .wm_pve_thr0p8_ero1 .wm_pve_clustsize .wm_pve_clustsize_noero_ero1"
 	fi
 
 	#global signal
