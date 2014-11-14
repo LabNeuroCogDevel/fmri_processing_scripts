@@ -19,6 +19,9 @@ function onestep_warp {
 	else
 	    prefix="w${prefix}" #just warp to standard
 	fi
+
+	#filename for post-warp, used in nuisance regression
+	postWarp="${prefix}${funcFile}"
 	
 	if [[ -n "$fm_phase" && -f .warp_complete && -f .fmunwarp_complete ]]; then
 	    #echo "returning 0"
