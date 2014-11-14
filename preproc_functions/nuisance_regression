@@ -104,12 +104,12 @@ function compute_nuisance_regressors {
 		    rel "3dmaskave -mask .csf_mask${ext} -q ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskave failed. Unable to extract CSF voxels. Check your mask! .csf_mask${ext}" && exit 1 )
 		fi
 
-		rel "1d_tool.py -overwrite -infile .csf_ts -derivative -write .csf_ts_deriv"
-
 		#cleanup some intermediate files
 		rel "imrm .csf_pve_thr0p8 .csf_pve_thr0p8_ero1 .csf_pve_clustsize .csf_pve_clustsize_noero"
 
 	    fi
+
+	    rel "1d_tool.py -overwrite -infile .csf_ts -derivative -write .csf_ts_deriv"
 	fi
 
 	if [[ "$r" =~ ^(wm|dwm)$ && ! -f ".wm_ts" ]]; then
@@ -170,11 +170,11 @@ function compute_nuisance_regressors {
 		    rel "3dmaskave -mask .wm_mask${ext} -q ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskave failed. Unable to extract WM voxels. Check your mask! .wm_mask${ext}" && exit 1 )
 		fi    
 
-		rel "1d_tool.py -overwrite -infile .wm_ts -derivative -write .wm_ts_deriv"
-
 		#cleanup some intermediate files
 		rel "imrm .wm_pve_thr0p8 .wm_pve_thr0p8_ero2 .wm_pve_thr0p8_ero1 .wm_pve_clustsize .wm_pve_clustsize_noero_ero1"
 	    fi
+
+	    rel "1d_tool.py -overwrite -infile .wm_ts -derivative -write .wm_ts_deriv"
 	fi
 
 	#global signal
