@@ -54,6 +54,16 @@ end; quit;
 	    rel "matlab -nodisplay -r \"$matlabCmd\""
 	    export DISPLAY="${OLDDISPLAY}"
 
+	    #note: wavelet despike function sometimes changes the image orientation (e.g., from RPI to LPI), which yields errors
+	    #downstream when files before and after despiking are used
+
+	    #thus, for safety, use 3dresample to fix the grid/orientation for outputs before proceeding. This should not have any
+	    #negative consequences such as L/R flip, but is instead just a matrix orientation issue.
+
+	    #somehow 3dresample doesn't quite get this right either (tweaks sform/qform)... forcing wavelet to use the load_untouch_nii approach.
+	    #rel "3dresample -overwrite -inset postdespike_wds.nii.gz -prefix postdespike_wds.nii.gz -master predespike${ext}"
+	    #rel "3dresample -overwrite -inset postdespike_noise.nii.gz -prefix postdespike_noise.nii.gz -master predespike${ext}"
+	    
 	    if [ $waveletM1000 -eq 1 ]; then
 		#undo mean 1000 normalization
 		rel "fslmaths postdespike_wds -div 1000 -mul predespike_tmean_float -mas $threshMask ${postDespike}"

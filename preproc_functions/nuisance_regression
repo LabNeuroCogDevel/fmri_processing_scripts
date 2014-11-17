@@ -278,12 +278,12 @@ function nuisance_regression {
 
     #bandpass only
     if [ "$todo" = "b" ]; then
-	rel "3dBandpass -input \"$preNRBP\" -mask \"${subjMask}${ext}\" \
+	rel "3dBandpass -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
 		-prefix \"$postNRBP\" $bpLow $bpHigh"
 
 	rel "date > .bandpass_filter_complete"
     elif [ "$todo" = "br" ]; then
-        rel "3dBandpass -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" \
+        rel "3dBandpass -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
 		-prefix \"$postNRBP\" -ort ${nuisance_file} $bpLow $bpHigh"
 
 	rel "date > .bandpass_filter_complete"

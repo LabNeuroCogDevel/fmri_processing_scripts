@@ -155,9 +155,12 @@ EndOfHelp
 }
 
 #Written: 5/18/2010
-#Last updated: 11/14/2014
+#Last updated: 11/17/2014
 #
 #Changelog:
+#11/17/2014
+# -additional cleanup for nuisance regression so that all time series are re-estimated with -startover.
+# -explicit TR for 3dBandpass since this was being lost in the header during preprocessing.
 #11/14/2014
 # -nuisance_regression now computes CSF and WM signals from post-template-warped files using tissue masks from template (to handle poor anatomical segmentation for some scans)
 #09/24/2014

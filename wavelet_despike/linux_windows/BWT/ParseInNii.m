@@ -74,10 +74,10 @@ end
 
 %% load matrix into memory
 
-[nii,obQ]=load_nii(InNii);
-if obQ==1;
+%[nii,obQ]=load_nii(InNii);
+%if obQ==1;
     nii=load_untouch_nii(InNii);
-end
+%end
 M=nii.img;
 
 %% reshape (and compress) matrix
