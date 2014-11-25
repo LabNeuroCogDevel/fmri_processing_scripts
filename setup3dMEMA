@@ -38,19 +38,25 @@ setup3dMEMA is a convenience script for generating a 3dMEMA analysis.
 
   OPTIONS:     
  
-  -glm_contrast <string> : name of contrast from subject-level GLMs (using 3dREMLfit)
-  -cov_file <string>     : name of tab-delimited file containing subject ids and other covariates. At a minimum,
-                           this file must contain the header "subj" and a row of subject ids. These are used to
-                           identify stats BRIK files and setup the analysis.
-  -covs <string>         : comma-delimited list of covariates to include in analysis. Each covariate
-                           specified must be present in <cov_file>. Example: subj:depression:anxiety:age
-  -mask <string>         : name of mask file for group analysis.
-  -exclude_subjs <string>: comma-delimited list of ids to exclude from analysis.
-  -run: if passed in, then 3dMEMA is run after analysis setup is complete.
+  -glm_contrast <string>      : name of contrast from subject-level GLMs (using 3dREMLfit)
+  -cov_file <string>          : name of tab-delimited file containing subject ids and other covariates. At a minimum,
+                                  this file must contain the header "subj" and a row of subject ids. These are used to
+                                  identify stats BRIK files and setup the analysis.
+  -covs <string>              : comma-delimited list of covariates to include in analysis. Each covariate
+                                  specified must be present in <cov_file>. Example: subj,depression,anxiety,age
+  -mask <string>              : name of mask file for group analysis.
+  -exclude_subjs <string>     : comma-delimited list of ids to exclude from analysis.
+  -run                        : if passed in, then 3dMEMA is run after analysis setup is complete.
   -statbrik_dir <string>      : directory containing all first-level stats briks, one per subject
   -statbrik_suffix <string>   : file name suffix corresponding to stat brik files. Default: *_REML+tlrc
+  -groups <g1name=val1> <g2name=val2>   : names of two groups to be compared (using -groups in 3dMEMA)
+  -group_colname              : name of column in -cov_file that identifies groups
 
-   Example: setup3dMEMA -statbrik_dir ../statbriks -run -max_zeros 0.2 -model_outliers \\
+   Example one-group: setup3dMEMA -statbrik_dir ../statbriks -run -max_zeros 0.2 -model_outliers \\
+                  -covs subj,age,paiaffe -cov_file memacovs.txt -glm_contrast feaCon -exclude_subjs 009_cm,001_yc
+
+   Example two-group: setup3dMEMA -statbrik_dir ../statbriks -run -max_zeros 0.2 -model_outliers \\
+                  -groups bpd=1 control=0 -group_colname bpd \\
                   -covs subj,age,paiaffe -cov_file memacovs.txt -glm_contrast feaCon -exclude_subjs 009_cm,001_yc
 
 ----
@@ -110,8 +116,10 @@ covFile=
 covs=
 excludeSubjs=
 glmContrast=
+g1= #name of group 1
+g2= #name of group 2
+groupColname= #empty name for group column
 maskFile=
-maxZeros=0
 run=0
 statBrikDir=
 statBrikSuffix="*_REML+tlrc"
@@ -125,8 +133,9 @@ while [ -n "$1" ]; do
         -covs)                 covs="$2";               shift 2;;  # comma-delimited list of covariates for model
 	-exclude_subjs)        excludeSubjs="$2";       shift 2;;  # comma-delimited list of subjects to exclude
 	-glm_contrast)         glmContrast="$2";        shift 2;;  # name of first-level contrast
+	-groups)               g1="$2"; g2="$3";        shift 3;;  # name of two groups for comparison
+	-group_colname)        groupColname="$2";       shift 2;;  # name of column in cov_file denoting groups
 	-mask)                 maskFile="$2";           shift 2;;  # name of mask file
-	-max_zeros)            maxZeros="$2";           shift 2;;  # number or proportion of zeros to tolerate in voxelwise estimation
 	-run)                  run=1;                   shift 1;;  # whether to run 3dMEMA after setup
         -statbrik_dir)         statBrikDir="$2";        shift 2;;  # directory containing GLM coefficients for each subject
         -statbrik_suffix)      statBrikSuffix="$2";     shift 2;;  # file name suffix for stat brik files
@@ -232,38 +241,28 @@ fi
 #put covariate file in place
 mv .3dMEMA_cov "$dirOut"
 
+#create a subj + group file
+if [ -n "$groupColname" ]; then
+    groupColnumber=$( /usr/bin/env Rscript -e "f<- scan(\"${covFile}\", what=\"character\", sep='\\\t', nlines=1, quiet=TRUE); cat(which(f == \"$groupColname\"))" )
+    awk '{print $1}' "${covFile}" > "${dirOut}/.3dMEMA_subjcol"
+    awk "{print \$$groupColnumber}" "${covFile}" > "${dirOut}/.3dMEMA_groupcol"
+    paste "${dirOut}/.3dMEMA_subjcol" "${dirOut}/.3dMEMA_groupcol" > "${dirOut}/.3dMEMA_grouplookup"
+    rm -f "${dirOut}/.3dMEMA_subjcol" "${dirOut}/.3dMEMA_groupcol"
+fi 
+
 #3dMEMA blows up with NIFTI mask
 #assuming this will result in a +tlrc view suffix
 3dcopy "${maskFile}" "${dirOut}/mask" 2>/dev/null
 
-#setup 3dMEMA script
-#including $@ passes any remaining parameters straight to 3dMEMA (e.g., -model_outliers).
-cat > "${dirOut}/${scriptOut}" <<EOF
-#!/bin/bash
-set -e
-set -x
+#function to lookup beta and t-stat within a subject REML stats file
+function lookupSubjStats() {
+    subj="$1"
 
-# setup3dMEMA call:
-# $0 $allparams
+    #switch IFS to new lines so that parsing 3dinfo into an array gives one element per matching line
+    OLDIFS="$IFS"
+    IFS=$'\n'   
 
-#turn on gzip of BRIK files
-export AFNI_AUTOGZIP=YES
-export AFNI_COMPRESSOR=GZIP
-
-3dMEMA $remainder \\
-$covline \\
--mask mask+tlrc \\
--set $glmContrast \\
-EOF
-
-#vector of subjects to analyze (use the .3dMEMA_cov file to ensure that dropped subjects match)
-subjvec=$( awk 'NR > 1 {print $1}' "${dirOut}/.3dMEMA_cov" )
-
-#switch IFS to new lines so that parsing 3dinfo into an array gives one element per matching line
-OLDIFS="$IFS"
-IFS=$'\n'
-
-for subj in $subjvec; do
+    #echo "testing: ${statBrikDir}/${subj}${statBrikSuffix}.HEAD"
     #need to grep sub-briks of interest
     if [ ! -f "${statBrikDir}/${subj}${statBrikSuffix}.HEAD" ]; then
 	echo "Unable to locate stat brik file for subject $subj"
@@ -295,9 +294,77 @@ for subj in $subjvec; do
 	tBrik=$( echo "${tMatch[0]}" | perl -pe 's:^.*At sub-brick #(\d+).*$:\1:' )
     fi
 
-    echo "${subj} ${statBrikDir}/${subj}${statBrikSuffix}'[${coefBrik}]' ${statBrikDir}/${subj}${statBrikSuffix}'[${tBrik}]' \\" >> "${dirOut}/${scriptOut}"
-done #< ${subj_file}
-IFS="$OLDIFS"
+    IFS="$OLDIFS"
+    echo "${subj} ${statBrikDir}/${subj}${statBrikSuffix}'[${coefBrik}]' ${statBrikDir}/${subj}${statBrikSuffix}'[${tBrik}]'"
+}
+
+
+#setup 3dMEMA script
+#including $@ passes any remaining parameters straight to 3dMEMA (e.g., -model_outliers).
+cat > "${dirOut}/${scriptOut}" <<EOF
+#!/bin/bash
+set -e
+set -x
+
+# setup3dMEMA call:
+# $0 $allparams
+
+#turn on gzip of BRIK files
+export AFNI_AUTOGZIP=NO
+export AFNI_COMPRESSOR=
+
+3dMEMA $remainder \\
+$covline \\
+-mask mask+tlrc \\
+EOF
+
+#handle two group format first before adding each subject b and t to the script
+if [ -n "$groupColname" ]; then
+    g1name="${g1%=*}"
+    g1val="${g1#*=}"
+    g2name="${g2%=*}"
+    g2val="${g2#*=}"
+    
+    #need to sort .3dMEMA_cov by group
+    rcmd1="covfile <- read.table('${dirOut}/.3dMEMA_grouplookup', header=TRUE); covfile\$$groupColname <- as.character(covfile\$$groupColname);"
+    rcmd2="covfile <- subset(covfile, $groupColname %in% c(\"$g1val\",\"$g2val\")); covfile <- covfile[order(covfile\$$groupColname),];"
+    rcmd3="write.table(subset(covfile, $groupColname == \"$g1val\"), file=\"${dirOut}/.3dMEMA_cov_g1\", row.names=FALSE, col.names=TRUE, quote=FALSE, sep='\\\t');"
+    rcmd4="write.table(subset(covfile, $groupColname == \"$g2val\"), file=\"${dirOut}/.3dMEMA_cov_g2\", row.names=FALSE, col.names=TRUE, quote=FALSE, sep='\\\t')"
+    #echo "rcmd: $rcmd1 $rcmd2 $rcmd3 $rcmd4"
+    /usr/bin/env Rscript -e "$rcmd1 $rcmd2 $rcmd3 $rcmd4"
+
+    echo "-groups $g1name $g2name \\" >> "${dirOut}/${scriptOut}"
+    echo "-set $g1name \\" >> "${dirOut}/${scriptOut}"
+    subjvec=$( awk 'NR > 1 {print $1}' "${dirOut}/.3dMEMA_cov_g1" )
+
+    for subj in $subjvec; do
+	statmatch="$(lookupSubjStats $subj)"
+	[ $? -ne 0 ] && echo "lookupSubjStats failed: $statmatch" && exit 1
+	echo "${statmatch} \\" >> "${dirOut}/${scriptOut}"
+    done
+
+    echo "-set $g2name \\" >> "${dirOut}/${scriptOut}"
+    subjvec=$( awk 'NR > 1 {print $1}' "${dirOut}/.3dMEMA_cov_g2" )
+
+    for subj in $subjvec; do
+	statmatch="$(lookupSubjStats $subj)"
+	[ $? -ne 0 ] && echo "lookupSubjStats failed: $statmatch" && exit 1
+	echo "${statmatch} \\" >> "${dirOut}/${scriptOut}"
+    done
+
+else
+    #one sample analysis
+    #vector of subjects to analyze (use the .3dMEMA_cov file to ensure that dropped subjects match)
+    echo "-set $glmContrast \\" >> "${dirOut}/${scriptOut}"
+    subjvec=$( awk 'NR > 1 {print $1}' "${dirOut}/.3dMEMA_cov" )
+
+    for subj in $subjvec; do
+	statmatch="$(lookupSubjStats $subj)"
+	[ $? -ne 0 ] && echo "lookupSubjStats failed: $statmatch" && exit 1
+	echo "${statmatch} \\" >> "${dirOut}/${scriptOut}"
+    done
+
+fi
 
 echo "-prefix 3dMEMA_${glmContrast}_${cov_vars}" >> "${dirOut}/${scriptOut}"
 
