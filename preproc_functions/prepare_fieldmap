@@ -90,6 +90,8 @@ function prepare_fieldmap {
     case $fm_cfg in
 	cogemo|multimodal|wpc5640 ) fm_cfg=$(dirname $0)/fmcfg/cogemo.fmcfg;;
 	clock|specc|wpc6290 )       fm_cfg=$(dirname $0)/fmcfg/MB5_TR1.0_TE30_60slc.fmcfg;;
+	trust )                     fm_cfg=$(dirname $0)/fmcfg/trust.fmcfg;;
+	bandit )                    fm_cfg=$(dirname $0)/fmcfg/bandit.fmcfg;;
     esac
     
     # source config file or warn
