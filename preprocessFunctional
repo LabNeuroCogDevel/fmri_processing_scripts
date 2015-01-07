@@ -100,7 +100,8 @@ Command line options:
         By default, slice timing is run before motion correction for interleaved sequences, but after
         motion correction for sequential acquisition.
   -template_brain: Which standard template brain to use. Default: MNI_3mm. Must match template from mprage normalization. Options:
-        -template_brain MNI_2.3mm (MNI152 brain, 2.3mm isotropic voxels, template from MNI Fonov et al. 2009). For 2.3mm MB sequence.
+        -template_brain MNI_2mm (MNI152 brain, 2mm isotropic voxels, template from MNI Fonov et al. 2009). This is the default in preprocessMprage
+	-template_brain MNI_2.3mm (MNI152 brain, 2.3mm isotropic voxels, template from MNI Fonov et al. 2009). For 2.3mm MB sequence.
         -template_brain MNI_3mm (MNI152 brain, 3mm isotropic voxels, template from MNI Fonov et al. 2009)
         -template_brain MNI_FSL_3mm (MNI152 brain, 3mm isotropic voxels, template from FSL standard)
         -template_brain SPM_2mm (MNI brain from spm8 canonical template)
