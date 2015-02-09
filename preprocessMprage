@@ -445,10 +445,10 @@ rel "bet ${T1} ${T1}_bet_initial ${betOpts}"
 #note that flirt works with betted reference brain, but fnirt prefers unbetted
 flirtAffCoef="${T1}_to_${reference}_affine.mat"
 
-if [ $( imtest "${T1}_warp_linear" ) -eq 0 ]; then
-    rel "Running affine (linear) transformation for structural -> template" c
-    rel "flirt -in ${T1}_bet_initial -ref $bettedRefBrain -omat ${flirtAffCoef} -out ${T1}\"_warp_linear\" -dof 12 -interp spline -v"
-fi
+#if [ $( imtest "${T1}_warp_linear" ) -eq 0 ]; then
+rel "Running affine (linear) transformation for structural -> template" c
+rel "flirt -in ${T1}_bet_initial -ref $bettedRefBrain -omat ${flirtAffCoef} -out ${T1}\"_warp_linear\" -dof 12 -interp spline -v"
+#fi
 
 ###############
 #now nonlinear warp
@@ -459,11 +459,12 @@ rel "Using warp resolution of $wr mm" c
 #Note: fsl_anat generates a mask from the template brain_mask by -fillh -dilF.
 #Previously FSL tools used the dil mask that had been dilated 2x -dilF -dilF.
 #Not sure of the relevance (the fsl_anat way leads to a smaller mask).
-if [ $( imtest "$outputFile" ) -eq 0 ]; then
-    rel "fnirt --ref=$unbettedRefBrain --refmask=$refMask --in=${T1}_biascorr --aff=$flirtAffCoef \
-	--fout=\"$( remove_ext ${outputFile} )_warpfield\" --cout=\"${T1}_warpcoef\" --iout=\"$outputFile\" \
+#if [ $( imtest "$outputFile" ) -eq 0 ]; then
+#re-run fnirt even if output already exists because files upstream may have been changed (e.g., betted mprage)
+rel "fnirt --ref=$unbettedRefBrain --refmask=$refMask --in=${T1}_biascorr --aff=$flirtAffCoef \
+        --fout=\"$( remove_ext ${outputFile} )_warpfield\" --cout=\"${T1}_warpcoef\" --iout=\"$outputFile\" \
 	--config=$fnirtConfig --logout=${T1}_to_${reference}_fnirt_settings.log --warpres=${wr},${wr},${wr} -v"
-fi
+#fi
 
 rel "Generating brain mask based on inverse warp from template" c
 rel "invwarp --ref=${T1}_biascorr -w ${T1}_warpcoef -o template_to_subject_warpcoef"
