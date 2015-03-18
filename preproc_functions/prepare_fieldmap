@@ -139,36 +139,58 @@ function prepare_fieldmap {
     #Still, for 2 seconds, I'll keep it.
     sleep $(echo "scale=9; $RANDOM/32767*2"|bc)s
 
+
     #Collision occurs among multiple preprocessFunctional calls trying to perform the fieldmap preparation simultaneously
     #because the fieldmap files are shared. Use a lock file with a wait command to get around this problem (I hope).
-    if [[ "$fm_phasebase" =~ .*\*.* && ! -f ".fieldmap_phase" ]]; then
-	#if the lock file is present, sleep until complete
-	while [ -f "${fm_phasedir}/.fmphase_inprogress" ]; do
-	    sleep 1
-	done
+    # WF 20150318: if we killed the script controlling the lock file, we might hang. give warning
+    #              also add timestamp to lock so we can check time since locking
+    function waitforlock {
+      # lock file should contain only a unix time stamp
+      # we can use that to see how long the lock file has existed 
+      # (safer than stat ?)
+      local lockfile="$1"
+      # return if we dont have a lock file
+      [ ! -f "$lockfile" ] && return 0
 
-	if [ -f "${fm_phasedir}/.fieldmap_phase" ]; then
-	    #processing of fieldmap phase already completed elsewhere
-	    #simply copy this file to the functional directory
-	    cp "${fm_phasedir}/.fieldmap_phase" "${funcdir}/.fieldmap_phase"
-	else
-	    touch "${fm_phasedir}/.fmphase_inprogress" #lock for processing
-	fi
+      local now=$(date +%s)
+      local ctime=$(cat $lockfile)
+      [[ ! $ctime =~ [0-9]? ]] && echo "Warning: malformed lock file $lockfile"
+
+      [ "$((( $now-$ctime )))" -gt "$(((2*60*60)))" ] && echo "it's been over 2 hours, you should remove $lockfile"
+
+      echo "waiting for another preprocessFunctional to finish (lock: $lockfile)"
+      while [ -f "$lockfile" ]; do
+          sleep 1
+      done
+
+      return 0
+    }
+
+    if [[ "$fm_phasebase" =~ .*\*.* && ! -f ".fieldmap_phase" ]]; then
+      #if the lock file is present, sleep until complete
+      waitforlock "${fm_phasedir}/.fmphase_inprogress"
+
+      if [ -f "${fm_phasedir}/.fieldmap_phase" ]; then
+          #processing of fieldmap phase already completed elsewhere
+          #simply copy this file to the functional directory
+          cp "${fm_phasedir}/.fieldmap_phase" "${funcdir}/.fieldmap_phase"
+      else
+          date +%s > "${fm_phasedir}/.fmphase_inprogress" #lock for processing
+      fi
     fi
 
     if [[ "$fm_magnitudebase" =~ .*\*.* && ! -f ".fieldmap_magnitude" ]]; then
-	#if the lock file is present, sleep until complete
-	while [ -f "${fm_magnitudedir}/.fmmagnitude_inprogress" ]; do
-	    sleep 1
-	done
+      
+      #if the lock file is present, sleep until complete
+      waitforlock "${fm_magnitudedir}/.fmmagnitude_inprogress" 
 
-	if [ -f "${fm_magnitudedir}/.fieldmap_magnitude" ]; then
-	    #processing of fieldmap magnitude already complete elsewhere
-	    #simply copy this file to the functional directory
-	    cp "${fm_magnitudedir}/.fieldmap_magnitude" "${funcdir}/.fieldmap_magnitude"
-	else
-	    touch "${fm_magnitudedir}/.fmmagnitude_inprogress" #lock for processing
-	fi
+      if [ -f "${fm_magnitudedir}/.fieldmap_magnitude" ]; then
+          #processing of fieldmap magnitude already complete elsewhere
+          #simply copy this file to the functional directory
+          cp "${fm_magnitudedir}/.fieldmap_magnitude" "${funcdir}/.fieldmap_magnitude"
+      else
+          date +%s > "${fm_magnitudedir}/.fmmagnitude_inprogress" #lock for processing
+      fi
     fi
 
     #check whether the number of dicoms in the magnitude directory is 2x the phase directory.
