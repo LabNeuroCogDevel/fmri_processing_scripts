@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# wrap bad exit in info message
+orginalargs="$@"
+originalcwd="$(pwd)"
+trap '[ $? -ne 0 ] && echo -e "[$(date +%F\ %H:%M) $originalcwd] ERROR exiting $0\n\t$originalargs"' EXIT
+
 function printHelp() {
 
 cat <<EndOfHelp
@@ -160,6 +165,10 @@ EndOfHelp
 #Last updated: 11/17/2014
 #
 #Changelog:
+#03/18/2015 (WF)
+# - added trap exit-on-error message
+# - added -verbose switch
+# - more involved fieldmap lock checking
 #11/17/2014
 # -additional cleanup for nuisance regression so that all time series are re-estimated with -startover.
 # -explicit TR for 3dBandpass since this was being lost in the header during preprocessing.
