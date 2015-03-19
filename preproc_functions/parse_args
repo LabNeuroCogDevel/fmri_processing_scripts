@@ -98,7 +98,6 @@ function parse_args {
     waveletDespike=0
     waveletM1000=0
     waveletThreshold=10
-    #WF 20150318 -- add verbose option to set -x
     verbose=
 
     #figure out file extension for FSL programs
@@ -380,11 +379,9 @@ function parse_args {
 	    #deprecated: -siemens preferred
 	    detectSiemens=1
 	    shift 1
-   #WF20150318 -- tell bash to be verbose
-   #              used to see script stalled waiting for gre_field
 	elif [ $1 = -verbose ]; then
 	    verbose=1
-       set -x
+	    set -x
 	    shift 1
 	elif [ $1 = -warpcoef ]; then
 	    warpCoef="${2}"

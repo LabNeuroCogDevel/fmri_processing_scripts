@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # wrap bad exit in info message
-orginalargs="$@"
+originalargs="$@"
 originalcwd="$(pwd)"
 trap '[ $? -ne 0 ] && echo -e "[$(date +%F\ %H:%M) $originalcwd] ERROR exiting $0\n\t$originalargs"' EXIT
 

@@ -264,11 +264,11 @@ function prepare_fieldmap {
 	    rel "Two echos detected based on ACQ Echo Number in DICOM header." c
 	    rel "Moving DICOMs for each echo into separate directories for NIfTI conversion." c
 
-       #WF 20150318 -- if echo[12] dirs exist, but we didn't find the files to skip this step
-       #               we want to overwrite them, so remove the directory
-       #               otherwise, mkdir will fail b/c they already exist
-       [ -d echo1 ] && rm -r echo1
-       [ -d echo2 ] && rm -r echo2
+	    #WF 20150318 -- if echo[12] dirs exist, but we didn't find the files to skip this step
+	    #               we want to overwrite them, so remove the directory
+	    #               otherwise, mkdir will fail b/c they already exist
+	    [ -d echo1 ] && echo "Existing, but faulty, echo1 directory. Moving to echo1_bak" && mv echo1 echo1_bak
+	    [ -d echo2 ] && echo "Existing, but faulty, echo2 directory. Moving to echo1_bak" && mv echo2 echo2_bak
 
 	    rel "mkdir echo1"
 	    rel "mkdir echo2"
