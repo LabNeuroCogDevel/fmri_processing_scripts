@@ -304,7 +304,7 @@ function prepare_fieldmap {
     fi
 
     # check that required files exist
-    for fileVar in mprageBet fm_phase fm_magnitude logFile; do
+    for fileVar in fm_phase fm_magnitude logFile; do
 	filePath=${!fileVar} # path is the value of the variables we are iterating through
 
 	[ ! -r "${filePath}" -a ! -r "${filePath}.nii"  -a ! -r "${filePath}.nii.gz"  ] && echo "$fileVar ($filePath[.nii[.gz]]) DNE" && exit 1
