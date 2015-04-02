@@ -24,6 +24,7 @@ printHelp <- function() {
       "  -brainmask <3D file>: A 0/1 mask file defining voxels in the brain. This will be applied to the ROI mask before computing correlations.",
       "  -njobs <n>: Number of parallel jobs to run when computing correlations. Default: 4.",
       "  -censor <1D file>: An AFNI-style 1D censor file containing a single column of 0/1 values where 0 represents volumes to be censored (e.g., for motion scrubbing)",
+      "  -na_string: Character string indicating how to represent missing correlations in output file. Default NA.",
       "",
       "If the -ts file does not match the -rois file, the -ts file will be resampled to match the -rois file using 3dresample. This requires that the images be coregistered,",
       "  in the same stereotactic space, and have the same grid size.",
@@ -35,10 +36,6 @@ printHelp <- function() {
 
 
 #read in command line arguments.
-#current format:
-#arg 1: config file to process (default current directory)
-#arg 2: number of parallel jobs (default 8)
-#arg 3: folder containing MRRC reconstructed MB data (rsync from meson)
 args <- commandArgs(trailingOnly = TRUE)
 
 if (length(args) == 0L) {
@@ -46,7 +43,6 @@ if (length(args) == 0L) {
   printHelp()
   quit(save="no", 1, FALSE)
 }
-
 
 #for testing
 #fname_rsproc <- "/Users/michael/rest_preproc_mni_example.nii.gz" #name of preprocessed fMRI data
@@ -62,6 +58,7 @@ fname_censor1D <- NULL
 corr_method <- "robust"
 roi_reduce <- "pca"
 fisherz <- FALSE
+na_string <- "NA"
 
 argpos <- 1
 while (argpos <= length(args)) {
@@ -99,6 +96,9 @@ while (argpos <= length(args)) {
   } else if (args[argpos] == "-fisherz") {
     fisherz <- TRUE
     argpos <- argpos + 1
+  } else if (args[argpos] == "-na_string") {
+    na_string <- args[argpos + 1]
+    argpos <- argpos + 2
   } else {
     stop("Not sure what to do with argument: ", args[argpos])
   }
@@ -304,32 +304,65 @@ roimats <- lapply(maskvals, function(v) {
           nvox <- nrow(mi)
           mi4d <- cbind(pracma::repmat(mi, nvol, 1), rep(1:nvol, each=nvox))
           mat <- matrix(rsproc[mi4d], nrow=nvox, ncol=nvol) #need to manually reshape into matrix from vector
+          attr(mat, "maskval") <- v #add mask value as attribute so that information about bad ROIs can be printed below
+          mat
         })
 
 rm(rsproc) #clear imaging file from memory now that we have obtained the roi time series 
-    
+
 message("Obtaining a single time series within each ROI using: ", roi_reduce)
-roimat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, .noexport=c("rsproc")) %dopar% {
-  if (roi_reduce == "pca") {
-    ts <- prcomp(roivox)$rotation[,1] #first eigenvector  
-  } else if (roi_reduce == "mean") {
-    ts <- apply(roivox, 2, mean, na.rm=TRUE)
-  } else if (roi_reduce == "median") {
-    ts <- apply(roivox, 2, median, na.rm=TRUE)
-  } else if (roi_reduce == "huber") {
-    ts <- apply(roivox, 2, getRobLocation)
-  }
-  
-  return(ts)
+roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, .noexport=c("rsproc")) %do% { #minimal time savings from dopar here, and it prevents message output
+    ##roivox is a voxels x time matrix
+    ##data cleaning steps: remove voxels that are 1) partially or completely missing; 2) all 0; 3) variance = 0 (constant)
+    ##leave out variance > mean check because bandpass-filtered data are demeaned
+    badvox <- apply(roivox, 1, function(voxts) {
+        if (any(is.na(voxts))) TRUE #any missing values
+        else if (all(voxts == 0.0)) TRUE #all zeros
+        else if (var(voxts) == 0.0) TRUE #constant time series
+        ##else if (var(voxts) > mean(voxts)) TRUE #variance exceeds mean (very unstable)
+        else FALSE #good voxel
+    })
+
+    if (sum(!badvox) < 5) {
+        ##only reduce if there are at least 5 voxels to average over after reduction above
+        ##otherwise return NA time series
+
+        ##cat("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.\n", file=".roilog", append=TRUE)
+        message("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.")
+        ts <- rep(NA_real_, ncol(roivox))
+    } else {
+        if (sum(badvox) > 0) {
+            ##cat("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.\n", file=".roilog", append=TRUE)
+            message("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.")
+            roivox <- roivox[!badvox,] #remove bad voxels (rows)
+        }
+
+        if (roi_reduce == "pca") {
+            ts <- prcomp(roivox)$rotation[,1] #first eigenvector  
+        } else if (roi_reduce == "mean") {
+            ts <- apply(roivox, 2, mean, na.rm=TRUE)
+        } else if (roi_reduce == "median") {
+            ts <- apply(roivox, 2, median, na.rm=TRUE)
+        } else if (roi_reduce == "huber") {
+            ts <- apply(roivox, 2, getRobLocation)
+        }
+    }
+
+    return(ts)
 }
 
-colnames(roimat) <- paste0("roi", maskvals)
-rownames(roimat) <- paste0("vol", 1:nrow(roimat))
+#need to print roi problems outside of foreach since stdout is dumped
+#roimessages <- readLines(".roilog")
+#cat(roimessages)
+#unlink(".roilog")
+
+colnames(roiavgmat) <- paste0("roi", maskvals)
+rownames(roiavgmat) <- paste0("vol", 1:nrow(roiavgmat))
 
 message("Computing correlations among ROI times series using method: ", ifelse(corr_method=="auto", "robust", corr_method))
-cormat <- genCorrMat(as.data.frame(roimat), method=corr_method, fisherz=fisherz)
+cormat <- genCorrMat(as.data.frame(roiavgmat), method=corr_method, fisherz=fisherz)
 
 stopCluster(clusterobj)
 
 message("Writing correlations to: ", out_file)
-write.table(cormat, file=out_file, col.names=FALSE, row.names=FALSE)
+write.table(cormat, file=out_file, col.names=FALSE, row.names=FALSE, na=na_string)
