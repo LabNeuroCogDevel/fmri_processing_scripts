@@ -48,8 +48,15 @@ function check_requirements {
 	elif [[ ! -f $mprageBet ]] && [[ ! -h ${mprageBet} ]]; then
 	    echo -e "Betted mprage file: $mprageBet does not exist.\nExiting.\n"
 	    exit 1
+	else
+	    #make mprage into an absolute path and symlink within the current directory
+	    cd "$(dirname $mprageBet)"
+	    mprageBet="$(pwd)/$(basename $mprageBet)"
+	    cd - 1>/dev/null
+	    ln -sfn "$mprageBet" "./$(basename $mprageBet)"
 	fi
 
+	
 	if [ -z $warpCoef ]; then
 	    echo -e "Structural to standard space warp coefficients file (from FNIRT) not provided.\nPass using the -warpcoef parameter.\nExiting.\n"
 	    exit 1

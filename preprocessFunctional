@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# wrap bad exit in info message
+originalargs="$@"
+originalcwd="$(pwd)"
+trap '[ $? -ne 0 ] && echo -e "[$(date +%F\ %H:%M) $originalcwd] ERROR exiting $0\n\t$originalargs"' EXIT
+
 function printHelp() {
 
 cat <<EndOfHelp
@@ -100,7 +105,8 @@ Command line options:
         By default, slice timing is run before motion correction for interleaved sequences, but after
         motion correction for sequential acquisition.
   -template_brain: Which standard template brain to use. Default: MNI_3mm. Must match template from mprage normalization. Options:
-        -template_brain MNI_2.3mm (MNI152 brain, 2.3mm isotropic voxels, template from MNI Fonov et al. 2009). For 2.3mm MB sequence.
+        -template_brain MNI_2mm (MNI152 brain, 2mm isotropic voxels, template from MNI Fonov et al. 2009). This is the default in preprocessMprage
+	-template_brain MNI_2.3mm (MNI152 brain, 2.3mm isotropic voxels, template from MNI Fonov et al. 2009). For 2.3mm MB sequence.
         -template_brain MNI_3mm (MNI152 brain, 3mm isotropic voxels, template from MNI Fonov et al. 2009)
         -template_brain MNI_FSL_3mm (MNI152 brain, 3mm isotropic voxels, template from FSL standard)
         -template_brain SPM_2mm (MNI brain from spm8 canonical template)
@@ -112,6 +118,7 @@ Command line options:
   -siemens: only relevant for -4d input. If set, slice timing correction will check for interleaved
         order and odd vs. even number of slices. If even, will create and use --ocustom file 2,4,6...1,3,5...
         This is necessary because of different slice acquisition on Siemens for even versus odd total slices.
+  -verbose: print whats going on (set -x)
   -warpcoef: The warp coefficients used to transform the structural scan to standard space. Required.
   -warp_interpolation: The intepolation method used to warp functional data to the mprage and to the standard space (e.g., MNI). Default: spline.
         -warp_interpolation spline. Use cubic spline interpolation to apply warp coefficients. Faster than sinc and slightly more blurry, but more robust to mask. (Default)
@@ -158,6 +165,10 @@ EndOfHelp
 #Last updated: 11/17/2014
 #
 #Changelog:
+#03/18/2015 (WF)
+# - added trap exit-on-error message
+# - added -verbose switch
+# - more involved fieldmap lock checking
 #11/17/2014
 # -additional cleanup for nuisance regression so that all time series are re-estimated with -startover.
 # -explicit TR for 3dBandpass since this was being lost in the header during preprocessing.

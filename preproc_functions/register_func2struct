@@ -56,7 +56,7 @@ function register_func2struct {
 		
 		#standard 6 parameter EPI-to-T1 registration to get initial estimate of transform
 		#leaving off inweight for now because should handle fieldmap in flirt now
-		rel "flirt -in mc_target -ref $mprageBet -out func_to_struct -omat func_to_struct_init.mat -dof 6"
+		rel "flirt -in mc_target -ref $mprageBet -out func_to_struct_init -omat func_to_struct_init.mat -dof 6"
 
 		#now do the BBR-based registration
 		#N.B.: the epi_reg program uses betted T1 for initial transformation, but the unbetted image for BBR registration!

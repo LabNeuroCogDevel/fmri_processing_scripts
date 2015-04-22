@@ -56,6 +56,9 @@ function compute_nuisance_regressors {
 		elif [ $templateName = MNI_2.3mm ]; then
 		    #thr 0.98 without erosion works well here: 274 voxels
 		    rel "fslmaths \"$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_csf_tal_nlin_asym_09c_2.3mm\" -thr 0.98 -bin .template_csf_prob"
+		elif [ $templateName = MNI_2mm ]; then
+
+		    rel "fslmaths \"$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_csf_tal_nlin_asym_09c_2mm\" -thr 0.98 -bin .template_csf_prob"
 		elif [ $templateName = SPM_2mm ]; then
 		    #thr 0.6 works best here: 193 voxels
 		    rel "fslmaths \"$HOME/standard/spm8_mni/csf.nii\" -thr 0.6 -bin -eroF .template_csf_prob"	    
@@ -121,6 +124,9 @@ function compute_nuisance_regressors {
 		elif [ $templateName = MNI_2.3mm ]; then
 		    #0.95 with erosion: 2681 voxels
 		    rel "fslmaths \"$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_wm_tal_nlin_asym_09c_2.3mm\" -thr 0.95 -bin -eroF .template_wm_prob"
+		elif [ $templateName = MNI_2mm ]; then
+		    
+		    rel "fslmaths \"$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_wm_tal_nlin_asym_09c_2mm\" -thr 0.95 -bin -eroF .template_wm_prob"
 		elif [ $templateName = SPM_2mm ]; then
 		    #0.85 with erosion: 2981 voxels
 		    rel "fslmaths \"$HOME/standard/spm8_mni/white.nii\" -thr 0.85 -bin -eroF .template_wm_prob"
