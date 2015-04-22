@@ -1,0 +1,100 @@
+#!/bin/bash
+set -e
+
+#MH April 2015
+#This is a script to send coordinates to AFNI for navigating through a file in which rows contains ROIs/coordinates of interest.
+#For example the output of a 3dclust command can be used to navigate to each of the clusters on the command line.
+#This depends on AFNI plugouts being turned on/available.
+
+if [ $# -eq 0 ]; then
+    echo "Usage: drive_afni_xyz -coord_file <file with xyz coords> -lr <left/right column> -pa <posterior/anterior column> -is <inferior/superior column>"
+    exit 0
+fi
+
+#cleanup tmpfile on quit/exist
+trap "rm -f .tmpfile" EXIT SIGHUP SIGINT SIGTERM
+
+coord_file=
+lrcol=
+pacol=
+iscol=
+lpi=1 #only support LPI coords at the moment...
+comment_char="#" #default to # as comment
+while [ _$1 != _ ] ; do
+    if [ $1 = -coord_file ]; then
+	coord_file="$2"
+	shift 2
+    elif [ $1 = -lr ]; then
+	lrcol=$2
+	shift 2
+    elif [ $1 = -pa ]; then
+	pacol=$2
+	shift 2
+    elif [ $1 = -is ]; then
+	iscol=$2
+	shift 2
+    elif [[ $1 = -lpi || $1 = -spm ]]; then
+	lpi=1
+	shift 1
+    elif [ $1 = -comment_char ]; then
+	comment_char="$2"
+	shift 2
+    fi
+done
+
+echo "Assuming coordinates are in LPI order."
+
+#remove any comment lines
+sed "/^${comment_char}/ d" < "${coord_file}" > .tmpfile
+
+#tail -n +2 "$extremaFile" > .tmpfile
+
+#3dclust does not write a trailing newline at the end of the file.
+#Consequently, read chokes on the file (error = 1), but this is a trivial error.
+#thus, trap and ignore
+OLDIFS=$IFS
+IFS=$'\n' read -d '' -r -a lines < .tmpfile || eof=true
+IFS=$OLDIFS
+
+echo "length of lines is ${#lines[@]}"
+echo "first line is ${lines[0]}"
+
+nlines=${#lines[@]}
+curline=0
+
+while [ $curline -lt $nlines ]
+do
+    echo "$((curline+1)): $( echo ${lines[$curline]} | tr '\t' ' ' )"
+    xyz=$( echo "${lines[$curline]}" | awk "{print \$${lrcol},\$${pacol},\$${iscol}}" )
+    plugout_drive -com "SET_SPM_XYZ ${xyz}" -quit 2>&1 >/dev/null
+    read -sn1 -p "Press # to enter rownum, n for next, p for previous, r for reload, q for quit" key
+    echo ""
+    if [ $key = p ]; then
+	[ "$curline" -gt 0 ] && curline=$((curline - 1))
+    elif [ $key = q ]; then
+	echo "Quitting"
+	exit 0
+    elif [ $key = r ]; then
+	plugout_drive -com "SET_SPM_XYZ ${xyz}" -quit 2>&1 >/dev/null
+    elif [ $key = "#" ]; then
+	    read -p "Enter goto row: " row
+	    curline=$((row - 1)) #account for 0-based index
+    elif [ $key = n ]; then
+	[ $curline -lt $(( nlines - 1 )) ] && curline=$((curline + 1))
+    else
+	curline=$((curline + 1)) #default to next
+    fi
+done
+
+
+#need to read in file through different i/o stream 9
+#otherwise, read command for prompts will collide with file lines
+# while read -u 9 line
+# do
+#     echo -e "\n\n$line"
+#     xyz=$( echo "$line" | awk '{print $5,$6,$7}' )
+#     plugout_drive -com "SET_SPM_XYZ ${xyz}" -quit 2>&1 >/dev/null
+#     read -sn1 -p "Press enter to go to the next activation"
+# done 9< .tmpfile
+
+
