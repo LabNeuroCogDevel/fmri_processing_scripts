@@ -53,7 +53,9 @@ function check_requirements {
 	    cd "$(dirname $mprageBet)"
 	    mprageBet="$(pwd)/$(basename $mprageBet)"
 	    cd - 1>/dev/null
-	    ln -sfn "$mprageBet" "./$(basename $mprageBet)"
+	    # do not link if mprage is in the directory already #WF for MJ 20150424
+	    [ ! -r "./$(basename $mprageBet)" ] && \
+	      ln -sfn "$mprageBet" "./$(basename $mprageBet)"
 	fi
 
 	
