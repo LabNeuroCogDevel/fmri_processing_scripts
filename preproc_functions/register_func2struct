@@ -43,9 +43,21 @@ function register_func2struct {
 
 	bbrfmap="-fieldmap $(pwd)/unwarp/fmapForBBR -pedir $bbr_pedir -echospacing $dwelltime"
     fi
+
+    if [ -n "$funcRefimg" ]; then
+	local target="epiref"
+	local oname="epiref"
+
+	#calculate ref -> func coregistration to concatenate with ref -> struct
+	rel "flirt -in mc_target -ref epiref -out func_to_epiref -omat func_to_epiref.mat -dof 6"
+	rel "Using intermediate T2* reference file (epiref) as coregistration target" c
+    else
+	local target="mc_target"
+	local oname="func"
+    fi
     
     if [[ ! -f func_to_struct.mat || ! -f .func2struct_complete ]]; then
-	rel "Warping subject mean functional to subject structural (intrasubject)" c
+	rel "Warping subject functional to subject structural" c
 
 	if [ $funcStructFlirtDOF = "bbr" ]; then
 
@@ -56,19 +68,19 @@ function register_func2struct {
 		
 		#standard 6 parameter EPI-to-T1 registration to get initial estimate of transform
 		#leaving off inweight for now because should handle fieldmap in flirt now
-		rel "flirt -in mc_target -ref $mprageBet -out func_to_struct_init -omat func_to_struct_init.mat -dof 6"
+		rel "flirt -in $target -ref $mprageBet -out ${oname}_to_struct_init -omat ${oname}_to_struct_init.mat -dof 6"
 
 		#now do the BBR-based registration
 		#N.B.: the epi_reg program uses betted T1 for initial transformation, but the unbetted image for BBR registration!
-		rel "flirt -in mc_target -ref $mprageBet -out func_to_struct -omat func_to_struct.mat -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
-		    -cost bbr -init func_to_struct_init.mat -dof 6 -schedule ${FSLDIR}/etc/flirtsch/bbr.sch $bbrfmap"
+		rel "flirt -in $target -ref $mprageBet -out ${oname}_to_struct -omat ${oname}_to_struct.mat -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
+		    -cost bbr -init ${oname}_to_struct_init.mat -dof 6 -schedule ${FSLDIR}/etc/flirtsch/bbr.sch $bbrfmap"
 
 		#KH: need the struct_to_func.mat for nuisance regression. Thus, do not limit to fieldmap transform below.
-		rel "convert_xfm -inverse -omat struct_to_func.mat func_to_struct.mat"
-		
+		rel "convert_xfm -inverse -omat struct_to_${oname}.mat ${oname}_to_struct.mat"
+	     	
 		if [ $createBBRFmapWarp -eq 1 ]; then
 		    #also generate a func -> struct image without fmap unwarping in BBR to verify that fieldmap unwarping is helping with coregistration
-		    rel "applywarp -i mc_target -o func_to_struct_nounwarp --premat=func_to_struct.mat --interp=spline -r \"$mprageBet\""
+		    rel "applywarp -i $target -o ${oname}_to_struct_nounwarp --premat=${oname}_to_struct.mat --interp=spline -r \"$mprageBet\""
 
 		    #when BBR is used, we need to transform the FM into functional space via the inverse of the func -> struct warp
 		    #in the new (epi_reg) approach, the FM is never explicitly aligned to the EPI. This occurs via the func -> struct inverse.
@@ -81,23 +93,28 @@ function register_func2struct {
 		    rel "convert_xfm -omat fmap2epi_bbr.mat -concat struct_to_func.mat unwarp/fmap2struct.mat" #assemble fmap2epi via fm -> struct + struct -> epi
 
 		    #warp fmap into EPI space using transform fmap2epi_bbr.mat
-		    rel "applywarp -i unwarp/FM_UD_fmap_unmasked -r mc_target --premat=fmap2epi_bbr.mat -o unwarp/EF_UD_fmap_bbr --interp=spline"
+		    rel "applywarp -i unwarp/FM_UD_fmap_unmasked -r $target --premat=fmap2epi_bbr.mat -o unwarp/EF_UD_fmap_bbr --interp=spline"
 		    rel "fslmaths unwarp/EF_UD_fmap_bbr -abs -bin unwarp/EF_UD_fmap_bbr_mask" #create fmap mask
 
 		    #save unmasked shift map in EPI space
 		    rel "fugue --loadfmap=unwarp/EF_UD_fmap_bbr --mask=unwarp/EF_UD_fmap_bbr_mask --saveshift=unwarp/EF_UD_shift_bbr --unmaskshift --dwell=$dwelltime --unwarpdir=$unwarpdir"
-		    rel "convertwarp -r unwarp/EF_D_mc_target -s unwarp/EF_UD_shift_bbr -o unwarp/EF_UD_warp_bbr --shiftdir=$unwarpdir --relout" #warp coefficients to undistort EPI in functional space
-		    rel "convertwarp -r \"$mprageBet\" -s unwarp/EF_UD_shift_bbr -o unwarp/T1_UD_warp_bbr --postmat=func_to_struct.mat --shiftdir=$unwarpdir --relout" #warp coefficients to undistort and transform EPI into structural space
+		    rel "convertwarp -r unwarp/EF_D_$target -s unwarp/EF_UD_shift_bbr -o unwarp/EF_UD_warp_bbr --shiftdir=$unwarpdir --relout" #warp coefficients to undistort EPI in functional space
+		    rel "convertwarp -r \"$mprageBet\" -s unwarp/EF_UD_shift_bbr -o unwarp/T1_UD_warp_bbr --postmat=${oname}_to_struct.mat --shiftdir=$unwarpdir --relout" #warp coefficients to undistort and transform EPI into structural space
 		fi
 	    else
 		rel "BBR EPI-to-T1 requested, but flirt < v6.0. Reverting to typical 6 DOF registration" c
 		funcStructFlirtDOF=6
-		rel "flirt -in mc_target -ref $mprageBet -out func_to_struct -omat func_to_struct.mat -dof $funcStructFlirtDOF $inweight"
+		rel "flirt -in $target -ref $mprageBet -out ${oname}_to_struct -omat ${oname}_to_struct.mat -dof $funcStructFlirtDOF $inweight"
 	    fi
 	else
-	    rel "flirt -in mc_target -ref $mprageBet -out func_to_struct -omat func_to_struct.mat -dof $funcStructFlirtDOF $inweight"
+	    rel "flirt -in $target -ref $mprageBet -out ${oname}_to_struct -omat ${oname}_to_struct.mat -dof $funcStructFlirtDOF $inweight"
 	fi
 
+	#For intermediate target, concatenate func -> epiref and epiref -> struct to derive func -> struct
+	if [ -n "$funcRefimg" ]; then
+	    rel "convert_xfm -omat func_to_struct.mat -concat epiref_to_struct.mat func_to_epiref.mat"
+	fi
+	
 	touch .func2struct_complete
     fi
 }

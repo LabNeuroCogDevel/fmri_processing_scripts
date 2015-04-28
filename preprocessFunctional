@@ -55,6 +55,8 @@ Command line options:
   -fm_phase: gre field map phase image
   -fm_magnitude: field map magnitude image (mag2.nii.gz)
   -fm_cfg: configuration file for handling fieldmap (TEs, echo spaceing, etc.)
+  -func_refimg: T2* image (as NIfTI) used as intermediate registration target (i.e., func -> ref -> structural -> template).
+        This is useful when the T2* images have poor GM/WM contrast (such as 1.0s MB 5x sequence) and BBR is doing poorly for some subjects.
   -func_struc_dof: The number of degrees of freedom to be used when co-registering the mean subject
         functional (EPI) scan to the subject structural (T1) scan. Defaults to bbr (boundary based registration).
         -func_struc_dof bbr. BBR segments the T1 to create a white matter boundary mask, which is used to help align EPI and T1.

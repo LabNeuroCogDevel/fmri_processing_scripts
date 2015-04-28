@@ -330,6 +330,7 @@ function prepare_fieldmap {
     rel "Copying fieldmap ingredients to FSL namespace images" c
     mkdir unwarp && cd $_
 
+    [ -n "$funcRefimg" ] &&     rel "fslmaths $funcRefimg      EF_D_refimg"
     rel "fslmaths ../mc_target       EF_D_mc_target"
     rel "fslmaths $fm_magnitude      FM_UD_fmap_mag"
     rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
@@ -561,10 +562,12 @@ function prepare_fieldmap {
     # -refweight FM_D_fmap_sigloss
 
     rel "flirt -in EF_D_mc_target -ref FM_D_fmap_mag_brain_siglossed -omat epi2fmap.mat -o grot -dof 6"
+    [ -n "$funcRefimg" ] && rel "flirt -in EF_D_refimg -ref FM_D_fmap_mag_brain_siglossed -omat ref2fmap.mat -o grot -dof 6"
     _picture grot "align FM (mag,sigloss in) to epi (ref) (make epi2fmap.mat, use this image for thumbnail)"
 
     # reverse  EF->FM  to get FM->EF (to put all fieldmap stuff in epi space)
     rel "convert_xfm -omat fmap2epi.mat -inverse epi2fmap.mat"
+    [ -n "$funcRefimg" ] && rel "convert_xfm -omat fmap2ref.mat -inverse ref2fmap.mat"
 
     # transform all the fieldmap images into EPI space (mc_target),  FM_UDs become EF_UDs
     for file in "FM_UD_fmap" "FM_UD_fmap_mag_brain" "FM_UD_fmap_mag_brain_mask" "FM_UD_fmap_sigloss"; do

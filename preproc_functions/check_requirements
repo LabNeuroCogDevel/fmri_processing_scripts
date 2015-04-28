@@ -38,6 +38,21 @@ function check_requirements {
 
     fi
 
+    if [ -n "$funcRefimg" ]; then
+	if [[ ! -f "$funcRefimg" ]] && [[ ! -h "${funcRefimg}" ]]; then
+	    echo -e "Functional reference scan (-func_refimg) specified but not found: ${funcRefimg}.\nExiting.\n"
+	    exit 1
+	fi
+
+	if [ -n "$ref_vol" ]; then
+	    echo "-ref_vol and -func_refimg specified. Ignoring -ref_vol and using -func_refimg $funcRefimg."
+	    ref_vol=
+	fi
+
+	#copy reference image to local directory to make directory more portable
+	rel "fslmaths $funcRefimg epiref"
+    fi   
+    
     #check for existence of required files
     #mprageBet and warpCoef only required if warping to a standard template (or just computing via -compute_warp_only).
     #Thus, don't require for pure -no_warp runs.
