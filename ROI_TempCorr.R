@@ -45,10 +45,11 @@ if (length(args) == 0L) {
 }
 
 #for testing
-#fname_rsproc <- "/Users/michael/rest_preproc_mni_example.nii.gz" #name of preprocessed fMRI data
-#fname_roimask <- "/Volumes/Serena/bars_ica/scripts/Sci160_FSLMNI_2mm+tlrc.HEAD"
-#fname_roimask <- "/Volumes/Serena/bars_ica/scripts/Sci160+tlrc.nii.gz"
-#fname_brainmask <- "/Users/michael/standard/fsl_mni152/MNI152_T1_2mm_brain_mask.nii" #optional brain mask to ensure that we don't sample time series from air, CSF, etc.
+##fname_rsproc <- "/Volumes/Serena/Raj/Preprocess_Rest/10638_20140507/brnswudktm_rest_5.nii.gz" #name of preprocessed fMRI data
+##fname_roimask <- "/Volumes/Serena/Raj/Preprocess_Rest/power264_mni2.3mm.nii.gz"
+##fname_roimask <- "/Volumes/Serena/bars_ica/scripts/Sci160+tlrc.nii.gz"
+##fname_brainmask <- "/Users/michael/standard/fsl_mni152/MNI152_T1_2mm_brain_mask.nii" #optional brain mask to ensure that we don't sample time series from air, CSF, etc.
+##fname_brainmask <- "/Users/michael/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2.3mm.nii"
 #fname_censor1D <- "/Volumes/Serena/MMClock/MR_Proc/10637_20140304/mni_5mm_wavelet/clock1/motion_info/censor_union.1D"
 
 #defaults
@@ -305,17 +306,17 @@ roimats <- lapply(maskvals, function(v) {
           mi4d <- cbind(pracma::repmat(mi, nvol, 1), rep(1:nvol, each=nvox))
           mat <- matrix(rsproc[mi4d], nrow=nvox, ncol=nvol) #need to manually reshape into matrix from vector
           attr(mat, "maskval") <- v #add mask value as attribute so that information about bad ROIs can be printed below
-          mat
+          t(mat) #transpose matrix so that it is time x voxels
         })
 
 rm(rsproc) #clear imaging file from memory now that we have obtained the roi time series 
 
 message("Obtaining a single time series within each ROI using: ", roi_reduce)
 roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, .noexport=c("rsproc")) %do% { #minimal time savings from dopar here, and it prevents message output
-    ##roivox is a voxels x time matrix
+    ##roivox is a time x voxels matrix
     ##data cleaning steps: remove voxels that are 1) partially or completely missing; 2) all 0; 3) variance = 0 (constant)
     ##leave out variance > mean check because bandpass-filtered data are demeaned
-    badvox <- apply(roivox, 1, function(voxts) {
+    badvox <- apply(roivox, 2, function(voxts) {
         if (any(is.na(voxts))) TRUE #any missing values
         else if (all(voxts == 0.0)) TRUE #all zeros
         else if (var(voxts) == 0.0) TRUE #constant time series
@@ -334,17 +335,20 @@ roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, 
         if (sum(badvox) > 0) {
             ##cat("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.\n", file=".roilog", append=TRUE)
             message("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.")
-            roivox <- roivox[!badvox,] #remove bad voxels (rows)
+            roivox <- roivox[,!badvox] #remove bad voxels (columns)
         }
 
         if (roi_reduce == "pca") {
-            ts <- prcomp(roivox)$rotation[,1] #first eigenvector  
+            ts <- prcomp(roivox, scale.=TRUE)$x[,1] #first eigenvector
+            tsmean <- apply(roivox, 1, mean, na.rm=TRUE)
+            #flip sign of component to match observed data (positive correlation)
+            if (cor(ts, tsmean) < 0) { ts <- -1*ts }
         } else if (roi_reduce == "mean") {
-            ts <- apply(roivox, 2, mean, na.rm=TRUE)
+            ts <- apply(roivox, 1, mean, na.rm=TRUE) #mean time series across voxels
         } else if (roi_reduce == "median") {
-            ts <- apply(roivox, 2, median, na.rm=TRUE)
+            ts <- apply(roivox, 1, median, na.rm=TRUE)
         } else if (roi_reduce == "huber") {
-            ts <- apply(roivox, 2, getRobLocation)
+            ts <- apply(roivox, 1, getRobLocation)
         }
     }
 
