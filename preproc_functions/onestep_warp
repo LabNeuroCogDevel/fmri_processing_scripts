@@ -225,9 +225,6 @@ function onestep_warp {
     #   Note that this corrects odd behavior with applywarp and sinc interpolation smudging edge voxels extensively.
     #   See here: https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1108&L=FSL&P=R66855&1=FSL&9=A
 
-    #note that I switched over to sinc interpolation, which is slowest, but best.
-    #applywarp defaults to trilinear, which blurs the image.
-	
     if [ $volwise -eq 0 ]; then
 
 	rel "applywarp --in=\"$towarp\" --out=\"${prefix}${funcFile}\" \

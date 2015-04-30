@@ -50,8 +50,11 @@ function check_requirements {
 	fi
 
 	#copy reference image to local directory to make directory more portable
-	rel "fslmaths $funcRefimg epiref"
-    fi   
+	rel "fslmaths \"$funcRefimg\" epiref"
+	
+	#skull strip reference image to improve coregistration
+	rel "bet epiref epiref_brain -f 0.3 -n -R -B" #include bias field correction given heavy bias for 32-channel data
+    fi
     
     #check for existence of required files
     #mprageBet and warpCoef only required if warping to a standard template (or just computing via -compute_warp_only).

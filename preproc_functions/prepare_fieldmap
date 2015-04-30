@@ -330,7 +330,7 @@ function prepare_fieldmap {
     rel "Copying fieldmap ingredients to FSL namespace images" c
     mkdir unwarp && cd $_
 
-    [ -n "$funcRefimg" ] &&     rel "fslmaths $funcRefimg      EF_D_refimg"
+    [ -n "$funcRefimg" ] &&     rel "fslmaths ../epiref      ER_D_epiref"
     rel "fslmaths ../mc_target       EF_D_mc_target"
     rel "fslmaths $fm_magnitude      FM_UD_fmap_mag"
     rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
