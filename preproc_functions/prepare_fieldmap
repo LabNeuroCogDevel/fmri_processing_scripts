@@ -562,7 +562,7 @@ function prepare_fieldmap {
     # -refweight FM_D_fmap_sigloss
 
     rel "flirt -in EF_D_mc_target -ref FM_D_fmap_mag_brain_siglossed -omat epi2fmap.mat -o grot -dof 6"
-    [ -n "$funcRefimg" ] && rel "flirt -in EF_D_refimg -ref FM_D_fmap_mag_brain_siglossed -omat ref2fmap.mat -o grot -dof 6"
+    [ -n "$funcRefimg" ] && rel "flirt -in ER_D_epiref -ref FM_D_fmap_mag_brain_siglossed -omat ref2fmap.mat -o grot -dof 6"
     _picture grot "align FM (mag,sigloss in) to epi (ref) (make epi2fmap.mat, use this image for thumbnail)"
 
     # reverse  EF->FM  to get FM->EF (to put all fieldmap stuff in epi space)

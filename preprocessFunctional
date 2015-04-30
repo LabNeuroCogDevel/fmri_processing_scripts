@@ -164,9 +164,12 @@ EndOfHelp
 }
 
 #Written: 5/18/2010
-#Last updated: 11/17/2014
+#Last updated: 4/30/2015
 #
 #Changelog:
+#04/30/2015 (MH)
+# - initial support for reference/intermediate scan to improve BBR coregistration for low GM/WM T2* contrast (e.g., MB). Use -func_refimg
+# - add bias field correction to T2* coregistration targets (mc_target and epiref) to improve coregistration.
 #03/18/2015 (WF)
 # - added trap exit-on-error message
 # - added -verbose switch

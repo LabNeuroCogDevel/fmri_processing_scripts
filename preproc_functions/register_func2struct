@@ -18,7 +18,7 @@ function register_func2struct {
     mprageBet_base=$( remove_ext ${mprageBet} ) #skull-stripped mprage image basename
 
     #generate mask of mc_target for use in calculation of rmsdiff and onestep_warp to mc_target
-    if [ $( imtest mc_target_mask ) -eq 0 ]; then
+    if [ $( imtest mc_target_brain ) -eq 0 ]; then
 	#include bias field correction for mc_target given heavy bias in 32-channel data.
 	#in principle, this should aid in coregistration
 	rel "bet mc_target.nii.gz mc_target_brain -f 0.3 -n -m -R -B"
