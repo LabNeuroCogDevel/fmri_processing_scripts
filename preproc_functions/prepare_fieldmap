@@ -84,6 +84,18 @@ function prepare_fieldmap {
 	createBBRFmapWarp=0
     fi
 
+    #need to put creation of mc_target_brain (skull-stripped T2* here so that fieldmap can use it for coregistration.
+    #but even if fieldmap is not used, we want to run this because register_func2struct also uses the image
+    #generate mask of mc_target for use in calculation of rmsdiff and onestep_warp to mc_target
+    if [ $( imtest mc_target_brain ) -eq 0 ]; then
+	#include bias field correction for mc_target given heavy bias in 32-channel data.
+	#in principle, this should aid in coregistration
+	rel "bet mc_target.nii.gz mc_target_brain -f 0.3 -n -m -R"
+	rel "fast -o mc_target_brain -l 20 -b -B -t 2 --iter=12 --nopve --fixed=0 mc_target_brain"
+	rel "imrm mc_target_brain_seg" #not needed for anything
+	rel "immv mc_target_brain_mask mc_target_mask"	
+    fi
+    
     [ -z "$fm_phase" ] && return 0 #skip fieldmap 
 
     # Allow --config to be a shorthand lookup, defined here, rather than a config file
@@ -330,8 +342,8 @@ function prepare_fieldmap {
     rel "Copying fieldmap ingredients to FSL namespace images" c
     mkdir unwarp && cd $_
 
-    [ -n "$funcRefimg" ] &&     rel "fslmaths ../epiref      ER_D_epiref"
-    rel "fslmaths ../mc_target       EF_D_mc_target"
+    [ -n "$funcRefimg" ] &&     rel "fslmaths ../epiref_brain      ER_D_epiref"
+    rel "fslmaths ../mc_target_brain       EF_D_mc_target"
     rel "fslmaths $fm_magnitude      FM_UD_fmap_mag"
     rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
 

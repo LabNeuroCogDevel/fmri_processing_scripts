@@ -53,7 +53,10 @@ function check_requirements {
 	rel "fslmaths \"$funcRefimg\" epiref"
 	
 	#skull strip reference image to improve coregistration
-	rel "bet epiref epiref_brain -f 0.3 -n -R -B" #include bias field correction given heavy bias for 32-channel data
+	rel "bet epiref epiref_brain -f 0.3 -n -R" #include bias field correction given heavy bias for 32-channel data
+	rel "fast -o epiref_brain -l 20 -b -B -t 2 --iter=12 --nopve --fixed=0 epiref_brain"
+	rel "imrm epiref_brain_seg" #not needed for anything
+	#use epiref_brain_restore for coregistration
     fi
     
     #check for existence of required files

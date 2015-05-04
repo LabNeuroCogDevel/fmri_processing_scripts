@@ -17,14 +17,6 @@ function register_func2struct {
 
     mprageBet_base=$( remove_ext ${mprageBet} ) #skull-stripped mprage image basename
 
-    #generate mask of mc_target for use in calculation of rmsdiff and onestep_warp to mc_target
-    if [ $( imtest mc_target_brain ) -eq 0 ]; then
-	#include bias field correction for mc_target given heavy bias in 32-channel data.
-	#in principle, this should aid in coregistration
-	rel "bet mc_target.nii.gz mc_target_brain -f 0.3 -n -m -R -B"
-	rel "immv mc_target_brain_mask mc_target_mask"	
-    fi
-
     if [ -n "${fm_phase}" ]; then
 
 	inweight="-inweight $(pwd)/unwarp/EF_UD_fmap_sigloss"
@@ -46,15 +38,15 @@ function register_func2struct {
     fi
 
     if [ -n "$funcRefimg" ]; then
-	local target="epiref_brain"
+	local target="epiref_brain_restore"
 	local oname="epiref"
 
 	#calculate ref -> func coregistration to concatenate with ref -> struct
 	rel "Using intermediate T2* reference file (epiref) as coregistration target" c
-	rel "flirt -in mc_target_brain -ref epiref_brain -out func_to_epiref -omat func_to_epiref.mat -dof 6"
+	rel "flirt -in mc_target_brain_restore -ref epiref_brain_restore -out func_to_epiref -omat func_to_epiref.mat -dof 6 -interp spline"
 	rel "convert_xfm -omat epiref_to_func.mat -inverse func_to_epiref.mat"
     else
-	local target="mc_target_brain"
+	local target="mc_target_brain_restore"
 	local oname="func"
     fi
     
@@ -70,7 +62,7 @@ function register_func2struct {
 		
 		#standard 6 parameter EPI-to-T1 registration to get initial estimate of transform
 		#leaving off inweight for now because should handle fieldmap in flirt now
-		rel "flirt -in $target -ref $mprageBet -out ${oname}_to_struct_init -omat ${oname}_to_struct_init.mat -dof 6"
+		rel "flirt -in $target -ref $mprageBet -out ${oname}_to_struct_init -omat ${oname}_to_struct_init.mat -dof 6 -interp spline"
 
 		#now do the BBR-based registration
 		#N.B.: the epi_reg program uses betted T1 for initial transformation, but the unbetted image for BBR registration!
@@ -82,10 +74,10 @@ function register_func2struct {
 	    else
 		rel "BBR EPI-to-T1 requested, but flirt < v6.0. Reverting to typical 6 DOF registration" c
 		funcStructFlirtDOF=6
-		rel "flirt -in $target -ref $mprageBet -out ${oname}_to_struct -omat ${oname}_to_struct.mat -dof $funcStructFlirtDOF $inweight"
+		rel "flirt -in $target -ref $mprageBet -out ${oname}_to_struct -omat ${oname}_to_struct.mat -dof $funcStructFlirtDOF $inweight -interp spline"
 	    fi
 	else
-	    rel "flirt -in $target -ref $mprageBet -out ${oname}_to_struct -omat ${oname}_to_struct.mat -dof $funcStructFlirtDOF $inweight"
+	    rel "flirt -in $target -ref $mprageBet -out ${oname}_to_struct -omat ${oname}_to_struct.mat -dof $funcStructFlirtDOF $inweight -interp spline"
 	fi
 
 	#For intermediate target, concatenate func -> epiref and epiref -> struct to derive func -> struct
