@@ -101,7 +101,7 @@ function prepare_fieldmap {
     # Allow --config to be a shorthand lookup, defined here, rather than a config file
     case $fm_cfg in
 	cogemo|multimodal|wpc5640 ) fm_cfg=$(dirname $0)/fmcfg/cogemo.fmcfg;;
-	clock|specc|wpc6290 )       fm_cfg=$(dirname $0)/fmcfg/MB5_TR1.0_TE30_60slc.fmcfg;;
+	clock|specc|wpc6290|p5 )    fm_cfg=$(dirname $0)/fmcfg/MB5_TR1.0_TE30_60slc.fmcfg;;
 	trust )                     fm_cfg=$(dirname $0)/fmcfg/trust.fmcfg;;
 	bandit )                    fm_cfg=$(dirname $0)/fmcfg/bandit.fmcfg;;
     esac
