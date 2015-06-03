@@ -490,7 +490,8 @@ if [ $( imtest ${T1}_bet_fast ) -eq 0 ]; then
     # output: ${T1}_biascorr ${T1}_biascorr_brain (modified) ${T1}_fast* (as normally output by fast) ${T1}_fast_bias (modified)
     rel "Performing tissue-type segmentation" c
     
-    # setting the smoothing parameter for cases which bias field was not calculated. FSL's default is 20, 
+    # setting the smoothing parameter and number of iterations for cases which bias field was not calculated. 
+    niter=10 
     smooth=20
 	
     rel "fast -o ${T1}_bet_fast -n 3 -g -H 0.1 -l ${smooth} -b -B -t $type --iter=${niter} ${T1}_bet"
