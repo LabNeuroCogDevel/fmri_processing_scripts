@@ -491,8 +491,7 @@ if [ $( imtest ${T1}_bet_fast ) -eq 0 ]; then
     rel "Performing tissue-type segmentation" c
     
     # setting the smoothing parameter for cases which bias field was not calculated. FSL's default is 20, 
-    # but for bias field its set to 10 (see above). Set to 10 here.
-    smooth = 10
+    smooth = 20
 	
     rel "fast -o ${T1}_bet_fast -n 3 -g -H 0.1 -l ${smooth} -b -B -t $type --iter=${niter} ${T1}_bet"
     rel "immv ${T1}_biascorr ${T1}_bet_initbias" #bias field correction up to this point
