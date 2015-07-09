@@ -108,7 +108,6 @@ function cleanup_preprocessFunctional {
 
     if [ ${despike} -eq 1 ]; then
 	dspre="d"
-	deleteFile d_${funcNifti}
     else	   
 	dspre=""
     fi
@@ -131,61 +130,61 @@ function cleanup_preprocessFunctional {
     #echo "ext: $ext"
 
     #interleaved stream
-    deleteFile t${dspre}_${funcFile}${ext}
-    deleteFile mt${dspre}_${funcFile}${ext}
-    deleteFile ${upre}mt${dspre}_${funcFile}${ext}
-    deleteFile ${upre}mt${dspre}_${funcFile}_mean_reg${ext}
-    deleteFile k${upre}mt${dspre}_${funcFile}${ext}
-    deleteFile k${upre}mt${dspre}_tmean_mask${ext}
-    deleteFile ${wpre}k${upre}mt${dspre}_${funcFile}${ext}
-    deleteFile ${wpre}k${upre}mt${dspre}_${funcFile}_extents_mask${ext}
-    deleteFile s${wpre}k${upre}mt${dspre}_${funcFile}${smoothing_suffix}${ext}
-    deleteFile fs${wpre}k${upre}mt${dspre}_${funcFile}${smoothing_suffix}${ext}
+    deleteFile t_${funcFile}${ext}
+    deleteFile mt_${funcFile}${ext}
+    deleteFile ${upre}mt_${funcFile}${ext}
+    deleteFile ${upre}mt_${funcFile}_mean_reg${ext}
+    deleteFile k${upre}mt_${funcFile}${ext}
+    deleteFile k${upre}mt_tmean_mask${ext}
+    deleteFile ${wpre}${dspre}k${upre}mt_${funcFile}${ext}
+    deleteFile ${wpre}${dspre}k${upre}mt_${funcFile}_extents_mask${ext}
+    deleteFile s${wpre}${dspre}k${upre}mt_${funcFile}${smoothing_suffix}${ext}
+    deleteFile fs${wpre}${dspre}k${upre}mt_${funcFile}${smoothing_suffix}${ext}
 
-    deleteFile k${upre}mt${dspre}_${funcFile}_Tmin${ext}
-    deleteFile k${upre}mt${dspre}_${funcFile}_Tmin_10pctThr${ext}
-    deleteFile ${upre}mt${dspre}_tmean${ext}
-    deleteFile k${upre}mt${dspre}_tmean${ext}
-    deleteFile ${wpre}k${upre}mt${dspre}_${funcFile}_tmean${ext}
-    deleteFile fs${wpre}k${upre}mt${dspre}_mean_float${ext}
-    deleteFile k${upre}mt${dspre}_${funcFile}_98_2_mask${ext}
-    deleteFile k${upre}mt${dspre}_${funcFile}_98_2_mask_dil1x${ext}
-    deleteFile k${upre}mt${dspre}_${funcFile}_masked${ext}
-    deleteFile s${wpre}k${upre}mt${dspre}_${funcFile}${smoothing_suffix}_usan_size${ext}
+    deleteFile k${upre}mt_${funcFile}_Tmin${ext}
+    deleteFile k${upre}mt_${funcFile}_Tmin_10pctThr${ext}
+    deleteFile ${upre}mt_tmean${ext}
+    deleteFile ${dspre}k${upre}mt_tmean${ext}
+    deleteFile ${wpre}${dspre}k${upre}mt_${funcFile}_tmean${ext}
+    deleteFile fs${wpre}${dspre}kmt_mean_float${ext}
+    deleteFile k${upre}mt_${funcFile}_98_2_mask${ext}
+    deleteFile k${upre}mt_${funcFile}_98_2_mask_dil1x${ext}
+    deleteFile k${upre}mt_${funcFile}_masked${ext}
+    deleteFile s${wpre}${dspre}k${upre}mt_${funcFile}${smoothing_suffix}_usan_size${ext}
 
     #with one-step warp, often get files such as wuktmd where FM unwarping and MNI warp are adjacent
-    deleteFile mt${dspre}_${funcFile}${ext}
-    deleteFile mt${dspre}_${funcFile}_mean_reg${ext}
-    deleteFile kmt${dspre}_${funcFile}${ext}
-    deleteFile kmt${dspre}_tmean_mask${ext}
-    deleteFile ${wpre}${upre}kmt${dspre}_${funcFile}${ext}
-    deleteFile ${wpre}${upre}kmt${dspre}_${funcFile}_extents_mask${ext}
-    deleteFile s${wpre}${upre}kmt${dspre}_${funcFile}${smoothing_suffix}${ext}
-    deleteFile fs${wpre}${upre}kmt${dspre}_${funcFile}${smoothing_suffix}${ext}
+    deleteFile mt_${funcFile}${ext}
+    deleteFile mt_${funcFile}_mean_reg${ext}
+    deleteFile ${dspre}kmt_${funcFile}${ext}
+    deleteFile ${dspre}kmt_tmean_mask${ext}
+    deleteFile ${wpre}${upre}${dspre}kmt_${funcFile}${ext}
+    deleteFile ${wpre}${upre}${dspre}kmt_${funcFile}_extents_mask${ext}
+    deleteFile s${wpre}${upre}${dspre}kmt_${funcFile}${smoothing_suffix}${ext}
+    deleteFile fs${wpre}${upre}${dspre}kmt_${funcFile}${smoothing_suffix}${ext}
 
-    deleteFile k$mt${dspre}_${funcFile}_Tmin${ext}
-    deleteFile k$mt${dspre}_${funcFile}_Tmin_10pctThr${ext}
-    deleteFile mt${dspre}_tmean${ext}
-    deleteFile kmt${dspre}_tmean${ext}
-    deleteFile ${wpre}${upre}kmt${dspre}_${funcFile}_tmean${ext}
-    deleteFile fs${wpre}${upre}kmt${dspre}_mean_float${ext}
-    deleteFile kmt${dspre}_${funcFile}_98_2_mask${ext}
-    deleteFile kmt${dspre}_${funcFile}_98_2_mask_dil1x${ext}
-    deleteFile kmt${dspre}_${funcFile}_masked${ext}
-    deleteFile s${wpre}${upre}kmt${dspre}_${funcFile}${smoothing_suffix}_usan_size${ext}
-
+    deleteFile ${dspre}kmt_${funcFile}_Tmin${ext}
+    deleteFile ${dspre}kmt_${funcFile}_Tmin_10pctThr${ext}
+    deleteFile mt_tmean${ext}
+    deleteFile kmt_tmean${ext}
+    deleteFile ${wpre}${upre}${dspre}kmt_${funcFile}_tmean${ext}
+    deleteFile fs${wpre}${upre}${dspre}kmt_mean_float${ext}
+    deleteFile kmt_${funcFile}_98_2_mask${ext}
+    deleteFile kmt_${funcFile}_98_2_mask_dil1x${ext}
+    deleteFile kmt_${funcFile}_masked${ext}
+    deleteFile s${wpre}${upre}${dspre}kmt_${funcFile}${smoothing_suffix}_usan_size${ext}
 
     #sequential stream
-    deleteFile m${dspre}_${funcFile}${ext}
-    deleteFile m${dspre}_${funcFile}_mean_reg${ext}
-    deleteFile ${upre}m${dspre}_${funcFile}${ext}
-    deleteFile t${upre}m${dspre}_${funcFile}${ext}
-    deleteFile kt${upre}m${dspre}_${funcFile}${ext}
-    deleteFile kt${upre}m${dspre}_tmean_mask${ext}
-    deleteFile ${wpre}kt${upre}m${dspre}_${funcFile}${ext}
-    deleteFile ${wpre}kt${upre}m${dspre}_${funcFile}_extents_mask${ext}
-    deleteFile s${wpre}kt${upre}m${dspre}_${funcFile}${smoothing_suffix}${ext}
-    deleteFile fs${wpre}kt${upre}m${dspre}_${funcFile}${smoothing_suffix}${ext}
+    deleteFile m_${funcFile}${ext}
+    deleteFile m_${funcFile}_mean_reg${ext}
+    deleteFile ${upre}m_${funcFile}${ext}
+    deleteFile t${upre}m_${funcFile}${ext}
+    deleteFile tm_${funcFile}_tmean${ext}
+    deleteFile ${dspre}kt${upre}m_${funcFile}${ext}
+    deleteFile ${dspre}kt${upre}m_tmean_mask${ext}
+    deleteFile ${wpre}${dspre}kt${upre}m_${funcFile}${ext}
+    deleteFile ${wpre}${dspre}kt${upre}m_${funcFile}_extents_mask${ext}
+    deleteFile s${wpre}${dspre}kt${upre}m_${funcFile}${smoothing_suffix}${ext}
+    deleteFile fs${wpre}${dspre}kt${upre}m_${funcFile}${smoothing_suffix}${ext}
 
     deleteFile kt${upre}m${dspre}_${funcFile}_Tmin${ext}
     deleteFile kt${upre}m${dspre}_${funcFile}_Tmin_10pctThr${ext}
@@ -200,26 +199,29 @@ function cleanup_preprocessFunctional {
     deleteFile s${wpre}kt${upre}m${dspre}_${funcFile}${smoothing_suffix}_usan_size${ext}
 
     #with one-step warp, often get files such as wuktmd where FM unwarping and MNI warp are adjacent
-    deleteFile m${dspre}_${funcFile}${ext}
-    deleteFile tm${dspre}_${funcFile}${ext}
-    deleteFile ktm${dspre}_${funcFile}${ext}
-    deleteFile ktm${dspre}_tmean_mask${ext}
-    deleteFile ${wpre}${upre}ktm${dspre}_${funcFile}${ext}
-    deleteFile ${wpre}${upre}ktm${dspre}_${funcFile}_extents_mask${ext}
-    deleteFile s${wpre}${upre}ktm${dspre}_${funcFile}${smoothing_suffix}${ext}
-    deleteFile fs${wpre}${upre}ktm${dspre}_${funcFile}${smoothing_suffix}${ext}
+    deleteFile m_${funcFile}${ext}
+    deleteFile tm_${funcFile}${ext}
+    deleteFile ktm_${funcFile}${ext}
+    deleteFile ${dspre}ktm_${funcFile}${ext}
+    deleteFile ktm_tmean_mask${ext}
+    deleteFile ktm_${funcFile}_tmean_mask${ext}
+    deleteFile ${wpre}${upre}${dspre}ktm_${funcFile}${ext}
+    deleteFile ${wpre}${upre}${dspre}ktm_${funcFile}_extents_mask${ext}
+    deleteFile s${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
+    deleteFile fs${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
 
-    deleteFile ktm${dspre}_${funcFile}_Tmin${ext}
-    deleteFile ktm${dspre}_${funcFile}_Tmin_10pctThr${ext}
-    deleteFile tm${dspre}_tmean${ext}
-    deleteFile ktm${dspre}_tmean${ext}
-    deleteFile ${wpre}${upre}ktm${dspre}_${funcFile}_tmean${ext}
-    deleteFile fs${wpre}${upre}ktm${dspre}_mean_float${ext}
-    deleteFile ktm${dspre}_${funcFile}_98_2_mask${ext}
-    deleteFile ktm${dspre}_${funcFile}_98_2_mask_dil1x${ext}
-    deleteFile ktm${dspre}_${funcFile}_mask${ext}
-    deleteFile ktm${dspre}_${funcFile}_masked${ext}
-    deleteFile s${wpre}${upre}ktm${dspre}_${funcFile}${smoothing_suffix}_usan_size${ext}
+    deleteFile ktm_${funcFile}_Tmin${ext}
+    deleteFile ktm_${funcFile}_Tmin_10pctThr${ext}
+    deleteFile tm_tmean${ext}
+    deleteFile ${dspre}ktm_tmean${ext}
+    deleteFile ${wpre}${upre}${dspre}ktm_${funcFile}_tmean${ext}
+    deleteFile fs${wpre}${upre}${dspre}ktm_mean_float${ext}
+    deleteFile s${wpre}${upre}${dspre}ktm_mean_float${ext}
+    deleteFile ktm_${funcFile}_98_2_mask${ext}
+    deleteFile ktm_${funcFile}_98_2_mask_dil1x${ext}
+    deleteFile ktm_${funcFile}_mask${ext}
+    deleteFile ktm_${funcFile}_masked${ext}
+    deleteFile s${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}_usan_size${ext}
 
     deleteFile ${preSmooth}_mask_allbrain${ext}
     deleteFile ${preSmooth}_mask_edgecorrection${ext}
@@ -228,7 +230,6 @@ function cleanup_preprocessFunctional {
     deleteFile mc_mean_vol_target${ext}
     deleteFile premc_mean_vol${ext}
 
-    deleteFile func_to_struct.mat
     deleteFile func_to_struct_init.mat #6 dof transform prior to BBR
     deleteFile fmap2epi_bbr.mat
     deleteFile struct_to_func.mat
@@ -269,4 +270,19 @@ function cleanup_preprocessFunctional {
 
     deleteFile mot_intens_mask${ext} #used by fsl_motion_outliers
 
+    deleteFile epiref_to_struct_init${ext}
+    deleteFile epiref_to_struct_init.mat
+    deleteFile epiref_to_struct_nounwarp${ext}
+    deleteFile epiref_brain_bias${ext}
+    deleteFile epiref_brain_restore${ext}
+    deleteFile func_to_epiref${ext}
+    deleteFile mc_target_brain_bias${ext}
+    deleteFile mc_target_brain_restore${ext}
+
+    deleteFile dktm_${funcFile}_wavelet_noise.nii.gz
+    deleteFile dkmt_${funcFile}_wavelet_noise.nii.gz
+
+    if [[ "$nuisance_regression" -eq 1 || "$bandpass_filter" -eq 1 ]]; then
+	deleteFile ns${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
+    fi
 }

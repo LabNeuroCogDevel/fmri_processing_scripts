@@ -266,7 +266,7 @@ thiscommandinfo="$0 $@ \n# preprocessFunctional v$(perl -ne 'print $1 if /^#Last
 dotfile=.preprocessfunctional
 
 #exit script if processing complete
-if [[ -f "${dotfile}_complete" && "$@" != *-startover* ]]; then
+if [[ -f "${dotfile}_complete" && "$@" != *-startover* && "$@" != *-cleanup_only* && "$@" != *-help* ]]; then
     echo -e "\n--- preprocessFunctional already complete.\n"
     exit 0
 fi
