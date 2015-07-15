@@ -213,7 +213,7 @@ function cleanup_preprocessFunctional {
     deleteFile ktm_${funcFile}_Tmin${ext}
     deleteFile ktm_${funcFile}_Tmin_10pctThr${ext}
     deleteFile tm_tmean${ext}
-    deleteFile ${dspre}ktm_tmean${ext}
+    deleteFile ktm_${funcFile}_tmean${ext}
     deleteFile ${wpre}${upre}${dspre}ktm_${funcFile}_tmean${ext}
     deleteFile fs${wpre}${upre}${dspre}ktm_mean_float${ext}
     deleteFile s${wpre}${upre}${dspre}ktm_mean_float${ext}
