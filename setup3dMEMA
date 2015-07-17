@@ -162,9 +162,11 @@ if [ "${hasSubj}" != "subj" ]; then
     exit 1
 fi
 
+#copy covariate file locally and make sure it has unix line endings or the search for columns below will fail
+awk '{ sub("\r$", ""); print }' "${covFile}" > .3dMEMA_cov
+
 if [ -z ${covs} ]; then
     echo "-covs not specified, using all covariates from file: ${covFile}"
-    cp "$covFile" .3dMEMA_cov
     #obtain comma-delimited list of all covariates in file (just reads header row)
     covs=$( awk 'NR > 1 { exit }; {gsub(/[ \t]+/, ",")};1' "${covFile}" )
 else
@@ -189,16 +191,23 @@ else
     unset covlist
 
     for field in $covs; do
+	fieldFound=1
 	#echo "searching for, ${field}"	
 	#use awk to pull out column corresponding to header
 	awk -v col="${field}" '
             BEGIN { c=0 }
             NR == 1 { for (i=1;i<=NF;i++) { if ($i==col) { c=i }} }
-            c > 0 { print $c }
-            ' "${covFile}" > ._cov${covnum}
+            c > 0 { print $c } END {exit c==0}
+            ' .3dMEMA_cov > ._cov${covnum} || fieldFound=0
 
-	covlist="$covlist ._cov${covnum}"
+	#make sure a match is found
+	if [ $fieldFound -eq 0 ]; then
+	    echo "Cannot find field: $field in $covFile"
+	    exit 1
+	fi
 	
+	covlist="$covlist ._cov${covnum}"
+
 	covnum=$(( $covnum + 1 ))	
     done
 
@@ -206,7 +215,7 @@ else
 
     #now that we have temp files for each covariate, paste together the columns
     paste $covlist > .3dMEMA_cov
-      
+    
     rm $covlist
 
 fi
