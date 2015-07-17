@@ -151,6 +151,9 @@ function parse_args {
 	    cleanup=1
 	elif [ $1 = -startover ]; then
 	    rm_completefiles
+	elif [ $1 = -help ]; then
+	    printHelp
+	    exit 0
 	elif [ $1 = -resume ]; then
 	    echo "Resuming preprocessing using existing settings."
 	else
