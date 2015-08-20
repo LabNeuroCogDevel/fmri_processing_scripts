@@ -388,7 +388,7 @@ function parse_args {
 	    shift 1
 	elif [ $1 = -verbose ]; then
 	    verbose=1
-	    set -x
+	    set -xv
 	    shift 1
 	elif [ $1 = -warpcoef ]; then
 	    warpCoef="${2}"
