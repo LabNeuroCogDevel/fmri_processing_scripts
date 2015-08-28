@@ -13,10 +13,11 @@ outFile=cbar.pdf
 while [ -n "$1" ]; do
     case $1 in
 	-pal_file)             palFile="$2";            shift 2;;  # name of AFNI palette file
-        -width)                width="$2";              shift 2;;  # width in  
-	-height)               height="$2";             shift 2;;  # comma-delimited list of subjects to exclude
-	-out_file)             outFile="$2";            shift 2;;  #
+        -width)                width="$2";              shift 2;;  # width of output
+	-height)               height="$2";             shift 2;;  # height of output
+	-out_file)             outFile="$2";            shift 2;;  # name of output file (pdf or png tested at the moment)
 	-units)                units="$2";              shift 2;;  # units of measurement for output file (currently px or in)
+	-dpi)                  dpi="$2";                shift 2;;  # pixel density of output
 	*) echo -e "\n[Unrecognized option '$1']\n";
 	   exit 1;;
     esac
