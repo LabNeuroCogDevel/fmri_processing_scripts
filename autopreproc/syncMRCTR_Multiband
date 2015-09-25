@@ -1,0 +1,26 @@
+#!/bin/bash
+
+set -e
+#setup master connection to meson
+ls $HOME/.ssh/controlmasters/*WPC-6290* 2>/dev/null 1>/dev/null || ./meson.expect
+
+timestamp=$(date +%Y%m%d_%H%M)
+
+if [[ $# -ne 2 ]]; then
+    echo "expect two parameters: <meson source dir> <local target dir>"
+    exit 1
+fi
+
+src="${1%/}/" #for consistency, remove any trailing slash, then add trailing slash
+dest="${2%/}" #destination dir should not have trailing slash!
+
+set -x
+rsync --recursive --verbose --perms --times \
+    --filter='-p .DS_Store' \
+    --filter="- /.DocumentRevisions-V100/" \
+    --filter="- /.Spotlight-V100/" \
+    --filter="- /.Trashes/" \
+    --filter="- /.TemporaryItems/" \
+    meson:${src} \
+    ${dest}
+set +x

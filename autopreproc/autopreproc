@@ -1,0 +1,99 @@
+#!/bin/bash
+
+if [[ $# -eq 0 ]]; then
+    echo "Expect one or more cfg files as input for preprocessing"
+    exit 1
+fi
+
+#Explicit MATLAB location
+PATH=/Applications/MATLAB_R2014b.app/bin:${PATH}
+
+# FSL Configuration
+FSLDIR=/opt/ni_tools/fsl
+PATH=${FSLDIR}/bin:${PATH}
+. ${FSLDIR}/etc/fslconf/fsl.sh
+
+#AFNI Configuration
+PATH=/opt/ni_tools/afni:${PATH}
+
+#local ni scripts directory
+PATH=/opt/ni_tools/fmri_processing_scripts:${PATH}
+
+#prefer homebrew binaries (esp. rsync 3.0+)
+PATH=/usr/local/bin:${PATH}
+
+export FSLDIR PATH
+
+export DYLD_FALLBACK_LIBRARY_PATH=/opt/X11/lib:/opt/ni_tools/afni
+
+function resetcfg {
+    protocol=
+    meson_mr_root=
+    meson_mb_root=
+    loc_root=
+    loc_mrraw_root=
+    loc_mrproc_root=
+    loc_mb_root=
+    meson_subid_regex=
+    mprage_dirpattern=
+    preprocessed_dirname=
+    paradigm_name=
+    n_expected_funcruns=
+    gre_fieldmap_dirpattern=
+    fieldmap_cfg=
+    preproc_call=
+}
+
+njobs=8 #default to 8 parallel jobs
+
+scriptDir=$( dirname "$0" )
+cd "${scriptDir}"
+echo ""
+echo "---------------"
+echo "Current directory is: $PWD"
+echo "Starting autopreproc at: $(date +%Y%m%d_%H%M)"
+
+while [ _$1 != _ ] ; do
+    if [ $1 = -njobs ]; then
+	njobs="$2"
+	shift 2
+    else
+	#process config file
+
+	resetcfg #remove existing protocol config variables
+	[ ! -f "$1" ] && echo "cfg file $1 does not exist" && exit 1
+	source "$1" #bring config variables into scope
+
+	echo "---"
+	echo "Processing config file: $1"
+	echo ""
+
+	if [ ${sync_mb_data} -eq 1 ]; then
+	    #1) rsync reconstructed multiband directory
+	    echo "./syncMRCTR_Multiband \"${meson_mb_root}\" \"${loc_mb_root}\""
+	    ./syncMRCTR_Multiband "${meson_mb_root}" "${loc_mb_root}"
+
+	    if [ "$protocol" == "WPC-5640" ]; then
+		#for 5640 (multimodal), multiband recon directory naming is slightly different from dicoms
+		#generate symlinks that make them conformable so that preprocessAll.R can match MB recon with raw MR.
+		./link_ids.R "${loc_mb_root}"
+	    fi
+	fi
+	
+	#2) sync MR_Raw directory (Dicoms)
+	echo "./syncMRCTR_MRRAW \"${meson_mr_root}\" \"${loc_mrraw_root}\" \"${meson_subid_regex}\""
+	./syncMRCTR_MRRAW "${meson_mr_root}" "${loc_mrraw_root}" "${meson_subid_regex}"
+
+	#3) preprocess all data in mr directory: R script relies on environment variables sourced above for configuration
+	echo "./preprocessAll.R $njobs"
+	./preprocessAll.R $njobs
+
+	echo "End config: $1"
+	echo "---"
+	echo ""
+	shift 1
+    fi
+done
+
+echo "Finishing autopreproc at: $(date +%Y%m%d_%H%M)"
+echo "---------------"

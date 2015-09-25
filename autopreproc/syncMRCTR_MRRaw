@@ -1,0 +1,81 @@
+#!/bin/bash
+
+source ~/.bashrc
+
+set -ex
+#setup master connection to meson
+ls $HOME/.ssh/controlmasters/*WPC-6290* 2>/dev/null 1>/dev/null || ./meson.expect
+
+if [[ $# -ne 3 ]]; then
+    echo "Expect three parameters: <meson data directory> <local output directory> <expected subject id regex>"
+    exit 1
+fi
+
+meson_dir="${1}"
+local_dir="${2}"
+subid_regex="${3}"
+
+[ ! -d "${local_dir}" ] && echo "Cannot find local dir: ${local_dir}" && exit 1
+
+[ ! -f "${local_dir}/mrraw_dircache" ] && touch "${local_dir}/mrraw_dircache" #create empty directory cache if not in place
+
+#obtain list of subject directories on meson
+ssh meson "find ${meson_dir} -mindepth 2 -maxdepth 2 -type d" | grep -Ev "(multiband|shimtest)" | grep -E "${subid_regex}" | sort > "${local_dir}/mrraw_dirlist"
+
+#compare listing from ssh with cached list of directories already processed
+comm -23 <(sort "${local_dir}/mrraw_dirlist") <(sort "${local_dir}/mrraw_dircache") > "${local_dir}/newsubs"
+
+#process subjects to ignore
+if [[ -f "${local_dir}/.autopreproc_ignore" && $( awk 'END{print NR}' "${local_dir}/newsubs" ) -gt 0 ]]; then
+    #use sed to remove trailing white space or comments beginning with pound
+    grep -v -f <(sed -E -e 's/[[:space:]]*$|[[:space:]]*#.*$//' "${local_dir}/.autopreproc_ignore") "${local_dir}/newsubs" > "${local_dir}/newsubs_filt" || touch "${local_dir}/newsubs_filt" #grep returns exit 1 on no match, so create empty file
+    grep -f <(sed -E -e 's/[[:space:]]*$|[[:space:]]*#.*$//' "${local_dir}/.autopreproc_ignore") "${local_dir}/newsubs" > "${local_dir}/newsubs_match" || touch "${local_dir}/newsubs_match"
+
+    if [ $( awk 'END{print NR}' "${local_dir}/newsubs_match" ) -gt 0 ]; then
+	echo "The following subjects were filtered based on .autopreproc_ignore"
+	sed -e 's/^/   /' "${local_dir}/newsubs_match" #white space pad beginning of line
+	echo ""
+	mv -f "${local_dir}/newsubs_filt" "${local_dir}/newsubs"
+	rm -f "${local_dir}/newsubs_match"
+    else
+	rm -f "${local_dir}/newsubs_match" "${local_dir}/newsubs_filt"
+    fi
+fi
+
+nnew=$( awk 'END{print NR}' "${local_dir}/newsubs" )
+if [ $nnew -gt 0 ]; then
+
+    #loop over any new subjects to process
+    while read dirname
+    do
+	echo "Processing $dirname"
+	nclock=($( ssh -n meson "find $dirname -mindepth 1 -maxdepth 1 -iname \"*clock*\" -type d" ))
+	
+	if [ ${#nclock[@]} -gt 0 ]; then
+	    if [ ! -d "${local_dir}/$( basename $dirname )" ]; then
+		rsync --recursive --verbose --perms --times \
+		    --filter='-p .DS_Store' \
+		    --filter="- /.DocumentRevisions-V100/" \
+		    --filter="- /.Spotlight-V100/" \
+		    --filter="- /.Trashes/" \
+		    --filter="- /.TemporaryItems/" \
+		    "meson:${dirname}/" \
+		    "${local_dir}/$( basename $dirname )"
+	    else
+		echo "   ${local_dir}/$( basename $dirname ) exists"
+	    fi
+	else
+	    echo "   Not a clock scan"
+	fi
+	#echo $?
+    done < "${local_dir}/newsubs"
+
+    #add processed subjects to cache
+    cat "${local_dir}/newsubs" >> "${local_dir}/mrraw_dircache"
+
+else
+    echo "No new subjects detected on MRRC server."
+fi
+
+rm -f "${local_dir}/newsubs"
+rm -f "${local_dir}/mrraw_dirlist" #cleanup dir listing from ssh
