@@ -369,4 +369,11 @@ cormat <- genCorrMat(as.data.frame(roiavgmat), method=corr_method, fisherz=fishe
 stopCluster(clusterobj)
 
 message("Writing correlations to: ", out_file)
-write.table(cormat, file=out_file, col.names=FALSE, row.names=FALSE, na=na_string)
+if (grepl(".*\\.gz$", out_file, perl=TRUE)) {
+    #write compressed
+    gzf <- gzfile(out_file, "w")
+    write.table(cormat, file=gzf, col.names=FALSE, row.names=FALSE, na=na_string)
+    close(gzf)    
+} else {
+    write.table(cormat, file=out_file, col.names=FALSE, row.names=FALSE, na=na_string)
+}

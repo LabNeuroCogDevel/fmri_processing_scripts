@@ -37,7 +37,7 @@ function dicom_to_nifti {
 	    #look for TR and slice acquisition order in Dicom
 	    firstDicom=$( find . -iname "${dicomPattern}" \( -type f -or -type l \) | head -1 )
 	    dicomHdr=$( dicom_hdr -sexinfo "${firstDicom}" )
-	    detectTR=$( echo "${dicomHdr}" | grep "0018 0080.*ACQ Repetition Time" | perl -pe 's/.*ACQ Repetition Time\/\/(\d+)$/\1/' )
+	    detectTR=$( echo "${dicomHdr}" | grep "0018 0080.*ACQ Repetition Time" | perl -pe 's:.*ACQ Repetition Time//(\d+)\s*$:\1:' )
 	    detectTR=$( echo "scale=3; ${detectTR}/1000" | bc ) #convert to seconds from milliseconds
 	    detectSliceOrder=$( echo "${dicomHdr}" | grep "sSliceArray.ucMode" | perl -pe 's/sSliceArray.ucMode\s+=\s+(\dx\d)$/\1/' )
 
