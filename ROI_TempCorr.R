@@ -9,22 +9,23 @@ printHelp <- function() {
       "  -out_file <filename for output>: The file to be output containing correlations among ROIs.",
       "",
       "Optional arguments are:",
-      "  -roi_reduce <pca|median|mean|huber>: Method to obtain a single time series for voxels within an ROI. Default: pca",
-      "      pca takes the first eigenvector within the ROI, representing maximal shared variance",
-      "      median uses the median within each ROI",
-      "      mean uses the mean within each ROI",
-      "      huber uses the huber robust estimate of the center of the distribution (robust to outliers)",
-      "  -corr_method <pearson|spearman|robust|mcd|weighted|donostah|M|pairwiseQC|pairwiseGK>: Method to compute correlations among time series. Default: robust",
+      "  -corr_method <pearson|spearman|robust|mcd|weighted|donostah|M|pairwiseQC|pairwiseGK>: Method to compute correlations among time series. Default: pearson",
       "      pearson is the standard Pearson correlation",
       "      spearman is Spearman correlation based on ranks",
       "      kendall is Kendall's tau correlation (also based on ranks, but with somewhat better statistical properties than Spearman)",
       "      robust uses the covRob function from the robust package with estim=\"auto\" to obtain robust estimate of correlation (reduce sensitivity to outliers)",
       "      mcd, weighted, donostah, M, pairwiseQC, pairwiseGK are different robust estimators of correlation. See ?covRob in the robust package for details.",
-      "  -fisherz: Apply Fisher's z transformation (arctanh) to normalize correlation coefficients. Not applied by default.",
+      "  -roi_reduce <pca|median|mean|huber>: Method to obtain a single time series for voxels within an ROI. Default: pca",
+      "      pca takes the first eigenvector within the ROI, representing maximal shared variance",
+      "      median uses the median within each ROI",
+      "      mean uses the mean within each ROI",
+      "      huber uses the huber robust estimate of the center of the distribution (robust to outliers)",
       "  -brainmask <3D file>: A 0/1 mask file defining voxels in the brain. This will be applied to the ROI mask before computing correlations.",
-      "  -njobs <n>: Number of parallel jobs to run when computing correlations. Default: 4.",
       "  -censor <1D file>: An AFNI-style 1D censor file containing a single column of 0/1 values where 0 represents volumes to be censored (e.g., for motion scrubbing)",
+      "  -fisherz: Apply Fisher's z transformation (arctanh) to normalize correlation coefficients. Not applied by default.",
+      "  -njobs <n>: Number of parallel jobs to run when computing correlations. Default: 4.",
       "  -na_string: Character string indicating how to represent missing correlations in output file. Default NA.",
+      "  -ts_out_file <filename for time series output>: Output a file containing the average time series for each region before computing correlations.",
       "",
       "If the -ts file does not match the -rois file, the -ts file will be resampled to match the -rois file using 3dresample. This requires that the images be coregistered,",
       "  in the same stereotactic space, and have the same grid size.",
@@ -54,11 +55,13 @@ if (length(args) == 0L) {
 
 #defaults
 njobs <- 4
-out_file <- "corr_rois.txt" 
+out_file <- "corr_rois.txt"
+ts_out_file <- ""
 fname_censor1D <- NULL
-corr_method <- "robust"
+corr_method <- "pearson"
 roi_reduce <- "pca"
 fisherz <- FALSE
+
 na_string <- "NA"
 
 argpos <- 1
@@ -73,6 +76,9 @@ while (argpos <= length(args)) {
     stopifnot(file.exists(fname_roimask))
   } else if (args[argpos] == "-out_file") {
     out_file <- args[argpos + 1] #name of file to be written
+    argpos <- argpos + 2
+  } else if (args[argpos] == "-ts_out_file") {
+    ts_out_file <- args[argpos + 1] #name of file to be written
     argpos <- argpos + 2
   } else if (args[argpos] == "-censor") {
     fname_censor1D <- args[argpos + 1] #name of censor file
@@ -282,15 +288,6 @@ setDefaultClusterOptions(master="localhost", port=10290)
 clusterobj <- makeSOCKcluster(njobs)
 registerDoSNOW(clusterobj)
 
-
-#should really apply censor here to entire 4d volume
-if (length(censorVols) > 0L) {
-  message("Censoring volumes ", paste0(censorVols, collapse=", "), " based on ", fname_censor1D)
-  goodVols <- 1:dim(rsproc)[4]
-  goodVols <- goodVols[-censorVols]
-  rsproc <- rsproc[,,,goodVols] #keep orig in memory? 
-}
-
 #to reduce RAM overhead of having to copy rsproc_censor to each worker, obtain list of vox x time mats for rois
 
 #even though this seems more elegant, it is much slower (400x!) than the use of 4d lookup and reshape below
@@ -363,8 +360,26 @@ roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, 
 colnames(roiavgmat) <- paste0("roi", maskvals)
 rownames(roiavgmat) <- paste0("vol", 1:nrow(roiavgmat))
 
+##apply censoring to resulting time series
+censorvec <- rep(0, nrow(roiavgmat))
+if (length(censorVols) > 0L) {
+    message("Censoring volumes ", paste0(censorVols, collapse=", "), " based on ", fname_censor1D)
+    goodVols <- 1:nrow(roiavgmat)
+    goodVols <- goodVols[-censorVols]
+    censorvec[censorVols] <- 1
+    roiavgmat_censored <- roiavgmat[goodVols,]
+} else {
+    roiavgmat_censored <- roiavgmat
+}
+
+#output ts file if requested
+if (nchar(ts_out_file) > 0L) {
+    df <- cbind(censor=censorvec, roiavgmat)
+    write.table(df, file=ts_out_file, col.names=TRUE, row.names=TRUE)
+}
+
 message("Computing correlations among ROI times series using method: ", ifelse(corr_method=="auto", "robust", corr_method))
-cormat <- genCorrMat(as.data.frame(roiavgmat), method=corr_method, fisherz=fisherz)
+cormat <- genCorrMat(as.data.frame(roiavgmat_censored), method=corr_method, fisherz=fisherz)
 
 stopCluster(clusterobj)
 
