@@ -11,6 +11,33 @@
 #   fm_phase, fm_magnitude, funcdir (optional)
 # and functions
 #   dimon, rel
+
+#
+# most likely use case is where phase and mag are specified as path/to/fm/MR*
+# in this case:
+#   look for path/to/fm/.fieldmap_* to read location of nii.gz
+#   otherwise reconstruct from MR*
+#
+# if phase and mag are given as path/to/fm/thing.nii.gz files,
+#   path/to/fm/.fieldmap_* WILL STILL BE QUERIED and could overwrite whats given
+#
+#
+####### 
+## To use outside of preprocessFunctional:
+## 
+##  ## get functions
+##  mhdir=fmri_processing_scripts/preproc_functions
+##  source $mhdir/helper_functions
+##  source $mhdir/fieldmap_dicom_nifti
+## 
+##  ## set expected variables
+##  logFile="$(pwd)/FM.log"
+##  fm_magnitude='mrmag/MR*'
+##  fm_phase='mrphase/MR*'
+## 
+##  ## run
+##  fieldmap_dicom_nifti || return 1
+#
 ####
 
 # returns true (0) if file exists/is MRI
@@ -61,18 +88,27 @@ handle_mrs(){
   
   #convert dicom to nifti using Dimon
   # if we dont already have our file
-  ! imtest_bash $mr_name && dimon "$mr_dcmpatt" $mr_name 
-
-  # did dimon work?
   if ! imtest_bash $mr_name; then
-    rel "ERROR: cannot make $mr_name from $mr_dcmpatt in $(pwd); $FUNCNAME $@" c && exit 1
+   rel "Converting fieldmap $mr_name image to NIfTI." c
+   dimon "$mr_dcmpatt" $mr_name 
+   # did dimon work?
+   if ! imtest_bash $mr_name; then
+     rel "ERROR: cannot make $mr_name from $mr_dcmpatt in $(pwd); $FUNCNAME $@" c 
+     remove_fm_locks
+     return 1
+   fi
   fi
+
+
+  #
+  # presumably we can only get here if what is $3 doesn't exist
+  #
 
   #echo nifti location into phase directory for other processes to see
   # when we have a third argument
   [ -n "$3" ] && echo "$(pwd)/$mr_name" > $3
 
-  if ls $mr_dcmpatt >/dev/null &2>/dev/null; then
+  if ls $mr_dcmpatt >/dev/null 2>/dev/null; then
     #TODO: if they are all links, remove isntead of archive
 
     #archive dicoms if we have any
@@ -82,35 +118,53 @@ handle_mrs(){
 }
 
 
-# if we have '*' in our fieldma file/pattern base name
+# collect open locks so we can close them on a bad exit
+FMLOCKLIST=()
+
+# if we have '*' in our fieldmap file/pattern base name
 #  1) wait for any lock on the directory
 #  2a) if we have a flag, send it to the func directory (when we have funcdir)
 #  2b) create a lock (b/c we are about to create the nii)
 # OPTIONAL GLOBAL: "$funcdir", copy dotfile there too
 # otherwise dot files stay inside phase and mag directories
-check_or_lock_fmdir() {
- [ -z "$2" ] && echo "$FUNCNAME: want 3 input args, got '$@'" && return 1
- fmbase="$1" # nii or MR* glob
+# NB. expect to run lock from base directory of whatever field map we are locking
+wait_or_lock_fmdir() {
+ [ -z "$2" ] && echo "$FUNCNAME: want 3 input args (base,pat,type), got '$@'" && return 1
+ fmpat="$1"  # nii or MR* glob
  fmtype="$2" # phase or magnitude
- fm_f_flag=".fieldmap_$fmtype"  
- fm_f_progress=".fm${fmtype}_inprogress"
- # EG
- #  .fieldmap_phase
+
+ fmbase="$(pwd)" # base directory is where the function is run from
+
+
+
+ fm_f="$fmbase/.fieldmap_$fmtype"    # where nii location is stored
+ lockfile="$fmbase/.fm${fmtype}_inprogress"
+
+ # eg
+ # .fieldmap_phase
  # .fmphase_inprogress
 
- # if phasebase is a glob (has a * in it)
- if [[ "$fm_phasebase" =~ .*\*.* && ! -f "$fm_f_flag" ]]; then
-   #if the lock file is present, sleep until complete
-   wait_for_fm_lock "${fm_phasedir}/$fm_f_progress"
+ #randomly sleep 0-2 seconds to avoid lock file collisision
+ #Apr2014: I'm not really sure if this is necessary... problems may have emerged from running fslreorient2std simultaneously on originals...
+ #Still, for 2 seconds, I'll keep it.
+ sleep $(echo "scale=9; $RANDOM/32767*2"|bc)s
 
-   if [ -f "${fm_phasedir}/$fm_f_flag" -a -n "$funcdir" ]; then
-       #processing of fieldmap phase already completed elsewhere
-       #simply copy this file to the functional directory
-       cp "${fm_phasedir}/$fm_f_flag" "${funcdir}/$fm_f_flag"
-   else
-       date +%s > "${fm_phasedir}/$fm_f_progress" #lock for processing
+ # if phasebase is a glob (has a * in it)
+ if [[ "$fmpat" =~ .*\*.* && ! -f "$fm_f" ]]; then
+   #if the lock file is present, sleep until complete
+   wait_for_fm_lock $lockfile 
+
+   if [ ! -f "$fm_f" ]; then
+       LOCKLIST=(${FMLOCKLIST[@]} $lockfile)
+       date +%s > $lockfile #lock for processing
    fi
  fi
+}
+
+remove_fm_locks(){
+ for lfile in ${FMLOCKLIST[@]}; do
+   [ ! -r "$lfile" ] && rm "$lfile"
+ done
 }
 
 # make a directory, unless its already there
@@ -138,7 +192,7 @@ fieldmap_dicom_nifti() {
     # check inputs
     [ -z "$fm_phase" -o -z "$fm_magnitude" ] && 
        rel "ERROR: no phase or magnitude '$fm_phase' '$fm_magnitude'" c && 
-       exit 1
+       return 1
 
     #handle dicom-to-nifti conversion of phase and magnitude
     local fm_phasedir=$(realpath -s $( dirname "$fm_phase" ))
@@ -147,23 +201,15 @@ fieldmap_dicom_nifti() {
     local fm_magnitudedir=$(realpath -s $( dirname "$fm_magnitude" ))
     local fm_magnitudebase=$( basename "$fm_magnitude" )
 
-    #randomly sleep 0-2 seconds to avoid lock file collisision
-    #Apr2014: I'm not really sure if this is necessary... problems may have emerged from running fslreorient2std simultaneously on originals...
-    #Still, for 2 seconds, I'll keep it.
-    sleep $(echo "scale=9; $RANDOM/32767*2"|bc)s
-
-
-    ##### LOCKS
-
-    check_or_lock_fmdir "$fm_phasebase" "phase"
-    check_or_lock_fmdir "$fm_magnitudebase" "magnitude"
-
-
     ##### INPUT SANITY CHECK
+    # when we dont have our flag files (with location of nifti)
     #check whether the number of dicoms in the magnitude directory is 2x the phase directory.
     #if not, switch phase and magnitude.
-    if [[ "$fm_phasebase" =~ .*\*.* && "$fm_magnitudebase" =~ .*\*.* && 
-		! -f ".fieldmap_phase" && ! -f ".fieldmap_magnitude" ]]; then
+    if [[ "$fm_phasebase" =~ .*\*.* && 
+          "$fm_magnitudebase" =~ .*\*.* && 
+          ! -f "$fm_phasedir/.fieldmap_phase" &&
+          ! -f "$fm_magnitudedir/.fieldmap_magnitude" ]]; then
+
 	cd $fm_phasedir
 	phase_ndicoms=$( ls $fm_phasebase | wc -l )
 	cd - > /dev/null
@@ -177,9 +223,9 @@ fieldmap_dicom_nifti() {
 	    fm_magnitude="$fm_phase"
 	    fm_phase="$tmp_mag"
 
-	    local fm_phasedir=$( dirname "$fm_phase" ) #redefine the dir and base variables
+	    local fm_phasedir=$(realpath -s $( dirname "$fm_phase" )) #redefine the dir and base variables
 	    local fm_phasebase=$( basename "$fm_phase" ) 
-	    local fm_magnitudedir=$( dirname "$fm_magnitude" )
+	    local fm_magnitudedir=$(realpath -s $( dirname "$fm_magnitude" ))
 	    local fm_magnitudebase=$( basename "$fm_magnitude" )
 
 	    rel "You seem to have reversed the directories for the fieldmap phase and magnitude images." c
@@ -190,17 +236,17 @@ fieldmap_dicom_nifti() {
     fi
 
     ##### PHASE
+    cd $fm_phasedir
     if [ -f ".fieldmap_phase" ]; then
+	rel "Ignoring provided fm_phase '$fm_phase'" c
 	read fm_phase < .fieldmap_phase
 	rel "Using fieldmap phase $fm_phase from file $fm_phasedir/.fieldmap_phase" c
 
     elif [[ "$fm_phase" =~ .*\*.* ]]; then
-	rel "Converting fieldmap phase image to NIfTI." c
+        wait_or_lock_fmdir "$fm_phasebase" "phase"
+
 	rel "Assuming all files in $fm_phasedir belong to phase image." c
-	
-	cd $fm_phasedir
-        handle_mrs "$fm_phasebase" fm_phase "${fm_phasedir}/.fieldmap_phase"
-	cd - > /dev/null
+        handle_mrs "$fm_phasebase" fm_phase ".fieldmap_phase"
 
 	fm_phase="${fm_phasedir}/fm_phase" #update fm_phase to point to NIfTI.
 
@@ -208,18 +254,28 @@ fieldmap_dicom_nifti() {
     else
      rel "Using fm_phase directly from command inputs ($fm_phase)" c
     fi
+    cd - > /dev/null
 
     ##### MAGNITUDE
+    local wdBeforeMag=$(pwd)
+    cd $fm_magnitudedir
     if [ -f ".fieldmap_magnitude" ]; then
+	rel "Ignoring provided fm_magnitude '$fm_phase'" c
 	read fm_magnitude < .fieldmap_magnitude
 	rel "Using fieldmap magnitude $fm_magnitude from file $fm_magnitudedir/.fieldmap_magnitude" c
+
     elif [[ "$fm_magnitude" =~ .*\*.* ]]; then
-	rel "Converting fieldmap magnitude images to NIfTI." c
-	rel "Testing for unique TEs in $fm_magnitudedir." c
+        wait_or_lock_fmdir "$fm_magnitudebase" "magnitude"
+	rel "Testing for unique TEs in $(pwd)/$fm_magnitudebase" c
 	
-	cd $fm_magnitudedir
 
 	local dcmfiles=($( ls $fm_magnitudebase ))
+        if [ "${#dcmfiles[@]}" -lt 1 ]; then
+          rel "ERROR: no magnitude files matching $(pwd)/$fm_magnitudebase" c 
+          remove_fm_locks
+          return 1
+        fi
+
 	local echonum=($( dicom_hdr $fm_magnitudebase | grep -i "ACQ Echo Number" | perl -pe 's:.*ACQ Echo Number//(\d+).*:\1:' ))
 	local uniqechos=($( printf "%s\n" "${echonum[@]}" | sort -u )) #need to print newlines after each echo so sort recognizes as multiple lines
 	local numechos=${#uniqechos[@]}
@@ -229,7 +285,7 @@ fieldmap_dicom_nifti() {
 	    # dimon "$fm_magnitudebase" fm_magnitude #convert dicom to nifti using Dimon
 	    # rel "tar cvzf fm_magnitude_dicom.tar.gz $( ls $fm_magnitudebase )" && rel "rm -f ./$fm_magnitudebase" #archive dicoms
             # echo "${fm_magnitudedir}/fm_magnitude" > "${fm_magnitudedir}/.fieldmap_magnitude" #copy into magnitude directory for other processes to see
-            handle_mrs "$fm_magnitudebase" fm_magnitude "${fm_magnitudedir}/.fieldmap_magnitude"
+            handle_mrs "$fm_magnitudebase" fm_magnitude ".fieldmap_magnitude"
 
 	    fm_magnitude="${fm_magnitudedir}/fm_magnitude" #update fm_magnitude to point to NIfTI.
 
@@ -253,7 +309,7 @@ fieldmap_dicom_nifti() {
 	    cd - > /dev/null
 
 	    cd echo1/
-            handle_mrs "$fm_magnitudebase" fm_magnitude_echo1 "${fm_magnitudedir}/.fieldmap_magnitude" 
+            handle_mrs "$fm_magnitudebase" fm_magnitude_echo1 "$fm_magnitudedir/.fieldmap_magnitude" 
 	    cd - > /dev/null
 
             #update fm_magnitude to point to NIfTI.
@@ -262,22 +318,27 @@ fieldmap_dicom_nifti() {
 
 	else
 	    rel "ERROR: Number of echos detected is: $numechos. Unsure what to do!" c
-	    exit 1
+            # clear lock
+            remove_fm_locks
+	    return 1
 	fi
-
-	[ -n "$funcdir" ] && cd "$funcdir" > /dev/null
 
     # we were given fm_mag as a file (without a '*') that has not yet been copied into .fieldmap_magnitude
     else
      rel "Using fm_magnitude directly from command inputs ($fm_magnitude)" c
     fi
+    cd $wdBeforeMag
+
+
+    #### Remove locks
+    remove_fm_locks
+
 
     ######## TEST OUTPUTS (or inputs if given a file and not a pattern)
-
     for fv in fm_phase fm_magnitude; do
-     if imtest_bash "${!fv}"; then 
+     if ! imtest_bash "${!fv}"; then 
        rel "ERROR in $FUNCNAME: $fv '${!fv}' is not an image file!" c
-       exit 1
+       return 1
      fi
     done
 
@@ -286,15 +347,17 @@ fieldmap_dicom_nifti() {
     # we hit this even if we just read from these files -- this will update the timestamp
     #  assunme if we are running again, that's okay
     if [ -n "$funcdir" ]; then 
-        echo $fm_phase     > "${funcdir}/.fieldmap_phase" 
-        echo $fm_magnitude > "${funcdir}/.fieldmap_magnitude"
+        echo $(remove_ext $fm_phase    ) > "${funcdir}/.fieldmap_phase" 
+        echo $(remove_ext $fm_magnitude) > "${funcdir}/.fieldmap_magnitude"
     else
-      rel "WARNING: $FUNCNAME does not have access to 'funcdir' variable, thats weird" c
+      #TODO check $0 =~ preprocessFunctional
+      rel "WARNING: $FUNCNAME does not have access to 'funcdir' variable, thats bad if this is inside preprocessFunctional" c
     fi
 
     # give fm_phase and fm_mag back so we can read in if we want
     #   dont do this because we are modifying globals
-    # echo $fm_phase $fm_magnitude 
+    # echo $fm_phase $fm_magnitude
+    rel "Leaving $FUNCNAME with phase,mag: '$fm_phase','$fm_magnitude'" c
 
 
 
