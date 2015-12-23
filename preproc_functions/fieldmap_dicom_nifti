@@ -81,7 +81,7 @@ wait_for_fm_lock() {
 #  rel "tar cvzf fm_phase_dicom.tar.gz $( ls $fm_phasebase )" && rel "rm -f ./$fm_phasebase" #archive dicoms
 #  echo "${fm_phasedir}/fm_phase" > "${fm_phasedir}/.fieldmap_phase" #echo nifti location into phase directory for other processes to see
 handle_mrs(){
-  [ -z "$2" ] && rel "$FUNCNAME: expect mr_dicompatt and mr_name, got '$@'" c && return 1
+  [ -z "$2" ] && rel "$FUNCNAME: expect mr_dcmpatt and mr_name, got '$@'" c && return 1
   local mr_dcmpatt="$1"
   local mr_name="$2"
 
@@ -101,17 +101,19 @@ handle_mrs(){
 
 
   #
-  # presumably we can only get here if what is $3 doesn't exist
+  # presumably we can only get here if 
+  # the file in argument $3 doesn't already exist
   #
 
   #echo nifti location into phase directory for other processes to see
   # when we have a third argument
   [ -n "$3" ] && echo "$(pwd)/$mr_name" > $3
 
-  if ls $mr_dcmpatt >/dev/null 2>/dev/null; then
-    #TODO: if they are all links, remove isntead of archive
+  # remove all that are links
+  find -maxdepth 1 -type l -iname "$mr_dcmpatt" | xargs -n1 unlink
 
-    #archive dicoms if we have any
+  # archive dicoms if we have any
+  if ls $mr_dcmpatt >/dev/null 2>/dev/null; then
     rel "tar cvzf ${mr_name}_dicom.tar.gz $( ls $mr_dcmpatt)" && rel "rm -f ./$mr_dcmpatt" 
   fi
 
