@@ -157,7 +157,7 @@ wait_or_lock_fmdir() {
    wait_for_fm_lock $lockfile 
 
    if [ ! -f "$fm_f" ]; then
-       LOCKLIST=(${FMLOCKLIST[@]} $lockfile)
+       FMLOCKLIST=(${FMLOCKLIST[@]} $(realpath -s $lockfile))
        date +%s > $lockfile #lock for processing
    fi
  fi
@@ -165,6 +165,7 @@ wait_or_lock_fmdir() {
 
 remove_fm_locks(){
  for lfile in ${FMLOCKLIST[@]}; do
+   rel "Removing lock $lfile" c
    [ ! -r "$lfile" ] && rm "$lfile"
  done
 }
