@@ -522,7 +522,7 @@ fi
 
 #create png to check registration
 #invwarp -w "${T1}_warpcoef" -o warpcoef_inv -r "${T1}_bet"
-applywarp --ref="$unbettedRefBrain" --in="${T1}_bet" --warp="${T1}_warpcoef" --interp=spline --out=mprage_bet_warped
+applywarp --ref="$unbettedRefBrain" --mask="$refMask" --in="${T1}_bet" --warp="${T1}_warpcoef" --interp=spline --out="${T1}_bet_warped"
 
 #note: first input to slicer is rendered image, second is overlay
 slicer mprage_bet_warped "$bettedRefBrain" -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \

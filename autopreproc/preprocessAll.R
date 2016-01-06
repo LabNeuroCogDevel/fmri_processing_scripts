@@ -111,14 +111,10 @@ f <- foreach(d=mprage_dirs, .inorder=FALSE) %dopar% {
     if (file.exists(".mprage_complete")) {
         return("complete") #skip completed mprage directories
     } else {
-        args <- "-delete_dicom archive -template_brain MNI_2mm -cleanup -template_brain MNI_2mm"
-        if (file.exists("mprage.nii.gz")) {
-            args <- "-delete_dicom archive -template_brain MNI_2mm -nifti mprage.nii.gz"
-        } else {
-            args <- "-delete_dicom archive -template_brain MNI_2mm"
-        }
+        script_args <- "-delete_dicom archive -template_brain MNI_2mm -cleanup -template_brain MNI_2mm"
+        if (file.exists("mprage.nii.gz")) { script_args <- paste(script_args, "-nifti mprage.nii.gz") }
         
-        ret_code <- system2("preprocessMprage", args, stderr="preprocessMprage_stderr", stdout="preprocessMprage_stdout")
+        ret_code <- system2("preprocessMprage", script_args, stderr="preprocessMprage_stderr", stdout="preprocessMprage_stdout")
         if (ret_code != 0) { stop("preprocessMprage failed.") }
 
         #echo current date/time to .mprage_complete to denote completed preprocessing
