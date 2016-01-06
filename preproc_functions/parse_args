@@ -85,6 +85,8 @@ function parse_args {
     nuisance_regression=0
     nuisance_compute=0
     nuisance_file=.nuisance_regressors
+    MATLAB_RAM_limit=3 #3GB wavelet despike RAM limit by default (more is faster, but can be a hog when processing in parallel).
+    MATLAB_single_thread=
     ref_vol=  #don't set a motion correction reference volume by default
     rescalingMethod="10000_globalmedian" #scale whole brain 4D by single constant to normalize median to 10000.
     sliceAcquisition= #never assume slice acquistion order. Force definition or use auto-detect from DICOM.
@@ -100,6 +102,12 @@ function parse_args {
     waveletM1000=0
     waveletThreshold=10
     verbose=
+
+    if uname -n | grep -q "comp-hm.*aci.ics.psu.edu"; then
+	rel "Running on ACI high-memory cluster. Increase MATLAB RAM limit and force MATLAB single threading." c
+	MATLAB_RAM_limit=16
+	MATLAB_single_thread="-singleCompThread"
+    fi
 
     #figure out file extension for FSL programs
     if [ -z $FSLOUTPUTTYPE ]; then

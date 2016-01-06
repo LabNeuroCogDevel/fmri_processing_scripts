@@ -1,30 +1,45 @@
-#!/bin/bash
+#!/usr/bin/env sh
 
 if [[ $# -eq 0 ]]; then
     echo "Expect one or more cfg files as input for preprocessing"
     exit 1
 fi
 
-#Explicit MATLAB location
-PATH=/Applications/MATLAB_R2014b.app/bin:${PATH}
+env
 
-# FSL Configuration
-FSLDIR=/opt/ni_tools/fsl
-PATH=${FSLDIR}/bin:${PATH}
-. ${FSLDIR}/etc/fslconf/fsl.sh
+if command -v module >/dev/null; then
+    module load fsl/5.0.8 >/dev/null 2>&1
+    module load afni/20150718 >/dev/null 2>&1
+    module load R/3.2.0 >/dev/null 2>&1
+    module load matlab/R2014b >/dev/null 2>&1
+    module load python/2.7.5 >/dev/null 2>&1
 
-#AFNI Configuration
-PATH=/opt/ni_tools/afni:${PATH}
+    PATH="$HOME/fmri_processing_scripts:$HOME/fmri_processing_scripts/autopreproc:${PATH}"
+    #export FSLDIR
+else
+    ##Explicit MATLAB location
+    PATH=/Applications/MATLAB_R2014b.app/bin:${PATH}
 
-#local ni scripts directory
-PATH=/opt/ni_tools/fmri_processing_scripts:${PATH}
+    # FSL Configuration
+    FSLDIR=/opt/ni_tools/fsl
+    PATH=${FSLDIR}/bin:${PATH}
+    . ${FSLDIR}/etc/fslconf/fsl.sh
 
-#prefer homebrew binaries (esp. rsync 3.0+)
-PATH=/usr/local/bin:${PATH}
+    #AFNI Configuration
+    PATH=/opt/ni_tools/afni:${PATH}
 
-export FSLDIR PATH
+    #local ni scripts directory
+    PATH=/opt/ni_tools/fmri_processing_scripts:${PATH}
 
-export DYLD_FALLBACK_LIBRARY_PATH=/opt/X11/lib:/opt/ni_tools/afni
+    #prefer homebrew binaries (esp. rsync 3.0+)
+    PATH=/usr/local/bin:${PATH}
+
+    export FSLDIR
+    export DYLD_FALLBACK_LIBRARY_PATH=/opt/X11/lib:/opt/ni_tools/afni
+
+fi
+
+export PATH
 
 function resetcfg {
     protocol=
@@ -39,9 +54,11 @@ function resetcfg {
     preprocessed_dirname=
     paradigm_name=
     n_expected_funcruns=
+    sync_mb_data=
+    sync_raw_data=
+    preproc_call=
     gre_fieldmap_dirpattern=
     fieldmap_cfg=
-    preproc_call=
 }
 
 njobs=8 #default to 8 parallel jobs
@@ -79,10 +96,12 @@ while [ _$1 != _ ] ; do
 		./link_ids.R "${loc_mb_root}"
 	    fi
 	fi
-	
-	#2) sync MR_Raw directory (Dicoms)
-	echo "./syncMRCTR_MRRAW \"${meson_mr_root}\" \"${loc_mrraw_root}\" \"${meson_subid_regex}\""
-	./syncMRCTR_MRRAW "${meson_mr_root}" "${loc_mrraw_root}" "${meson_subid_regex}"
+
+	if [ ${sync_raw_data} -eq 1 ]; then
+            #2) sync MR_Raw directory (Dicoms)
+	    echo "./syncMRCTR_MRRAW \"${meson_mr_root}\" \"${loc_mrraw_root}\" \"${meson_subid_regex}\""
+	    ./syncMRCTR_MRRAW "${meson_mr_root}" "${loc_mrraw_root}" "${meson_subid_regex}"	    
+	fi
 
 	#3) preprocess all data in mr directory: R script relies on environment variables sourced above for configuration
 	echo "./preprocessAll.R $njobs"

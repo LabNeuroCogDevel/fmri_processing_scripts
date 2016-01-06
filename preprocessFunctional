@@ -257,6 +257,14 @@ source "${scriptDir}/preproc_functions/highpass_filter"
 source "${scriptDir}/preproc_functions/intensity_normalization"
 source "${scriptDir}/preproc_functions/nuisance_regression"
 
+##load necessary modules if running on cluster (specific to ACI at the moment)
+if command -v module >/dev/null; then
+    module load fsl/5.0.8 >/dev/null 2>&1
+    module load afni/20150718 >/dev/null 2>&1
+    module load R/3.2.0 >/dev/null 2>&1
+    module load matlab/R2014b >/dev/null 2>&1
+    module load python/2.7.5 >/dev/null 2>&1
+fi
 
 set -e #exit if any error occurs (stop processing)
 
