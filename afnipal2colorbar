@@ -1,0 +1,44 @@
+#!/bin/bash
+
+#read in color table from pal.pal file
+
+palFile=
+width=30
+height=600
+units=px
+dpi=240
+flip=0
+outFile=cbar.pdf
+
+while [ -n "$1" ]; do
+    case $1 in
+	-pal_file)             palFile="$2";            shift 2;;  # name of AFNI palette file
+        -width)                width="$2";              shift 2;;  # width of output
+	-height)               height="$2";             shift 2;;  # height of output
+	-out_file)             outFile="$2";            shift 2;;  # name of output file (pdf or png tested at the moment)
+	-units)                units="$2";              shift 2;;  # units of measurement for output file (currently px or in)
+	-dpi)                  dpi="$2";                shift 2;;  # pixel density of output
+	*) echo -e "\n[Unrecognized option '$1']\n";
+	   exit 1;;
+    esac
+done
+
+[[ -z "$palFile" || ! -r "$palFile" ]] && echo "Cannot find -pal_file: $palFile" && exit 1
+
+if [[ $units == in ]]; then
+    width=$(echo "scale=0; $width*$dpi" | bc )
+    height=$(echo "scale=0; $height*$dpi" | bc )
+fi
+
+#read hex colors from AFNI pal file. Skip first line, which is header
+hexcolors=
+while IFS='' read -r line || [[ -n "$line" ]]; do
+    hexcolors="${hexcolors} xc:$line"
+done < <(tail -n +2 "$palFile")
+
+#echo $hexcolors
+
+#imagemagick command to create smooth gradient of any size
+set -x
+convert -size ${width}x${height} gradient: -rotate 180 -interpolate Bicubic \
+	\( +size ${hexcolors} +append \) -clut -density $dpi -units PixelsPerInch "$outFile"
