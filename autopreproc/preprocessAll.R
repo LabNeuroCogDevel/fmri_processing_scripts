@@ -95,13 +95,13 @@ if (length(mprage_dirs) > 0L) {
 #mprage_dirs <- list.dirs(pattern="^mprage$", path=getwd())
 
 #faster than above
-mprage_dirs <- system("find $PWD -iname mprage -type d -mindepth 2 -maxdepth 2", intern=TRUE)
+mprage_dirs <- system("find $PWD -mindepth 2 -maxdepth 2 -type d -iname mprage", intern=TRUE)
 
 registerDoMC(njobs) #setup number of jobs to fork
 
 #for (d in mprage_dirs) {
 f <- foreach(d=mprage_dirs, .inorder=FALSE) %dopar% {
-    subid <- basename(d)
+    subid <- basename(dirname(d))
     outdir <- file.path(loc_mrproc_root, subid)
 
     system(paste("cp -Rp", d, outdir)) #copy untouched mprage to processed directory
