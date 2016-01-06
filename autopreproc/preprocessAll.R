@@ -101,11 +101,17 @@ registerDoMC(njobs) #setup number of jobs to fork
 
 #for (d in mprage_dirs) {
 f <- foreach(d=mprage_dirs, .inorder=FALSE) %dopar% {
-    setwd(d)
+    subid <- basename(d)
+    outdir <- file.path(loc_mrproc_root, subid)
+
+    system(paste("cp -Rp", d, outdir)) #copy untouched mprage to processed directory
+    setwd(file.path(outdir, "mprage"))
+    
     #call preprocessmprage
     if (file.exists(".mprage_complete")) {
         return("complete") #skip completed mprage directories
     } else {
+        args <- "-delete_dicom archive -template_brain MNI_2mm -cleanup -template_brain MNI_2mm"
         if (file.exists("mprage.nii.gz")) {
             args <- "-delete_dicom archive -template_brain MNI_2mm -nifti mprage.nii.gz"
         } else {
@@ -159,12 +165,16 @@ for (d in subj_dirs) {
         fmdirs <- sort(normalizePath(Sys.glob(file.path(d, gre_fieldmap_dirpattern))))
         if (length(fmdirs) == 2L) {
             apply_fieldmap <- TRUE
-            magdir <- file.path(fmdirs[1], "MR*")
-            phasedir <- file.path(fmdirs[2], "MR*")
+            magdir <- file.path(loc_mrproc_root, subid, "fieldmap_magnitude")
+            phasedir <- file.path(loc_mrproc_root, subid, "fieldmap_phase")
+            system(paste("cp -Rp", fmdirs[1], magdir)) #copy untouched magdir to processed directory
+            system(paste("cp -Rp", fmdirs[2], phasedir)) #copy untouched phasedir to processed directory
+            magdir <- file.path(magdir, "MR*") #add dicom pattern at end to be picked up by preprocessFunctional
+            phasedir <- file.path(phasedir, "MR*")
         } else { stop("In ", d, ", number of fieldmap dirs is not 2: ", paste0(fmdirs, collapse=", ")) }
     }
 
-    mpragedir <- file.path(d, "mprage")
+    mpragedir <- file.path(loc_mrproc_root, subid, "mprage")
     if (file.exists(mpragedir)) {
         if (! (file.exists(file.path(mpragedir, "mprage_warpcoef.nii.gz")) && file.exists(file.path(mpragedir, "mprage_bet.nii.gz")) ) ) {
             stop("Unable to locate required mprage files in dir: ", mpragedir)
