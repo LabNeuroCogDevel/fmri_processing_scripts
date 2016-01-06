@@ -103,7 +103,8 @@ registerDoMC(njobs) #setup number of jobs to fork
 f <- foreach(d=mprage_dirs, .inorder=FALSE) %dopar% {
     subid <- basename(dirname(d))
     outdir <- file.path(loc_mrproc_root, subid)
-
+    if (!file.exists(outdir)) { dir.create(outdir, showWarnings=FALSE, recursive=TRUE) } #create preprocessed folder if absent
+    
     system(paste("cp -Rp", d, outdir)) #copy untouched mprage to processed directory
     setwd(file.path(outdir, "mprage"))
     
