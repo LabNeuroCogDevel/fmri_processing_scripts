@@ -92,7 +92,7 @@ function dimon {
 }
 
 function cleanup_preprocessMprage {
-    imrm ${T1}_fast_totbias ${T1}_s20 ${T1}_initmask_s20 ${T1}_hpf ${T1}_hpf2_brain ${T1}_hpf2_s20 \
+    rel "imrm ${T1}_fast_totbias ${T1}_s20 ${T1}_initmask_s20 ${T1}_hpf ${T1}_hpf2_brain ${T1}_hpf2_s20 \
 	${T1}_hpf_brain ${T1}_hpf_brain_mask ${T1}_hpf_s20 \
 	${T1}_initfast2_bias ${T1}_initfast2_brain_mask ${T1}_initfast2_brain_mask2 \
 	${T1}_initfast2_restore ${T1}_initfast2_seg ${T1}_initfast_bias \
@@ -100,7 +100,7 @@ function cleanup_preprocessMprage {
 	${T1}_fast_bias_vol32 template_to_subject_warpcoef ${T1}_fast_bias_idxmask \
 	${T1}_fast_bias ${T1}_fast_bias_init ${T1}_fast_restore ${T1}_fast_seg \
 	${T1}_bet_initbias ${T1}_bet_initial ${T1}_biascorr_brain_mask ${T1}_bet_fast_restore \
-	${T1}_bet_fast_bias
+	${T1}_bet_fast_bias"
 }
 
 

@@ -116,7 +116,7 @@ f <- foreach(d=mprage_dirs, .inorder=FALSE) %dopar% {
         if (file.exists("mprage.nii.gz")) { script_args <- paste(script_args, "-nifti mprage.nii.gz") }
         
         ret_code <- system2("preprocessMprage", script_args, stderr="preprocessMprage_stderr", stdout="preprocessMprage_stdout")
-        if (ret_code != 0) { stop("preprocessMprage failed.") }
+        if (ret_code != 0) { stop("preprocessMprage failed in directory: ", file.path(outdir, "mprage")) }
 
         #echo current date/time to .mprage_complete to denote completed preprocessing
         sink(".mprage_complete")
@@ -310,5 +310,5 @@ f <- foreach(cd=iter(all_funcrun_dirs, by="row"), .inorder=FALSE) %dopar% {
     args <- paste(funcpart, mpragepart, fmpart, refimgpart, preproc_call)
     
     ret_code <- system2("preprocessFunctional", args, stderr="preprocessFunctional_stderr", stdout="preprocessFunctional_stdout")
-    if (ret_code != 0) { stop("preprocessFunctional failed.") }
+    if (ret_code != 0) { stop("preprocessFunctional failed in directory: ", cd$funcdir)) }
 }

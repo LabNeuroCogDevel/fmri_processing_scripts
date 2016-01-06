@@ -481,9 +481,6 @@ rel "applywarp --interp=nn --in=$nodil --ref=${T1}_biascorr -w template_to_subje
 rel "fslmaths ${T1}_biascorr_brain_mask -fillh ${T1}_biascorr_brain_mask"
 rel "fslmaths ${T1}_biascorr -mas ${T1}_biascorr_brain_mask ${T1}_bet" #will be used as -mprage_bet in preprocessFunctional
 
-#generate skull-stripped version of final warped file
-rel "fslmaths ${outputFile} -mas $nodil $( remove_ext ${outputFile} )_bet"
-
 if [[ -f "${bettedRefBrain}.nii" && ! -h ./template_brain.nii ]]; then
     ln -s "${bettedRefBrain}.nii" ./template_brain.nii
 elif [[ -f "${bettedRefBrain}.nii.gz" && ! -h ./template_brain.nii.gz ]]; then
@@ -518,6 +515,9 @@ if [ $( imtest ${T1}_bet_fast ) -eq 0 ]; then
     # regenerate the standard space structural with the updated bias field correction applied
     rel "applywarp -i ${T1}_biascorr -w ${T1}_warpcoef --ref=$unbettedRefBrain -o $outputFile --interp=spline"
     rel "fslmaths ${T1}_bet_fast_pve_2 -thr 0.5 -bin ${T1}_bet_fast_wmseg" #create binary WM mask
+
+    #generate skull-stripped version of final warped file (after final bias correction)
+    rel "fslmaths ${outputFile} -mas $nodil $( remove_ext ${outputFile} )_bet"
 fi
 
 #create png to check registration
