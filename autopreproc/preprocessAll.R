@@ -105,7 +105,7 @@ f <- foreach(d=mprage_dirs, .inorder=FALSE) %dopar% {
     outdir <- file.path(loc_mrproc_root, subid)
     if (!file.exists(outdir)) { dir.create(outdir, showWarnings=FALSE, recursive=TRUE) } #create preprocessed folder if absent
     
-    system(paste("cp -Rp", d, outdir)) #copy untouched mprage to processed directory
+    if (!file.exists(file.path(outdir, "mprage")) { system(paste("cp -Rp", d, outdir)) } #copy untouched mprage to processed directory
     setwd(file.path(outdir, "mprage"))
     
     #call preprocessmprage
@@ -164,8 +164,8 @@ for (d in subj_dirs) {
             apply_fieldmap <- TRUE
             magdir <- file.path(loc_mrproc_root, subid, "fieldmap_magnitude")
             phasedir <- file.path(loc_mrproc_root, subid, "fieldmap_phase")
-            system(paste("cp -Rp", fmdirs[1], magdir)) #copy untouched magdir to processed directory
-            system(paste("cp -Rp", fmdirs[2], phasedir)) #copy untouched phasedir to processed directory
+            if (!file.exists(magdir)) { system(paste("cp -Rp", fmdirs[1], magdir)) } #copy untouched magdir to processed directory
+            if (!file.exists(phasedir)) { system(paste("cp -Rp", fmdirs[2], phasedir)) } #copy untouched phasedir to processed directory
             magdir <- file.path(magdir, "MR*") #add dicom pattern at end to be picked up by preprocessFunctional
             phasedir <- file.path(phasedir, "MR*")
         } else { stop("In ", d, ", number of fieldmap dirs is not 2: ", paste0(fmdirs, collapse=", ")) }
