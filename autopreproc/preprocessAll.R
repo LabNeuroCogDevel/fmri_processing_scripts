@@ -105,7 +105,7 @@ f <- foreach(d=mprage_dirs, .inorder=FALSE) %dopar% {
     outdir <- file.path(loc_mrproc_root, subid)
     if (!file.exists(outdir)) { dir.create(outdir, showWarnings=FALSE, recursive=TRUE) } #create preprocessed folder if absent
     
-    if (!file.exists(file.path(outdir, "mprage")) { system(paste("cp -Rp", d, outdir)) } #copy untouched mprage to processed directory
+    if (!file.exists(file.path(outdir, "mprage"))) { system(paste("cp -Rp", d, outdir)) } #copy untouched mprage to processed directory
     setwd(file.path(outdir, "mprage"))
     
     #call preprocessmprage
@@ -277,7 +277,9 @@ for (d in subj_dirs) {
             dir.create(file.path(outdir, paste0(paradigm_name, runnums[m])))
             
             ##use 3dcopy to copy dataset as .nii.gz
-            system(paste0("3dcopy \"", mbfiles[m], "\" \"", file.path(outdir, paste0(paradigm_name, runnums[m]), paste0(paradigm_name, runnums[m])), ".nii.gz\""))
+	    ##use wait=FALSE to copy asynchronously
+            system(paste0("3dcopy \"", mbfiles[m], "\" \"", file.path(outdir, paste0(paradigm_name, runnums[m]), paste0(paradigm_name, runnums[m])), ".nii.gz\""), wait=FALSE)
+	    Sys.sleep(2) #apply a bit of a brake to avoid runaway disk I/O
         }
     }
 
@@ -310,5 +312,5 @@ f <- foreach(cd=iter(all_funcrun_dirs, by="row"), .inorder=FALSE) %dopar% {
     args <- paste(funcpart, mpragepart, fmpart, refimgpart, preproc_call)
     
     ret_code <- system2("preprocessFunctional", args, stderr="preprocessFunctional_stderr", stdout="preprocessFunctional_stdout")
-    if (ret_code != 0) { stop("preprocessFunctional failed in directory: ", cd$funcdir)) }
+    if (ret_code != 0) { stop("preprocessFunctional failed in directory: ", cd$funcdir) }
 }
