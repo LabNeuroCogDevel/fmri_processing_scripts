@@ -39,19 +39,27 @@ function dicom_to_nifti {
 	    dicomHdr=$( dicom_hdr -sexinfo "${firstDicom}" )
 	    detectTR=$( echo "${dicomHdr}" | grep "0018 0080.*ACQ Repetition Time" | perl -pe 's:.*ACQ Repetition Time//(\d+)\s*$:\1:' )
 	    detectTR=$( echo "scale=3; ${detectTR}/1000" | bc ) #convert to seconds from milliseconds
-	    detectSliceOrder=$( echo "${dicomHdr}" | grep "sSliceArray.ucMode" | perl -pe 's/sSliceArray.ucMode\s+=\s+(\dx\d)$/\1/' )
+	    detectSliceOrder=$( echo "${dicomHdr}" | grep "sSliceArray.ucMode" | perl -pe 's/sSliceArray.ucMode\s+=\s+\d?x?(\d)$/\1/' ) #Trio uses 0x4 style whereas Prisma is just 4
 
-	    if [ "${detectSliceOrder}" = "0x1" ]; then
+	    if [ "${sliceTimesFile}" == "detect" ]; then
+		rel "Detecting Siemens slice times from dicom header" c
+		rel "dicom_hdr -slice_times \"${firstDicom}\" | perl -pe 's/-- Siemens timing \(\d+ entries\): //' > .sttmp"
+		rel "Rscript -e \"x <- scan('.sttmp'); x <- x/1000; cat(x, file='.dicom_stimes', sep=',')\"" #read in slice times from file, convert to seconds, and write .dicom_stimes file for downstream use
+		rm -f .sttmp
+		sliceTimesFile=".dicom_stimes"
+	    fi
+
+	    if [ "${detectSliceOrder}" = "1" ]; then
 		detectSliceOrder="seqasc"
-	    elif [ "${detectSliceOrder}" = "0x2" ]; then
+	    elif [ "${detectSliceOrder}" = "2" ]; then
 		detectSliceOrder="seqdesc"
-	    elif [ "${detectSliceOrder}" = "0x4" ]; then
+	    elif [ "${detectSliceOrder}" = "4" ]; then
 		detectSliceOrder="interleaved"
 		#used to test need for ocustom switch in slicetimer
 		#odd/even is all Siemens (to my knowledge), not just Trio Tim
 		#detectTrioTim=$(    echo "${dicomHdr}" | perl -ne 'print "1" if /TrioTim/' )
 		detectSiemens=$(    echo "${dicomHdr}" | perl -ne 'print "1" if /ID Manufacturer\/\/SIEMENS/' )
-		detectSliceNum=$(   echo "${dicomHdr}" | perl -ne 'print $1  if /sSliceArray.lSize\W+=\W?(\d+)/' )
+		detectSliceNum=$(   echo "${dicomHdr}" | perl -ne 'print $1  if /sSliceArray.lSize\s*=\s*(\d+)/' )
 	    fi
 
 	    rel "Auto-detecting TR and slice acquisition order from DICOM header: ${firstDicom}" c

@@ -103,12 +103,6 @@ function parse_args {
     waveletThreshold=10
     verbose=
 
-    if uname -n | grep -q "comp-hm.*aci.ics.psu.edu"; then
-	rel "Running on ACI high-memory cluster. Increase MATLAB RAM limit and force MATLAB single threading." c
-	MATLAB_RAM_limit=16
-	MATLAB_single_thread="-singleCompThread"
-    fi
-
     #figure out file extension for FSL programs
     if [ -z $FSLOUTPUTTYPE ]; then
 	export FSLOUTPUTTYPE=NIFTI_GZ
@@ -494,5 +488,26 @@ function parse_args {
 
     #smoothed files include the FHWM as a sufix
     [ $no_smooth -eq 0 ] && smoothing_suffix="_${smoothing_kernel}" || smoothing_suffix=
+
+    if [ -n "${logFile}" ]; then
+	if [ -f "${logFile}" ]; then
+	    #stat and date are not portable across Linux and BSD...
+            [ $( uname ) = Darwin ] && mtime=$( stat -f "%Sm" -t "%Y%m%d_%H%M" "${logFile}" ) || mtime=$( date -r "${logFile}" +%Y%m%d_%H%M )
+	    mv "${logFile}" "${logFile}_${mtime}"
+	fi
+	
+        #add absolute path to log file location
+	logFile="$(pwd)/$( basename $logFile )" ##TODO: make path handling more robust to non-local directories
+	
+	echo "#!/bin/bash" > "${logFile}"
+	echo "## Log of preprocessFunctional commands" >> "${logFile}"
+	echo -e "## Call: $thiscommandinfo" >> "${logFile}"
+    fi
+
+    if uname -n | grep -q "comp-hm.*aci.ics.psu.edu"; then
+	rel "Running on ACI high-memory cluster. Increase MATLAB RAM limit and force MATLAB single threading." c
+	MATLAB_RAM_limit=16
+	MATLAB_single_thread="-singleCompThread"
+    fi
 
 }

@@ -164,9 +164,14 @@ EndOfHelp
 }
 
 #Written: 5/18/2010
-#Last updated: 4/30/2015
+#Last updated: 1/13/2016
 #
 #Changelog:
+#1/13/2016 (MH)
+# - various changes to support running on PSU ACI clusters (module load etc.)
+# - move log file setup to parse_args
+# - support -custom_slice_times detect to pull slice times from dicom header (useful for CMRR MB sequences where these are recorded already)
+# - slight tweaks to dicom header parameter detection to support both Trio and Prisma
 #04/30/2015 (MH)
 # - initial support for reference/intermediate scan to improve BBR coregistration for low GM/WM T2* contrast (e.g., MB). Use -func_refimg
 # - add bias field correction to T2* coregistration targets (mc_target and epiref) to improve coregistration.
@@ -281,20 +286,6 @@ fi
 
 #setup default values and process all command line inputs
 parse_args "$@"
-
-if [ -n "${logFile}" ]; then
-    if [ -f "${logFile}" ]; then
-	#stat and date are not portable across Linux and BSD...
-        [ $( uname ) = Darwin ] && mtime=$( stat -f "%Sm" -t "%Y%m%d_%H%M" "${logFile}" ) || mtime=$( date -r "${logFile}" +%Y%m%d_%H%M )
-	mv "${logFile}" "${logFile}_${mtime}"
-    fi
-    #add absolute path to log file location
-    logFile="$(pwd)/$( basename $logFile )" ##TODO: make path handling more robust to non-local directories
-    
-    echo "#!/bin/bash" > "${logFile}"
-    echo "## Log of preprocessFunctional commands" >> "${logFile}"
-    echo -e "## Call: $thiscommandinfo" >> "${logFile}"
-fi
 
 #handle cleanup only scenario
 #TODO: tends to leave behind some mask files since logic for which mask is subject mask is below.
