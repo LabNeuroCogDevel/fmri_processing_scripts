@@ -139,6 +139,9 @@ subj_dirs <- list.dirs(path=basedir, recursive=FALSE)
 #make run processing parallel, not subject processing
 #f <- foreach(d=subj_dirs, .inorder = FALSE) %dopar% {
 all_funcrun_dirs <- list()
+mb_src_queue <- c() #reconstructed MB files to be copied
+mb_dest_queue <- c() #destinations for MB NIfTIs
+
 for (d in subj_dirs) {
     cat("Processing subject: ", d, "\n")
     setwd(d)
@@ -276,10 +279,12 @@ for (d in subj_dirs) {
         if (!file.exists(file.path(outdir, paste0(paradigm_name, runnums[m])))) {
             dir.create(file.path(outdir, paste0(paradigm_name, runnums[m])))
             
-            ##use 3dcopy to copy dataset as .nii.gz
-	    ##use wait=FALSE to copy asynchronously
-            system(paste0("3dcopy \"", mbfiles[m], "\" \"", file.path(outdir, paste0(paradigm_name, runnums[m]), paste0(paradigm_name, runnums[m])), ".nii.gz\""), wait=FALSE)
-	    Sys.sleep(2) #apply a bit of a brake to avoid runaway disk I/O
+	    ##Check for existence of unprocessed MB reconstructed NIfTI. If doesn't exist, add to copy queue
+	    expectedNIfTI <- file.path(outdir, paste0(paradigm_name, runnums[m]), paste0(paradigm_name, runnums[m], ".nii.gz"))
+	    if (!file.exists(expectedNIfTI)) {
+	       mb_src_queue <- c(mb_src_queue, mbfiles[m])
+	       mb_dest_queue <- c(mb_dest_queue, expectedNIfTI)	       
+	    }
         }
     }
 
@@ -289,10 +294,23 @@ for (d in subj_dirs) {
 
 }
 
+#copy any needed MB reconstructed NIfTIs into place
+#for now, arbitrarily copy 12 at a time
+registerDoMC(12) #setup number of jobs to fork
+if (length(mb_src_queue) > 0L) {
+   message("Copying MB reconstructed files into place.")
+   f <- foreach(fnum=1:length(mb_src_queue), .inorder=FALSE) %dopar% {
+     ##use 3dcopy to copy dataset as .nii.gz
+     cat(paste0(   "3dcopy \"", mb_src_queue[fnum], "\" \"", mb_dest_queue[fnum], "\"\n"))
+     system(paste0("3dcopy \"", mb_src_queue[fnum], "\" \"", mb_dest_queue[fnum], "\""), wait=TRUE)     
+   }
+}
+
 #rbind data frame together
 all_funcrun_dirs <- do.call(rbind, all_funcrun_dirs)
 row.names(all_funcrun_dirs) <- NULL
 
+registerDoMC(njobs) #setup number of jobs to fork
 #loop over directories to process
 ##for (cd in all_funcrun_dirs) {
 f <- foreach(cd=iter(all_funcrun_dirs, by="row"), .inorder=FALSE) %dopar% {

@@ -167,7 +167,7 @@ function prepare_fieldmap {
       local ctime=$(cat $lockfile)
       [[ ! $ctime =~ [0-9]? ]] && echo "Warning: malformed lock file $lockfile"
 
-      [ "$((( $now-$ctime )))" -gt "$(((2*60*60)))" ] && echo "it's been over 2 hours, you should remove $lockfile"
+      [ "$((( $now-$ctime )))" -gt "$(((1*60*60)))" ] && echo "it's been over 1 hour, you should remove $lockfile" && exit 1
 
       echo "waiting for another preprocessFunctional to finish (lock: $lockfile)"
       while [ -f "$lockfile" ]; do
