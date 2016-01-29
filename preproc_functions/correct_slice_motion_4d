@@ -17,6 +17,7 @@ function correct_slice_motion_4d {
     fi
 
     if [ -n "${sliceTimesFile}" ]; then
+	[ "${sliceTimesFile}" == "detect" ] && sliceTimesFile=".dicom_stimes"
 	[ ! -r "${sliceTimesFile}" ] && echo "Unable to load -custom_slice_times ${sliceTimesFile}" && exit 1
 	slcorder="${sliceTimesFile}"
     else

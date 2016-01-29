@@ -46,7 +46,6 @@ function dicom_to_nifti {
 		rel "dicom_hdr -slice_times \"${firstDicom}\" | perl -pe 's/-- Siemens timing \(\d+ entries\): //' > .sttmp"
 		rel "Rscript -e \"x <- scan('.sttmp'); x <- x/1000; cat(x, file='.dicom_stimes', sep=',')\"" #read in slice times from file, convert to seconds, and write .dicom_stimes file for downstream use
 		rm -f .sttmp
-		sliceTimesFile=".dicom_stimes"
 	    fi
 
 	    if [ "${detectSliceOrder}" = "1" ]; then
