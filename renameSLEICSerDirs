@@ -2,7 +2,7 @@
 
 which dicom_hdr >/dev/null 2>&1
 if [ $? -eq 1 ]; then
-    module load afni
+    module load afni 2>&1 >/dev/null
 fi
 
 serList=$( ls -d ser[0-9]* )
@@ -17,7 +17,8 @@ for s in ${serList}; do
     fi
 
     sername=$( dicom_hdr $firstDicom | grep -i "ACQ Protocol Name" | perl -pe "s:.*ACQ Protocol Name//(\w+).*$:\1:" )
-    sernumber=${s/ser/}
+    sernumber=$( printf '%02d' ${s/ser/} )
+    #printf '%02d' 1
 
     #is this a single-band reference image?    
     sbref=
@@ -26,6 +27,6 @@ for s in ${serList}; do
 	sbref=_sbref
     fi
 
-    mv "$s" "${sername}${sbref}_ser${sernumber}"
+    mv "$s" "${sernumber}_${sername}${sbref}"
     
 done

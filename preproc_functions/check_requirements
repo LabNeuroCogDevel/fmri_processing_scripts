@@ -49,8 +49,15 @@ function check_requirements {
 	    ref_vol=
 	fi
 
-	#copy reference image to local directory to make directory more portable
-	rel "fslmaths \"$funcRefimg\" epiref"
+	#if funcRegImg is a single DICOM file, change to NIfTI
+	fslhd "$funcRefImg" 2>&1 | grep -q ERROR
+	if [ $? -eq 0 ]; then
+	    rel "Converting -func_refimg to NIfTI" c
+	    rel "to3d -prefix epiref.nii.gz -ushort2float \"$funcRefImg\""
+	else
+            #copy reference image to local directory to make directory more portable
+	    rel "fslmaths \"$funcRefimg\" epiref"
+	fi
 	
 	#skull strip reference image to improve coregistration
 	rel "bet epiref epiref_brain -f 0.3 -n -R" #include bias field correction given heavy bias for 32-channel data
