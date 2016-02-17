@@ -53,7 +53,7 @@ function check_requirements {
 	fslhd "$funcRefImg" 2>&1 | grep -q ERROR
 	if [ $? -eq 0 ]; then
 	    rel "Converting -func_refimg to NIfTI" c
-	    rel "to3d -prefix epiref.nii.gz -ushort2float \"$funcRefImg\""
+	    rel "to3d -prefix epiref.nii.gz -ushort2float \"$funcRefimg\""
 	else
             #copy reference image to local directory to make directory more portable
 	    rel "fslmaths \"$funcRefimg\" epiref"
