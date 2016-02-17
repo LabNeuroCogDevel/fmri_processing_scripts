@@ -1,0 +1,100 @@
+#!/usr/bin/env Rscript
+
+printHelp <- function() {
+    cat("LookupROINames is a script that looks up the most likely anatomical name for an ROI based on a peak/center coordinate in MNI space.",
+        "At this time, only the CA_ML_18_MNIA atlas is available, but the script could be extended to use other AFNI atlases.",
+        "",
+        "Required inputs are:",
+        "  -in_file <txt file>: A text file containing rows that include the x, y, and z coordinate for each ROI of interest (ROIs x coordinates)",
+        "  -out_file <txt file>: The output file containing the ROI names that correspond to coordinates from the -in_file",
+        "  -xyz_cols <x y z>: The columns containing the the x, y, and z coordinates (where the first column in a file is 1). Example: -xyz_cols 3 4 5",
+        "",
+        "Optional arguments are:",
+        "  -afnidir <directory of AFNI installation>: Absolute path to AFNI directory, used to run whereami. If not passed, the script will try to determine.",
+        "",
+        sep="\n")
+}
+
+##read in command line arguments.
+args <- commandArgs(trailingOnly = TRUE)
+
+if (length(args) == 0L) {
+  message("LookupROINAmes expects at least -in_file <txt coord file> -out_file <txt lookup output> -xyz_cols <columns containing x y z coordinates>.\n")
+  printHelp()
+  quit(save="no", 1, FALSE)
+}
+
+#defaults
+atlas <- "CA_ML_18_MNIA"
+out_file <- "rois_names.txt"
+xyzcols <- NULL
+in_file <- ""
+afnidir <- NULL
+
+argpos <- 1
+while (argpos <= length(args)) {
+    if (args[argpos] == "-afnidir") {
+        afnidir <- args[argpos + 1]
+        argpos <- argpos + 2
+    } else if (args[argpos] == "-atlas") {
+        atlas <- args[argpos + 1] #name of atlas for lookup
+        argpos <- argpos + 2
+    } else if (args[argpos] == "-in_file") {
+        in_file <- args[argpos + 1] #roi input file
+        argpos <- argpos + 2
+    } else if (args[argpos] == "-out_file") {
+        out_file <- args[argpos + 1] #name of file to be written
+        argpos <- argpos + 2
+    } else if (args[argpos] == "-xyz_cols") {
+        xyzcols <- args[(argpos + 1):(argpos + 3)] #1-based positions of x, y, and z columns within roi file
+        xyzcols <- sapply(xyzcols, as.numeric) - 1 #AFNI uses 0-based column numbering
+        argpos <- argpos + 4
+    } else {
+        stop("Not sure what to do with argument: ", args[argpos])
+    }
+}
+
+if (is.null(xyzcols)) { stop("Unable to determine x y z columns. Please pass in -xyz_cols") }
+stopifnot(file.exists(in_file))
+
+##wrapper for running an AFNI command safely within R
+##if AFNI does not have its environment setup properly, commands may not work
+runAFNICommand <- function(args, afnidir=NULL, stdout=NULL, stderr=NULL, ...) {
+    ##look for AFNIDIR in system environment if not passed in
+    if (is.null(afnidir)) {
+        env <- system("env", intern=TRUE)
+        if (length(afnidir <- grep("^AFNIDIR=", env, value=TRUE)) > 0L) {
+            afnidir <- sub("^AFNIDIR=", "", afnidir)
+        } else {
+            warning("AFNIDIR not found in environment. Defaulting to ", paste0(normalizePath("~/"), "/afni"))
+            afnidir <- paste0(normalizePath("~/"), "/afni")
+        }
+    }
+
+    Sys.setenv(AFNIDIR=afnidir) #export to R environment
+    afnisetup=paste0("AFNIDIR=", afnidir, "; PATH=${AFNIDIR}:${PATH}; DYLD_FALLBACK_LIBRARY_PATH=${AFNIDIR}; ${AFNIDIR}/")
+    afnicmd=paste0(afnisetup, args)
+    if (!is.null(stdout)) { afnicmd=paste(afnicmd, ">", stdout) }
+    if (!is.null(stderr)) { afnicmd=paste(afnicmd, "2>", stderr) }
+    cat("AFNI command: ", afnicmd, "\n")
+    retcode <- system(afnicmd, ...)
+    return(retcode)
+}
+
+##get coordinates and names of regions
+lookup <- runAFNICommand(paste0("whereami -coord_file ", in_file, "'[", paste(xyzcols, collapse=","), "]' -space MNI -lpi -atlas ", atlas), stderr="/dev/null", intern=TRUE, afnidir=afnidir)
+exitstatus <- attr(lookup, "status")
+if (!is.null(exitstatus) && exitstatus != 0) stop("No ROI coordinates found by whereami.") ##whereami failed, which occurs when there are no clusters.
+
+##NB: At the moment, only support the CA_ML_18_MNIA atlas... Need to change this expression to match other options.
+atlaslines <- grep("(Not near any region stored in databases|Atlas CA_ML_18_MNIA: Macro Labels \\(N27\\))", lookup)
+bestguess <- sub("(^\\s*Focus point: |^\\s*|\\s*$)", "", lookup[atlaslines+1], perl=TRUE) ##first match after atlas for each cluster
+bestguess[which(bestguess=="")] <- "Unknown" ##handle lookup failures
+
+coordlines <- grep("Focus point (LPI)=", lookup, fixed=TRUE)
+coords <- lookup[coordlines+2] ##first line after header is TLRC, second is MNI
+##coords <- sub("<a href=.*$", "", coords, perl=TRUE)
+coords <- sub("^\\s*(-?\\d+\\s*mm.*\\{MNI\\})\\s*<a href=.*$", "\\1", coords, perl=TRUE)
+
+df <- data.frame(roi=1:length(bestguess), label=bestguess, coordinates=coords)
+write.table(df, file=out_file, quote=TRUE, sep="\t", row.names=FALSE)
