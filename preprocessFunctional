@@ -34,7 +34,7 @@ Command line options:
   -bandpass_filter: Apply bandpass filter to fMRI data using 3dBandpass. Specify low and high cutoff frequencies in Hz.
         Example: -bandpass_filter 0.009 .08
   -bet_frac: fractional intensity threshold for skull-stripping mean functional (used in func-to-struc warp). Default 0.3.
-  -cleanup: Deletes all files used in preprocessing that are unlikely to be needed for analysis
+  -cleanup: Deletes all files used in preprocessing that are unlikely to be needed for analysis, see -keep_motion_files 
   -cleanup_only: Delete all intermediate files, but do not run any processing steps.
   -compute_warp_only: Do not warp data to template space, but do compute the nonlinear transformation to template (and FM unwarp).
         This is useful if one wishes to analyze the data in native space and warp the stats maps to template. This switch also enables -no_warp.
@@ -63,6 +63,7 @@ Command line options:
         -func_struc_dof 6.  Rotation x, y, z; Translation x, y, z.
         -func_struc_dof 7.  Rotation x, y, z; Translation x, y, z; Global scaling.
         -func_struc_dof 12. Rotation x, y, z; Translation x, y, z; Scaling x, y, z; Skewing x, y, z.
+  -keep_motion_files: when doing -cleanup or -cleanup_only, keep mt_*,tm_*, some mc_*, and mc_mats/ files
   -help: Print command help.
   -hp_filter: high-pass filtering frequency (in volumes). Anything faster than this value will be passed. Default is 80. 
         Can also be specified in seconds using suffix "s", such as -hp_filter 100s.
@@ -163,10 +164,17 @@ EndOfHelp
 
 }
 
-#Written: 5/18/2010
-#Last updated: 4/30/2015
+#Written: 2010/5/18
+#Last updated: 2016/03/08
 #
 #Changelog:
+#08/03/2016 (WF)
+# - add -keep_motion_files option, mapped to KEEP_MOTION_FILES global
+# - add .mean_final_func_complete so we dont redo "important last check to ensure that no blurring has occurred" 
+#12/23/2015 (WF)
+# - allow no_warp for 4dslicemotion+noFM; more verbose
+#12/22/2015 (WF)
+# - dot complete file for ref bet
 #04/30/2015 (MH)
 # - initial support for reference/intermediate scan to improve BBR coregistration for low GM/WM T2* contrast (e.g., MB). Use -func_refimg
 # - add bias field correction to T2* coregistration targets (mc_target and epiref) to improve coregistration.
@@ -434,8 +442,11 @@ fi
 
 #probably not totally necessary, but seems like an important last check to ensure that no blurring has occurred.
 #extents mask above, in principle, should help with this.
-rel "fslmaths \"${prefix}${funcFile}${smoothing_suffix}\" -mas ${subjMask} \"${prefix}${funcFile}${smoothing_suffix}\""
-rel "fslmaths \"${prefix}${funcFile}${smoothing_suffix}\" -Tmean \"${prefix}mean_func${smoothing_suffix}\""
+if [ ! -r .mean_final_func_complete ]; then
+   rel "fslmaths \"${prefix}${funcFile}${smoothing_suffix}\" -mas ${subjMask} \"${prefix}${funcFile}${smoothing_suffix}\""
+   rel "fslmaths \"${prefix}${funcFile}${smoothing_suffix}\" -Tmean \"${prefix}mean_func${smoothing_suffix}\""
+   date > .mean_final_func_complete
+fi
 
 #if mask file exists, and subject_mask.nii is not a file (but could be a symlink), then create subject_mask symlink
 if [[ -f "${subjMask}.nii"  && ! -f ./subject_mask.nii ]]; then

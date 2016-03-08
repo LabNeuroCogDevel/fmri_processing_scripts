@@ -131,7 +131,7 @@ function cleanup_preprocessFunctional {
 
     #interleaved stream
     deleteFile t_${funcFile}${ext}
-    deleteFile mt_${funcFile}${ext}
+    #deleteFile mt_${funcFile}${ext}
     deleteFile ${upre}mt_${funcFile}${ext}
     deleteFile ${upre}mt_${funcFile}_mean_reg${ext}
     deleteFile k${upre}mt_${funcFile}${ext}
@@ -153,8 +153,8 @@ function cleanup_preprocessFunctional {
     deleteFile s${wpre}${dspre}k${upre}mt_${funcFile}${smoothing_suffix}_usan_size${ext}
 
     #with one-step warp, often get files such as wuktmd where FM unwarping and MNI warp are adjacent
-    deleteFile mt_${funcFile}${ext}
-    deleteFile mt_${funcFile}_mean_reg${ext}
+    #deleteFile mt_${funcFile}${ext}
+    #deleteFile mt_${funcFile}_mean_reg${ext}
     deleteFile ${dspre}kmt_${funcFile}${ext}
     deleteFile ${dspre}kmt_tmean_mask${ext}
     deleteFile ${wpre}${upre}${dspre}kmt_${funcFile}${ext}
@@ -164,7 +164,7 @@ function cleanup_preprocessFunctional {
 
     deleteFile ${dspre}kmt_${funcFile}_Tmin${ext}
     deleteFile ${dspre}kmt_${funcFile}_Tmin_10pctThr${ext}
-    deleteFile mt_tmean${ext}
+    #deleteFile mt_tmean${ext}
     deleteFile kmt_tmean${ext}
     deleteFile ${wpre}${upre}${dspre}kmt_${funcFile}_tmean${ext}
     deleteFile fs${wpre}${upre}${dspre}kmt_mean_float${ext}
@@ -178,7 +178,7 @@ function cleanup_preprocessFunctional {
     deleteFile m_${funcFile}_mean_reg${ext}
     deleteFile ${upre}m_${funcFile}${ext}
     deleteFile t${upre}m_${funcFile}${ext}
-    deleteFile tm_${funcFile}_tmean${ext}
+    #deleteFile tm_${funcFile}_tmean${ext}
     deleteFile ${dspre}kt${upre}m_${funcFile}${ext}
     deleteFile ${dspre}kt${upre}m_tmean_mask${ext}
     deleteFile ${wpre}${dspre}kt${upre}m_${funcFile}${ext}
@@ -200,7 +200,7 @@ function cleanup_preprocessFunctional {
 
     #with one-step warp, often get files such as wuktmd where FM unwarping and MNI warp are adjacent
     deleteFile m_${funcFile}${ext}
-    deleteFile tm_${funcFile}${ext}
+    #deleteFile tm_${funcFile}${ext}
     deleteFile ktm_${funcFile}${ext}
     deleteFile ${dspre}ktm_${funcFile}${ext}
     deleteFile ktm_tmean_mask${ext}
@@ -212,7 +212,7 @@ function cleanup_preprocessFunctional {
 
     deleteFile ktm_${funcFile}_Tmin${ext}
     deleteFile ktm_${funcFile}_Tmin_10pctThr${ext}
-    deleteFile tm_tmean${ext}
+    #deleteFile tm_tmean${ext}
     deleteFile ktm_${funcFile}_tmean${ext}
     deleteFile ${wpre}${upre}${dspre}ktm_${funcFile}_tmean${ext}
     deleteFile fs${wpre}${upre}${dspre}ktm_mean_float${ext}
@@ -252,12 +252,12 @@ function cleanup_preprocessFunctional {
 
     rm -rf mcOrig
     rm -rf unwarptemps #intermediate fieldmap files
-    [ -d mc_mats ] && rm -rf mc_mats #original motion transformation matrices
+    #[ -d mc_mats ] && rm -rf mc_mats #original motion transformation matrices
 
     deleteFile example_func${ext}
     deleteFile premc_mean_vol${ext}
-    deleteFile mc_initial${ext} #initial motion correction to mean functional
-    deleteFile mc_target_mask${ext} #brain mask for mc_target used for rmsdiff in motion_plots
+    #deleteFile mc_initial${ext} #initial motion correction to mean functional
+    #deleteFile mc_target_mask${ext} #brain mask for mc_target used for rmsdiff in motion_plots
 
     deleteFile "*${funcFile}*_rel_mean.rms" #shouldn't be necessary anymore since we compute rms ourselves
     deleteFile "*${funcFile}*_abs_mean.rms"
@@ -284,5 +284,24 @@ function cleanup_preprocessFunctional {
 
     if [[ "$nuisance_regression" -eq 1 || "$bandpass_filter" -eq 1 ]]; then
 	deleteFile ns${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
+    fi
+
+
+    # remove motion files if we aren't told to keep them
+    # this option implemented to keep time consuming 4d motion computation
+    if [[ -z "$KEEP_MOTION_FILES" ]]; then
+      deleteFile tm_tmean${ext}
+      deleteFile tm_${funcFile}_tmean${ext}
+      deleteFile tm_${funcFile}${ext}
+
+      deleteFile mt_${funcFile}${ext}
+      deleteFile mt_${funcFile}${ext}
+      deleteFile mt_${funcFile}_mean_reg${ext}
+      deleteFile mt_tmean${ext}
+
+      [ -d mc_mats ] && rm -rf mc_mats #original motion transformation matrices
+
+      deleteFile mc_initial${ext} #initial motion correction to mean functional
+      deleteFile mc_target_mask${ext} #brain mask for mc_target used for rmsdiff in motion_plots
     fi
 }
