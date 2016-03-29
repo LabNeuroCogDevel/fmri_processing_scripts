@@ -1,5 +1,22 @@
 #!/bin/bash
 
+# read_preproc_cmd does not work!
+# sets $@ for function instead of global
+function read_preproc_cmd {
+ if [ -f .preproc_cmd ]; then
+   read cmd < .preproc_cmd
+   # disable wildcard expansion so that -dicom patterns don't get expanded
+   set -f 
+   # change positional parameters to stored settings
+   set -- $cmd
+   # re-enable wildcard expansion as usual
+   set +f 
+ else
+   echo "no .preproc_cmd files, cannot read!"
+   exit 1
+ fi
+}
+
 function rm_completefiles {
     rel "\nStarting over...\n\nRe-running all preprocessing steps\n" c
     deleteFile ".functional"
@@ -135,9 +152,12 @@ function parse_args {
 	    echo ""
 
 	    if [ $resume = y ]; then
-		set -f #disable wildcard expansion so that -dicom patterns don't get expanded
-		set -- $cmd #change positional parameters to stored settings
-		set +f #re-enable wildcard expansion as usual
+              #disable wildcard expansion so that -dicom patterns don't get expanded
+		set -f 
+              # change positional parameters to stored settings
+		set -- $cmd
+              # re-enable wildcard expansion as usual
+		set +f
 	    else
 		echo -e "\n\nQuitting script."
 		exit 0
@@ -165,16 +185,43 @@ function parse_args {
 	if [ -f .preproc_cmd ]; then
 	    read cmd < .preproc_cmd
 	    cmd="${cmd/-startover/}"
-	    set -f #disable wildcard expansion so that -dicom patterns don't get expanded
-	    set -- $cmd #change positional parameters to stored settings
-	    set +f #re-enable wildcard expansion as usual
+           # disable wildcard expansion so that -dicom patterns don't get expanded
+           set -f 
+           # change positional parameters to stored settings
+	    set -- $cmd
+           # re-enable wildcard expansion as usual
+	    set +f 
 	else
 	    echo "-cleanup_only or -startover specified alone, but no known preprocessing call in .preproc_cmd."
 	    exit 1
 	fi
+
+    elif [ $# -eq 2 ] && 
+         [[ "$@" =~ -cleanup ]] && # cleanup or cleanup_only, doesn't matter
+         [[ "$@" =~ -keep_motion_files ]]; then
+	cleanup_only=1
+	cleanup=1
+       KEEP_MOTION_FILES=1
+	if [ -f .preproc_cmd ]; then
+	    read cmd < .preproc_cmd
+	    cmd="${cmd/-startover/}"
+           # disable wildcard expansion so that -dicom patterns don't get expanded
+           set -f 
+           # change positional parameters to stored settings
+	    set -- $cmd
+           # re-enable wildcard expansion as usual
+	    set +f 
+	else
+	    echo "doesn't look like we've run anything yet. dont know how to -cleanup_only and -keep_motion_files"
+	    exit 1
+	fi
+      
     else
+       # don't overwrite
+       [ -r .preproc_cmd ] && mv .preproc_cmd .preproc_cmd_mv$(date +%s)
 	#write the parameter settings to file
-	echo "$@" > .preproc_cmd #for resuming failed run.
+       # for resuming failed run.
+	echo "$@" > .preproc_cmd 
     fi
 
     #echo "about to process with cmd: $@"
@@ -412,6 +459,7 @@ function parse_args {
 	elif [ $1 = -wavelet_threshold ]; then
 	    waveletThreshold="${2}"
 	    shift 2
+   # probably dont see this, -cleanup_only skips this parseing
    elif [ $1 = -keep_motion_files ] ;then
        KEEP_MOTION_FILES=1
        shift 1
@@ -492,3 +540,5 @@ function parse_args {
     [ $no_smooth -eq 0 ] && smoothing_suffix="_${smoothing_kernel}" || smoothing_suffix=
 
 }
+
+# vim: set tabstop=7:

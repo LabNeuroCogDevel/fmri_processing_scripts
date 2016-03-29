@@ -124,7 +124,10 @@ function cleanup_preprocessFunctional {
 	upre=""
     fi
 
+    [ -z "$funcFile" ] && echo "ERROR: $FUNC_NAME does not have funcfile!" && exit 1
+    #echo "func: $funcFile"
     #echo "dspre: $dspre"
+    #echo "wpre: $wpre"
     #echo "upre: $upre"
     #echo "smoothing_suffix: $smoothing_suffix"
     #echo "ext: $ext"
@@ -132,8 +135,8 @@ function cleanup_preprocessFunctional {
     #interleaved stream
     deleteFile t_${funcFile}${ext}
     #deleteFile mt_${funcFile}${ext}
-    deleteFile ${upre}mt_${funcFile}${ext}
-    deleteFile ${upre}mt_${funcFile}_mean_reg${ext}
+    #deleteFile ${upre}mt_${funcFile}${ext}
+    #deleteFile ${upre}mt_${funcFile}_mean_reg${ext}
     deleteFile k${upre}mt_${funcFile}${ext}
     deleteFile k${upre}mt_tmean_mask${ext}
     deleteFile ${wpre}${dspre}k${upre}mt_${funcFile}${ext}
@@ -143,7 +146,7 @@ function cleanup_preprocessFunctional {
 
     deleteFile k${upre}mt_${funcFile}_Tmin${ext}
     deleteFile k${upre}mt_${funcFile}_Tmin_10pctThr${ext}
-    deleteFile ${upre}mt_tmean${ext}
+    #deleteFile ${upre}mt_tmean${ext}
     deleteFile ${dspre}k${upre}mt_tmean${ext}
     deleteFile ${wpre}${dspre}k${upre}mt_${funcFile}_tmean${ext}
     deleteFile fs${wpre}${dspre}kmt_mean_float${ext}
@@ -174,10 +177,10 @@ function cleanup_preprocessFunctional {
     deleteFile s${wpre}${upre}${dspre}kmt_${funcFile}${smoothing_suffix}_usan_size${ext}
 
     #sequential stream
-    deleteFile m_${funcFile}${ext}
-    deleteFile m_${funcFile}_mean_reg${ext}
-    deleteFile ${upre}m_${funcFile}${ext}
-    deleteFile t${upre}m_${funcFile}${ext}
+    #deleteFile m_${funcFile}${ext}
+    #deleteFile m_${funcFile}_mean_reg${ext}
+    #deleteFile ${upre}m_${funcFile}${ext}
+    #deleteFile t${upre}m_${funcFile}${ext}
     #deleteFile tm_${funcFile}_tmean${ext}
     deleteFile ${dspre}kt${upre}m_${funcFile}${ext}
     deleteFile ${dspre}kt${upre}m_tmean_mask${ext}
@@ -287,9 +290,28 @@ function cleanup_preprocessFunctional {
     fi
 
 
+    ## Files left over from Finn's pipeline
+    #wktm_rest_1_98_2_mask_dil1x.nii.gz
+    #wktm_rest_1_98_2_mask_dil1x_templateTrim.nii.gz
+    deleteFile ${wpre}k${upre}tm_${funcFile}_98_2_mask_dil1x${ext}
+    deleteFile ${wpre}k${upre}tm_${funcFile}_98_2_mask_dil1x_templateTrim${ext}
+    ###
+
+    if [ -n "$upre" ]; then
+       deleteFile ${upre}mt_${funcFile}${ext}
+       deleteFile ${upre}mt_${funcFile}_mean_reg${ext}
+       deleteFile ${upre}mt_tmean${ext}
+       deleteFile ${upre}m_${funcFile}${ext}
+       deleteFile t${upre}m_${funcFile}${ext}
+    fi
+
     # remove motion files if we aren't told to keep them
     # this option implemented to keep time consuming 4d motion computation
     if [[ -z "$KEEP_MOTION_FILES" ]]; then
+
+      deleteFile m_${funcFile}${ext}
+      deleteFile m_${funcFile}_mean_reg${ext}
+
       deleteFile tm_tmean${ext}
       deleteFile tm_${funcFile}_tmean${ext}
       deleteFile tm_${funcFile}${ext}
@@ -303,5 +325,15 @@ function cleanup_preprocessFunctional {
 
       deleteFile mc_initial${ext} #initial motion correction to mean functional
       deleteFile mc_target_mask${ext} #brain mask for mc_target used for rmsdiff in motion_plots
+
+      # in case we missed the empty upre
+      deleteFile ${upre}mt_${funcFile}${ext}
+      deleteFile ${upre}mt_${funcFile}_mean_reg${ext}
+      deleteFile ${upre}mt_tmean${ext}
+      deleteFile ${upre}m_${funcFile}${ext}
+      deleteFile t${upre}m_${funcFile}${ext}
+
     fi
 }
+
+# vim: set tabstop=7:
