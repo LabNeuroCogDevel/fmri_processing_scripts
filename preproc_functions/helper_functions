@@ -104,6 +104,63 @@ function cleanup_preprocessMprage {
 }
 
 
+# remove flag files indicating a step was completed
+# keeps .functional, .detect_tr, .preprocessfunctional_complete
+# optionally keeps .motion_correction_complete (if KEEP_MOTION_FILES)
+function rm_dotsteps {
+    deleteFile ".detect_sliceorder"
+    deleteFile ".median_intensity"
+    deleteFile ".pct2"
+    deleteFile ".csf_ts"
+    deleteFile ".csf_ts_deriv"
+    deleteFile ".wm_ts"
+    deleteFile ".wm_ts_deriv"
+    deleteFile ".gs_ts"
+    deleteFile ".gs_ts_deriv"
+    deleteFile ".motion_demean"
+    deleteFile ".motion_deriv"
+    deleteFile ".nuisance_regressors"
+    deleteFile ".wm_ero2x${ext}"
+    deleteFile ".csf_ero2x${ext}"
+    deleteFile ".brainmask_ero2x_anat${ext}"
+    deleteFile ".brainmask_ero2x${ext}"
+    deleteFile ".template_csf_prob${ext}"
+    deleteFile ".template_wm_prob${ext}"
+    deleteFile ".fieldmap_magnitude"
+    deleteFile ".fieldmap_phase"
+    deleteFile ".reorient2std_complete"
+    deleteFile ".motion_censor_complete"
+    deleteFile ".motion_plots_complete"
+    #deleteFile ".slice_timing_complete"
+    #deleteFile ".motion_correction_complete"
+    deleteFile ".skull_strip_complete"
+    deleteFile ".func2struct_complete"
+    deleteFile ".warp_complete"
+    deleteFile ".compute_warp_complete"
+    deleteFile ".smoothing_complete"
+    deleteFile ".temporal_filtering_complete"
+    deleteFile ".rescaling_complete"
+    deleteFile ".thresholding_complete"
+    deleteFile ".despike_complete"
+    deleteFile ".fmunwarp_complete"
+    deleteFile ".prepare_fieldmap_complete"
+    deleteFile ".nuisance_regression_complete"
+    deleteFile ".bandpass_filter_complete"
+
+    # we want to keep motion bits around
+    if [ -z "$KEEP_MOTION_FILES" ]; then
+      deleteFile ".motion_correction_complete"
+      deleteFile ".slice_timing_complete"
+    fi
+}
+function rm_completefiles {
+    rel "\nStarting over...\n\nRe-running all preprocessing steps\n" c
+    deleteFile ".functional"
+    deleteFile ".detect_tr"
+    rm_dotsteps
+    deleteFile ".preprocessfunctional_complete"
+}
+
 function cleanup_preprocessFunctional {
 
     if [ ${despike} -eq 1 ]; then
@@ -334,6 +391,27 @@ function cleanup_preprocessFunctional {
       deleteFile t${upre}m_${funcFile}${ext}
 
     fi
+
+    # keeps .functional, .detect_tr, .preprocessfunctional_complete
+    # optionally keeps .motion_correction_complete (if KEEP_MOTION_FILES)
+    rm_dotsteps
+}
+
+# read_preproc_cmd does not work!
+# sets $@ for function instead of global
+function read_preproc_cmd {
+ if [ -f .preproc_cmd ]; then
+   read cmd < .preproc_cmd
+   # disable wildcard expansion so that -dicom patterns don't get expanded
+   set -f 
+   # change positional parameters to stored settings
+   set -- $cmd
+   # re-enable wildcard expansion as usual
+   set +f 
+ else
+   echo "no .preproc_cmd files, cannot read!"
+   exit 1
+ fi
 }
 
 # vim: set tabstop=7:
