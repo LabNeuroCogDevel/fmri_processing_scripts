@@ -287,8 +287,8 @@ function cleanup_preprocessFunctional {
     deleteFile ${preSmooth}_mask_edgecorrection${ext}
 
     #general files
-    deleteFile mc_mean_vol_target${ext}
-    deleteFile premc_mean_vol${ext}
+    #deleteFile mc_mean_vol_target${ext}
+    #deleteFile premc_mean_vol${ext}
 
     deleteFile func_to_struct_init.mat #6 dof transform prior to BBR
     deleteFile fmap2epi_bbr.mat
@@ -336,8 +336,8 @@ function cleanup_preprocessFunctional {
     deleteFile epiref_brain_bias${ext}
     deleteFile epiref_brain_restore${ext}
     deleteFile func_to_epiref${ext}
-    deleteFile mc_target_brain_bias${ext}
-    deleteFile mc_target_brain_restore${ext}
+    #deleteFile mc_target_brain_bias${ext}
+    #deleteFile mc_target_brain_restore${ext}
 
     deleteFile dktm_${funcFile}_wavelet_noise.nii.gz
     deleteFile dkmt_${funcFile}_wavelet_noise.nii.gz
@@ -382,6 +382,13 @@ function cleanup_preprocessFunctional {
 
       deleteFile mc_initial${ext} #initial motion correction to mean functional
       deleteFile mc_target_mask${ext} #brain mask for mc_target used for rmsdiff in motion_plots
+      
+
+      deleteFile mc_target_brain_bias${ext}
+      deleteFile mc_target_brain_restore${ext}
+
+      deleteFile mc_mean_vol_target${ext}
+      deleteFile premc_mean_vol${ext}
 
       # in case we missed the empty upre
       deleteFile ${upre}mt_${funcFile}${ext}
