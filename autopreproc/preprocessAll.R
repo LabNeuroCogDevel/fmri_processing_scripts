@@ -101,17 +101,39 @@ mprage_dirs <- system(paste0("find $PWD -iname \"", mprage_dirpattern, "\" -type
 
 registerDoMC(njobs) #setup number of jobs to fork
 
-##for (d in mprage_dirs) {
-f <- foreach(d=mprage_dirs, .inorder=FALSE) %dopar% {
+##figure out which mprage scans need to be processed
+##then process in parallel below
+mprage_toprocess <- c()
+for (d in mprage_dirs) {
     subid <- basename(dirname(d))
     outdir <- file.path(loc_mrproc_root, subid)
-    if (!file.exists(outdir)) { dir.create(outdir, showWarnings=FALSE, recursive=TRUE) } #create preprocessed folder if absent
+    #should probably just use short circuit || here instead of compound if elses
+    if (!file.exists(outdir)) {
+        ##create preprocessed folder if absent
+        dir.create(outdir, showWarnings=FALSE, recursive=TRUE)
+        mprage_toprocess <- c(mprage_toprocess, d)
+    } else if (!file.exists(file.path(outdir, "mprage"))) {
+        #output directory exists, but mprage subdirectory does not
+        mprage_toprocess <- c(mprage_toprocess, d)
+    } else if (!file.exists(outdir, "mprage", ".mprage_complete")) {
+        #mprage subdirectory exists, but complete file does not
+        mprage_toprocess <- c(mprage_toprocess, d)
+    }
+}
+
+cat("Mprage directories to be processed:\n")
+print(mprage_toprocess)
+
+f <- foreach(d=mprage_toprocess, .inorder=FALSE) %dopar% {
+    subid <- basename(dirname(d))
+    outdir <- file.path(loc_mrproc_root, subid)
     
     if (!file.exists(file.path(outdir, "mprage"))) { system(paste("cp -Rp", d, file.path(outdir, "mprage"))) } #copy untouched mprage to processed directory
     setwd(file.path(outdir, "mprage"))
     
     #call preprocessmprage
     if (file.exists(".mprage_complete")) {
+        #this should never fire given logic above
         return("complete") #skip completed mprage directories
     } else {
         script_args <- "-delete_dicom archive -template_brain MNI_2mm -cleanup -template_brain MNI_2mm"
