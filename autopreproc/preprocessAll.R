@@ -75,37 +75,39 @@ list.dirs <- function(...) {
     return(dlist) #will be null if no matches
 }
 
-#find original mprage directories to rename
-#mprage_dirs <- list.dirs(pattern=mprage_dirpattern)
+##find original mprage directories to rename
+##mprage_dirs <- list.dirs(pattern=mprage_dirpattern)
 
-#much faster than above because can control recursion depth
+##much faster than above because can control recursion depth
 mprage_dirs <- system(paste0("find $PWD -iname \"", mprage_dirpattern, "\" -type d -mindepth 2 -maxdepth 2"), intern=TRUE)
 
-if (length(mprage_dirs) > 0L) {
-    cat("Renaming original mprage directories to \"mprage\"\n")
-    for (d in mprage_dirs) {
-        mdir <- file.path(dirname(d), "mprage")
-        file.rename(d, mdir) #rename to mprage
-    }
-}
+##removing rename of mprage directories in MR_Raw to allow for a simple/pristine rsync
+##mprage is now renamed at the time it is copied into MR_Proc
+##if (length(mprage_dirs) > 0L) {
+##    cat("Renaming original mprage directories to \"mprage\"\n")
+##    for (d in mprage_dirs) {
+##        mdir <- file.path(dirname(d), "mprage")
+##        file.rename(d, mdir) #rename to mprage
+##    }
+##}
 
-#find all renamed mprage directories for processing
-#use beginning and end of line markers to force exact match
-#use getwd to force absolute path since we setwd below
-#mprage_dirs <- list.dirs(pattern="^mprage$", path=getwd())
+##find all renamed mprage directories for processing
+##use beginning and end of line markers to force exact match
+##use getwd to force absolute path since we setwd below
+##mprage_dirs <- list.dirs(pattern="^mprage$", path=getwd())
 
-#faster than above
-mprage_dirs <- system("find $PWD -mindepth 2 -maxdepth 2 -type d -iname mprage", intern=TRUE)
+##faster than above
+##mprage_dirs <- system("find $PWD -mindepth 2 -maxdepth 2 -type d -iname mprage", intern=TRUE)
 
 registerDoMC(njobs) #setup number of jobs to fork
 
-#for (d in mprage_dirs) {
+##for (d in mprage_dirs) {
 f <- foreach(d=mprage_dirs, .inorder=FALSE) %dopar% {
     subid <- basename(dirname(d))
     outdir <- file.path(loc_mrproc_root, subid)
     if (!file.exists(outdir)) { dir.create(outdir, showWarnings=FALSE, recursive=TRUE) } #create preprocessed folder if absent
     
-    if (!file.exists(file.path(outdir, "mprage"))) { system(paste("cp -Rp", d, outdir)) } #copy untouched mprage to processed directory
+    if (!file.exists(file.path(outdir, "mprage"))) { system(paste("cp -Rp", d, file.path(outdir, "mprage"))) } #copy untouched mprage to processed directory
     setwd(file.path(outdir, "mprage"))
     
     #call preprocessmprage
