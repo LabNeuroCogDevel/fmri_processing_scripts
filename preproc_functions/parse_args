@@ -49,6 +49,13 @@ function parse_args {
     #parse input arguments, initialize default parameter settings
     #when called from preprocessFunctional, must pass "$@", which is all input parameters to script
 
+    #prefer ACI installation
+    if [ -d /storage/group/mnh5174_collab/standard ]; then
+	stddir=/storage/group/mnh5174_collab/standard
+    else
+	stddir=$HOME/standard
+    fi
+    
     #initialize defaults
     funcFile=
     smoothing_kernel="5"
@@ -96,7 +103,7 @@ function parse_args {
     st_first= #default to empty and choose default based on slice acquisition order (sequential versus interleaved)
     thresholdMethod="98_2"
     tr= #never assume a TR. Force definition or use auto-detect from DICOM.
-    templateBrain="$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" #default to new 2009 MNI
+    templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" #default to new 2009 MNI
     templateName=MNI_3mm
     waveletDespike=0
     waveletM1000=0
@@ -364,12 +371,12 @@ function parse_args {
 	elif [ $1 = -template_brain ]; then
 	    templateName="${2}"
 	    case $2 in
-		Tal_3mm) templateBrain="$HOME/standard/talairach_fsl_mni152/TalFSL_MNI152_T1_3mm_brain" ;;
-		MNI_FSL_3mm) templateBrain="$HOME/standard/fsl_mni152/MNI152_T1_3mm_brain" ;;
-		MNI_3mm) templateBrain="$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" ;;
-		MNI_2.3mm) templateBrain="$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2.3mm" ;;
-		SPM_2mm) templateBrain="$HOME/standard/spm8_mni/T1_brain" ;;
-		MNI_2mm) templateBrain="$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm" ;;
+		Tal_3mm) templateBrain="${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_3mm_brain" ;;
+		MNI_FSL_3mm) templateBrain="${stddir}/fsl_mni152/MNI152_T1_3mm_brain" ;;
+		MNI_3mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" ;;
+		MNI_2.3mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2.3mm" ;;
+		SPM_2mm) templateBrain="${stddir}/spm8_mni/T1_brain" ;;
+		MNI_2mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm" ;;
 		*) echo -e "Reference brain -template_brain ${2} not recognized. Options are MNI_3mm, MNI_FSL_3mm, SPM_2mm, and Tal_3mm."; exit 1 ;;
 	    esac
 	    shift 2

@@ -193,23 +193,29 @@ while [ _$1 != _ ] ; do
     fi
 done
 
+#prefer ACI installation
+if [ -d /storage/group/mnh5174_collab/standard ]; then
+    stddir=/storage/group/mnh5174_collab/standard
+else
+    stddir=$HOME/standard
+fi
 
 case "$reference" in
-    Tal_2mm)  bettedRefBrain=$HOME/standard/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm_brain;
-	unbettedRefBrain=$HOME/standard/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm;
-	refMask=$HOME/standard/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm_brain_mask_dil;
-	fnirtConfig=$HOME/standard/fnirtTalairachSettings.cnf;;
-    MNI_2mm) bettedRefBrain=$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm;
-	unbettedRefBrain=$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_2mm;
-	refMask=$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2mm_dil;
+    Tal_2mm)  bettedRefBrain=${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm_brain;
+	unbettedRefBrain=${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm;
+	refMask=${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm_brain_mask_dil;
+	fnirtConfig=${stddir}/fnirtTalairachSettings.cnf;;
+    MNI_2mm) bettedRefBrain=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm;
+	unbettedRefBrain=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_2mm;
+	refMask=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2mm_dil;
 	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
-    MNI_FSL_2mm) bettedRefBrain=$HOME/standard/fsl_mni152/MNI152_T1_2mm_brain;
-	unbettedRefBrain=$HOME/standard/fsl_mni152/MNI152_T1_2mm;
-	refMask=$HOME/standard/fsl_mni152/MNI152_T1_2mm_brain_mask_dil;
+    MNI_FSL_2mm) bettedRefBrain=${stddir}/fsl_mni152/MNI152_T1_2mm_brain;
+	unbettedRefBrain=${stddir}/fsl_mni152/MNI152_T1_2mm;
+	refMask=${stddir}/fsl_mni152/MNI152_T1_2mm_brain_mask_dil;
 	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
-    SPM_2mm)  bettedRefBrain=$HOME/standard/spm8_mni/T1_brain;
-	unbettedRefBrain=$HOME/standard/spm8_mni/T1;
-	refMask=$HOME/standard/spm8_mni/brainmask_0.5thresh;
+    SPM_2mm)  bettedRefBrain=${stddir}/spm8_mni/T1_brain;
+	unbettedRefBrain=${stddir}/spm8_mni/T1;
+	refMask=${stddir}/spm8_mni/brainmask_0.5thresh;
 	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
     *) echo -e "Reference brain not recognized. Options are MNI_2mm, MNI_FSL_2mm, SPM_2mm, and Tal_2mm."; exit 1 ;;
 esac
