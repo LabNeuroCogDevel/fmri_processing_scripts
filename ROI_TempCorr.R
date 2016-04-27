@@ -25,7 +25,8 @@ printHelp <- function() {
       "  -njobs <n>: Number of parallel jobs to run when computing correlations. Default: 4.",
       "  -censor <1D file>: An AFNI-style 1D censor file containing a single column of 0/1 values where 0 represents volumes to be censored (e.g., for motion scrubbing)",
       "  -na_string: Character string indicating how to represent missing correlations in output file. Default NA.",
-      "",
+      "  -port <socket>: cluster socket, default 10290. Useful if other R+doSNOW processes are already using the defaults port ", 
+      "                  needed when 'Error in socketConnection ... cannot open the connection ... port 10290 cannot be opened'",
       "If the -ts file does not match the -rois file, the -ts file will be resampled to match the -rois file using 3dresample. This requires that the images be coregistered,",
       "  in the same stereotactic space, and have the same grid size.",
       "",
@@ -60,6 +61,7 @@ corr_method <- "robust"
 roi_reduce <- "pca"
 fisherz <- FALSE
 na_string <- "NA"
+clustersocketport <- 10290
 
 argpos <- 1
 while (argpos <= length(args)) {
@@ -100,6 +102,10 @@ while (argpos <= length(args)) {
   } else if (args[argpos] == "-na_string") {
     na_string <- args[argpos + 1]
     argpos <- argpos + 2
+  } else if (args[argpos] == "-port") {
+    clustersocketport <- as.integer(args[argpos + 1])
+    argpos <- argpos + 2
+    if (is.na(njobs)) { stop("-port must be an integer") }
   } else {
     stop("Not sure what to do with argument: ", args[argpos])
   }
@@ -147,9 +153,20 @@ genCorrMat <- function(roits, method="auto", fisherz=FALSE) {
   #indices of lower triangle
   lo.tri <- which(lower.tri(rcorMat), arr.ind=TRUE)
   
+  # how many chucks per core
+  # for small datasets, need to make sure we didn't pick too high a number
   chunksPerProcessor <- 8
+  repeat {
+    chunksize <- floor(nrow(lo.tri)/njobs/chunksPerProcessor)
+    if(chunksize >= 1) break
+    # decrease chunk size and check we can still go lower
+    chunksPerProcessor <- chunksPerProcessor - 1
+    cat('WARNING: job is small, decreasing chunks to',chunksPerProcessor,'\n')
+    if(chunksPerProcessor<1) stop('too many jobs for too little work, lower -n')
+  }
+
   #do manual chunking: divide correlations across processors, where each processor handles 10 chunks in total (~350 corrs per chunk)
-  corrvec <- foreach(pair=iter(lo.tri, by="row", chunksize=floor(nrow(lo.tri)/njobs/chunksPerProcessor)), .inorder=TRUE, .combine=c, .multicombine=TRUE, .packages="robust") %dopar% {
+  corrvec <- foreach(pair=iter(lo.tri, by="row", chunksize=chunksize), .inorder=TRUE, .combine=c, .multicombine=TRUE, .packages="robust") %dopar% {
     #iter will pass entire chunk of lo.tri, use apply to compute row-wise corrs
     #basic cor for testing (much faster)
     if (method %in% c("pearson", "spearman", "kendall")) {
@@ -278,7 +295,7 @@ if (length(maskvals) > 1000) {
   warning("More than 1000 putative ROIs identified in mask file: ", fname_roimask)
 }
 
-setDefaultClusterOptions(master="localhost", port=10290)
+setDefaultClusterOptions(master="localhost", port=clustersocketport)
 clusterobj <- makeSOCKcluster(njobs)
 registerDoSNOW(clusterobj)
 
