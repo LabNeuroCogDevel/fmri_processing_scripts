@@ -1,14 +1,17 @@
 #!/usr/bin/env Rscript
+#This is a script for automated preprocessing of functional MRI data and their corresponding structural scans.
+#It expects to find several key configuration parameters in the system environment at the time of execution.
+#These are typically handled upstream of the script by autopreproc, which sources a cfg file to initialize these variables.
+#The basic structure is that files are copied from a raw source location to a processed destination location.
+#Strutural scans are then processed using preprocessMprage and functional scans are then processed by preprocessFunctional.
+#The script uses the foreach/dopar approach with doMC as the backend to make processing embarrassingly parallel.
 
-#read in command line arguments.
-#current format:
-#arg 1: config file to process (default current directory)
-#arg 2: number of parallel jobs (default 8)
-#arg 3: folder containing MRRC reconstructed MB data (rsync from meson)
+#The only parameter expected on the command line is the number of jobs to run in parallel, 
+#and if not specified, the script defaults to 8.
+
 args <- commandArgs(trailingOnly = TRUE)
 
-#TODO: Accept config file as input, source (in empty env?) and then use Sys.setenv to get things running below.
-
+#location of raw MR data
 goto=Sys.getenv("loc_mrraw_root")
 if (! file.exists(goto)) { stop("Cannot find directory: ", goto) }
 setwd(goto)
@@ -20,30 +23,27 @@ if (length(args) > 0L) {
     njobs <- 8
 }
 
-## if (length(args) > 2L) {
-##     MB_src <- args[3L] #folder containing MRRC reconstructed data
-## } else {
-##     MB_src <- normalizePath(Sys.glob("../WPC-*_MB")) #assume that MB data are up one directory in folder called WPC-XXXX_MB
-## }
-
-
+#load required libraries
 library(foreach)
 library(doMC)
 library(iterators)
 
 #pull in cfg environment variables from bash script
-mprage_dirpattern=Sys.getenv("mprage_dirpattern")
-preprocessed_dirname=Sys.getenv("preprocessed_dirname")
-paradigm_name=Sys.getenv("paradigm_name")
-n_expected_funcruns=Sys.getenv("n_expected_funcruns")
-preproc_call=Sys.getenv("preproc_call")
-MB_src=Sys.getenv("loc_mb_root")
-mb_filepattern=Sys.getenv("mb_filepattern")
+mprage_dirpattern = Sys.getenv("mprage_dirpattern") #wildcard pattern defining names of relevant structural scans
+preprocessed_dirname = Sys.getenv("preprocessed_dirname") #name of subdirectory output for each processed fMRI scan
+paradigm_name = Sys.getenv("paradigm_name") #name of paradigm used as a prefix for processed run directories
+n_expected_funcruns = Sys.getenv("n_expected_funcruns") #number of runs per subject of the task
+preproc_call = Sys.getenv("preproc_call") #parameters passed forward to preprocessFunctional
+MB_src = Sys.getenv("loc_mb_root") #Name of directory containing offline-reconstructed fMRI data (only relevant for Tae Kim sequence Pittburgh data)
+mb_filepattern = Sys.getenv("mb_filepattern") #Wildcard pattern of MB reconstructed data within MB_src
+useOfflineMB = ifelse(nchar(MB_src) > 0, TRUE, FALSE) #whether to use offline-reconstructed hdr/img files as preprocessing starting point
+fmridicom_filepattern = Sys.getenv("fmri_dicompattern")
 
 #optional config settings
-loc_mrproc_root=Sys.getenv("loc_mrproc_root")
-gre_fieldmap_dirpattern=Sys.getenv("gre_fieldmap_dirpattern")
-fieldmap_cfg=Sys.getenv("fieldmap_cfg")
+loc_mrproc_root = Sys.getenv("loc_mrproc_root")
+gre_fieldmap_dirpattern = Sys.getenv("gre_fieldmap_dirpattern")
+fieldmap_cfg = Sys.getenv("fieldmap_cfg")
+useFieldmap = ifelse(nchar(gre_fieldmap_dirpattern) > 0, TRUE, FALSE) #whether to include fieldmaps in processing
 
 ##All of the above environment variables must be in place for script to work properly.
 if (any(c(mprage_dirpattern, preprocessed_dirname, paradigm_name, n_expected_funcruns, preproc_call) == "")) {
@@ -78,18 +78,9 @@ list.dirs <- function(...) {
 ##find original mprage directories to rename
 ##mprage_dirs <- list.dirs(pattern=mprage_dirpattern)
 
-##much faster than above because can control recursion depth
+##Much faster on *nix-friendly systems than above because can control recursion depth
+##Note that the depth of 2 assumes a structure such as Project_Dir/SubjectID/mprage_dir where each subject has a single directory
 mprage_dirs <- system(paste0("find $PWD -iname \"", mprage_dirpattern, "\" -type d -mindepth 2 -maxdepth 2"), intern=TRUE)
-
-##removing rename of mprage directories in MR_Raw to allow for a simple/pristine rsync
-##mprage is now renamed at the time it is copied into MR_Proc
-##if (length(mprage_dirs) > 0L) {
-##    cat("Renaming original mprage directories to \"mprage\"\n")
-##    for (d in mprage_dirs) {
-##        mdir <- file.path(dirname(d), "mprage")
-##        file.rename(d, mdir) #rename to mprage
-##    }
-##}
 
 ##find all renamed mprage directories for processing
 ##use beginning and end of line markers to force exact match
@@ -160,8 +151,7 @@ f <- foreach(d=mprage_toprocess, .inorder=FALSE) %dopar% {
 #get list of subject directories in root directory
 subj_dirs <- list.dirs(path=basedir, recursive=FALSE)
 
-#make run processing parallel, not subject processing
-#f <- foreach(d=subj_dirs, .inorder = FALSE) %dopar% {
+#Make run processing parallel, not subject processing. This scales much better across processors
 all_funcrun_dirs <- list()
 mb_src_queue <- c() #reconstructed MB files to be copied
 mb_dest_queue <- c() #destinations for MB NIfTIs
@@ -172,18 +162,18 @@ for (d in subj_dirs) {
 
     subid <- basename(d)
 
-    #define root directory for subject's processed data
+    ##define root directory for subject's processed data
     if (loc_mrproc_root == "") {
+        ##assume that we should create a subdirectory relative to the subject directory
         outdir <- file.path(d, preprocessed_dirname) #e.g., /Volumes/Serena/MMClock/MR_Raw/10637/MBclock_recon
     } else {
         outdir <- file.path(loc_mrproc_root, subid, preprocessed_dirname) #e.g., /Volumes/Serena/MMClock/MR_Proc/10637/native_nosmooth
     }
 
     #determine directories for fieldmap if using
-    apply_fieldmap <- FALSE
     fmdirs <- NULL
     magdir <- phasedir <- NA_character_ #reduce risk of accidentally carrying over fieldmap from one subject to next in loop
-    if (gre_fieldmap_dirpattern != "" && fieldmap_cfg != "") {
+    if (useFieldmap) {
         ##determine phase versus magnitude directories for fieldmap
         ##in runs so far, magnitude comes first. preprocessFunctional should handle properly if we screw this up...
         fmdirs <- sort(normalizePath(Sys.glob(file.path(d, gre_fieldmap_dirpattern))))
@@ -207,119 +197,122 @@ for (d in subj_dirs) {
         stop ("Unable to locate mprage directory: ", mpragedir)
     }
     
-    ##create paradigm_run1-paradigm_run8 folder structure and copy raw data
+    ##create paradigm_run1-paradigm_run<N> folder structure and copy raw data
     if (!file.exists(outdir)) { #create preprocessed folder if absent
         dir.create(outdir, showWarnings=FALSE, recursive=TRUE)
     } else {
         ##preprocessed folder exists, check for .preprocessfunctional_complete files
         ##in the case of 1 functional run, we don't create subdirectories
-
-        #take this out for now: default to rest1 for single run of rest.
-        #if (n_expected_funcruns == 1) { pattern=paradigm_name
-        #                            } else { pattern=paste0(paradigm_name,"[0-9]+") }
         
         extant_funcrundirs <- list.dirs(path=outdir, pattern=paste0(paradigm_name,"[0-9]+"), full.names=TRUE, recursive=FALSE)
         if (length(extant_funcrundirs) > 0L &&
             length(extant_funcrundirs) >= n_expected_funcruns &&
             all(sapply(extant_funcrundirs, function(x) { file.exists(file.path(x, ".preprocessfunctional_complete")) }))) {
-            cat("   preprocessing already complete for all functional run directories\n\n")
+            cat("   preprocessing already complete for all functional run directories in: ", outdir, "\n\n")
             next
         }
     }
 
-    #identify original reconstructed flies for this subject
-    mbraw_dirs <- list.dirs(path=MB_src, recursive = FALSE, full.names=FALSE) #all original recon directories, leave off full names for grep
+    #Handle the use of offline-reconstructed hdr/img files as the starting point of preprocessFunctional (Tae Kim Pittsburgh data)
+    if (useOfflineMB) {
+        ##identify original reconstructed flies for this subject
+        mbraw_dirs <- list.dirs(path=MB_src, recursive = FALSE, full.names=FALSE) #all original recon directories, leave off full names for grep
 
-    #approximate grep is leading to problems with near matches!!
-    #example: 11263_20140307; WPC5640_11253_20140308
-    #srcmatch <- agrep(subid, mbraw_dirs, max.distance = 0.1, ignore.case = TRUE)[1L] #approximate id match in MRRC directory
+        ##approximate grep is leading to problems with near matches!!
+        ##example: 11263_20140307; WPC5640_11253_20140308
+        ##srcmatch <- agrep(subid, mbraw_dirs, max.distance = 0.1, ignore.case = TRUE)[1L] #approximate id match in MRRC directory
 
-    srcmatch <- grep(subid, mbraw_dirs, ignore.case = TRUE)[1L] #id match in MRRC directory
-    
-    if (is.na(srcmatch)) {
-        warning("Unable to identify reconstructed images for id: ", subid, " in MB source directory: ", MB_src)
-        next #skip this subject
-    }
-
-    srcdir <- file.path(MB_src, mbraw_dirs[srcmatch])
-    cat("Matched with MB src directory: ", srcdir, "\n")
-    mbfiles <- list.files(path=srcdir, pattern=mb_filepattern, full.names = TRUE) #images to copy
-
-    if (length(mbfiles) == 0L) {
-        warning("No multiband reconstructed data for: ", subid, " in MB source directory: ", MB_src)
-        next #skip this subject
-    }
-    
-    refimgs <- sub("_MB.hdr", "_ref.hdr", mbfiles, fixed=TRUE)
-    ##figure out run numbers based on file names
-    ##there is some variability in how files are named.
-    ## v1: ep2d_MB_clock1_MB.hdr
-    ## v2: ep2d_MB_clock1_8_MB.hdr (ambiguous!)
-    ## v3: ep2d_MB_clock_1_MB.hdr
-    ## occasionally "Eclock"?
-
-    if (grepl("clock", mb_filepattern, fixed=TRUE)) {
+        srcmatch <- grep(subid, mbraw_dirs, ignore.case = TRUE)[1L] #id match in MRRC directory
         
-        runnums <- sub("^.*ep2d_MB_E?clock(\\d?)_?(\\d?)_?(_FID)*.*_MB.hdr$",
-                       "\\1 \\2", mbfiles, perl=TRUE, ignore.case = TRUE)
-
-        run_split <- strsplit(runnums, "\\s+", perl=TRUE)
-        run_lens <- sapply(run_split, length)
-
-        if (any(run_lens > 1L)) {
-            ##at least one file name contains two potential run numbers
-            ##if any file has just one run number, duplicate it for comparison
-            run_split <- lapply(run_split, function(x) { if(length(x) == 1L) { c(x,x) } else { x } } )
-
-            ##determine which potential run number contains unique information
-            R1 <- unique(sapply(run_split, "[[", 1))
-            R2 <- unique(sapply(run_split, "[[", 2))
-
-            if (length(unique(R1)) > length(unique(R2))) {
-                runnums <- R1
-            } else {
-                runnums <- R2
-            }            
-        }
-        
-        if (length(runnums) > length(unique(runnums))) {
-            print(mbfiles)
-            stop("Duplicate run numbers detected.")
+        if (is.na(srcmatch)) {
+            warning("Unable to identify reconstructed images for id: ", subid, " in MB source directory: ", MB_src)
+            next #skip this subject
         }
 
-    } else {
-        runnums <- 1 #single run for rest (bit of a hack here)
-    }
-    
-    runnums <- as.numeric(runnums)
-    if (any(is.na(runnums))) { stop ("Unable to determine run numbers:", runnums) }
+        srcdir <- file.path(MB_src, mbraw_dirs[srcmatch])
+        cat("Matched with MB src directory: ", srcdir, "\n")
+        mbfiles <- list.files(path=srcdir, pattern=mb_filepattern, full.names = TRUE) #images to copy
 
-    cat("Detected run numbers, MB Files:\n")
-    print(cbind(runnum=runnums, mbfile=mbfiles))
-   
-    #loop over files and setup run directories in preprocessed_dirname
-    for (m in 1:length(mbfiles)) {
-        #only copy data if folder does not exist
-        if (!file.exists(file.path(outdir, paste0(paradigm_name, runnums[m])))) {
-            dir.create(file.path(outdir, paste0(paradigm_name, runnums[m])))
+        if (length(mbfiles) == 0L) {
+            warning("No multiband reconstructed data for: ", subid, " in MB source directory: ", MB_src)
+            next #skip this subject
+        }
+        
+        refimgs <- sub("_MB.hdr", "_ref.hdr", mbfiles, fixed=TRUE)
+        ##figure out run numbers based on file names
+        ##there is some variability in how files are named.
+        ## v1: ep2d_MB_clock1_MB.hdr
+        ## v2: ep2d_MB_clock1_8_MB.hdr (ambiguous!)
+        ## v3: ep2d_MB_clock_1_MB.hdr
+        ## occasionally "Eclock"?
+
+        ##Note that this is only working for files with clock in the name and with the naming scheme below
+        ##Should probably move this to cfg file for generality, but no motivation at the moment.
+        if (grepl("clock", mb_filepattern, fixed=TRUE)) {
             
-	    ##Check for existence of unprocessed MB reconstructed NIfTI. If doesn't exist, add to copy queue
-	    expectedNIfTI <- file.path(outdir, paste0(paradigm_name, runnums[m]), paste0(paradigm_name, runnums[m], ".nii.gz"))
-	    if (!file.exists(expectedNIfTI)) {
-	       mb_src_queue <- c(mb_src_queue, mbfiles[m])
-	       mb_dest_queue <- c(mb_dest_queue, expectedNIfTI)	       
-	    }
+            runnums <- sub("^.*ep2d_MB_E?clock(\\d?)_?(\\d?)_?(_FID)*.*_MB.hdr$",
+                           "\\1 \\2", mbfiles, perl=TRUE, ignore.case = TRUE)
+
+            run_split <- strsplit(runnums, "\\s+", perl=TRUE)
+            run_lens <- sapply(run_split, length)
+
+            if (any(run_lens > 1L)) {
+                ##at least one file name contains two potential run numbers
+                ##if any file has just one run number, duplicate it for comparison
+                run_split <- lapply(run_split, function(x) { if(length(x) == 1L) { c(x,x) } else { x } } )
+
+                ##determine which potential run number contains unique information
+                R1 <- unique(sapply(run_split, "[[", 1))
+                R2 <- unique(sapply(run_split, "[[", 2))
+
+                if (length(unique(R1)) > length(unique(R2))) {
+                    runnums <- R1
+                } else {
+                    runnums <- R2
+                }            
+            }
+            
+            if (length(runnums) > length(unique(runnums))) {
+                print(mbfiles)
+                stop("Duplicate run numbers detected.")
+            }
+
+        } else {
+            runnums <- 1 #single run for rest (bit of a hack here)
         }
+        
+        runnums <- as.numeric(runnums)
+        if (any(is.na(runnums))) { stop ("Unable to determine run numbers:", runnums) }
+
+        cat("Detected run numbers, MB Files:\n")
+        print(cbind(runnum=runnums, mbfile=mbfiles))
+        
+        ##loop over files and setup run directories in preprocessed_dirname
+        for (m in 1:length(mbfiles)) {
+            ##only copy data if folder does not exist
+            if (!file.exists(file.path(outdir, paste0(paradigm_name, runnums[m])))) {
+                dir.create(file.path(outdir, paste0(paradigm_name, runnums[m])))
+                
+                ##Check for existence of unprocessed MB reconstructed NIfTI. If doesn't exist, add to copy queue
+                expectedNIfTI <- file.path(outdir, paste0(paradigm_name, runnums[m]), paste0(paradigm_name, runnums[m], ".nii.gz"))
+                if (!file.exists(expectedNIfTI)) {
+                    mb_src_queue <- c(mb_src_queue, mbfiles[m])
+                    mb_dest_queue <- c(mb_dest_queue, expectedNIfTI)	       
+                }
+            }
+        }
+    } else {
+        refimgs <- NA #need to handle Prisma CMRR MB data here where reference images are placed in separate directory
     }
 
-    #add all functional runs, along with mprage and fmap info, as a data.frame to the list
+    ##add all functional runs, along with mprage and fmap info, as a data.frame to the list
     all_funcrun_dirs[[d]] <- data.frame(funcdir=list.dirs(pattern=paste0(paradigm_name, ".*"), path=outdir, recursive = FALSE), refimgs=refimgs, 
                                         magdir=magdir, phasedir=phasedir, mpragedir=mpragedir, stringsAsFactors=FALSE)
 
 }
 
-#copy any needed MB reconstructed NIfTIs into place
-#for now, arbitrarily copy 12 at a time
+##copy any needed MB reconstructed NIfTIs into place
+##for now, arbitrarily copy 12 at a time for a reasonable level of disk I/O
 registerDoMC(12) #setup number of jobs to fork
 if (length(mb_src_queue) > 0L) {
    message("Copying MB reconstructed files into place.")
@@ -339,8 +332,13 @@ registerDoMC(njobs) #setup number of jobs to fork
 ##for (cd in all_funcrun_dirs) {
 f <- foreach(cd=iter(all_funcrun_dirs, by="row"), .inorder=FALSE) %dopar% {
     setwd(cd$funcdir)
+
+    if (useOfflineMB) {
+        funcpart <- paste("-4d", Sys.glob(paste0(paradigm_name, "*.nii.gz")))
+    } else {
+        funcpart <- paste("-dicom \"", fmridicom_filepattern, "\" -delete_dicom archive") #assuming archive here
+    }
     
-    funcpart <- paste("-4d", Sys.glob(paste0(paradigm_name, "*.nii.gz")))
     mpragepart <- paste("-mprage_bet", file.path(cd$mpragedir, "mprage_bet.nii.gz"), "-warpcoef", file.path(cd$mpragedir, "mprage_warpcoef.nii.gz"))
     if (!is.na(cd$magdir)) {
         fmpart <- paste0("-fm_phase \"", cd$phasedir, "\" -fm_magnitude \"", cd$magdir, "\" -fm_cfg ", fieldmap_cfg)
