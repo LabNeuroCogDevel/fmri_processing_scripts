@@ -10,7 +10,7 @@
 #and if not specified, the script defaults to 8.
 
 args <- commandArgs(trailingOnly = TRUE)
-
+options(width=120)
 #location of raw MR data
 goto=Sys.getenv("loc_mrraw_root")
 if (! file.exists(goto)) { stop("Cannot find directory: ", goto) }
@@ -34,10 +34,16 @@ preprocessed_dirname = Sys.getenv("preprocessed_dirname") #name of subdirectory 
 paradigm_name = Sys.getenv("paradigm_name") #name of paradigm used as a prefix for processed run directories
 n_expected_funcruns = Sys.getenv("n_expected_funcruns") #number of runs per subject of the task
 preproc_call = Sys.getenv("preproc_call") #parameters passed forward to preprocessFunctional
+preprocessMprage_call = Sys.getenv("preprocessMprage_call")
 MB_src = Sys.getenv("loc_mb_root") #Name of directory containing offline-reconstructed fMRI data (only relevant for Tae Kim sequence Pittburgh data)
 mb_filepattern = Sys.getenv("mb_filepattern") #Wildcard pattern of MB reconstructed data within MB_src
 useOfflineMB = ifelse(nchar(MB_src) > 0, TRUE, FALSE) #whether to use offline-reconstructed hdr/img files as preprocessing starting point
 fmridicom_filepattern = Sys.getenv("fmri_dicompattern")
+mprage_dicompattern = Sys.getenv("mprage_dicompattern")
+
+#setup default parameters for processing mprage
+if (mprage_dicompattern == "") { mprage_dicompattern = "MR*" }
+if (preprocessMprage_call == "") { preprocessMprage_call = paste0("-dicom \"", mprage_dicompattern, "\" -delete_dicom archive -template_brain MNI_2mm") }
 
 #optional config settings
 loc_mrproc_root = Sys.getenv("loc_mrproc_root")
@@ -48,6 +54,23 @@ useFieldmap = ifelse(nchar(gre_fieldmap_dirpattern) > 0, TRUE, FALSE) #whether t
 ##All of the above environment variables must be in place for script to work properly.
 if (any(c(mprage_dirpattern, preprocessed_dirname, paradigm_name, n_expected_funcruns, preproc_call) == "")) {
     stop("Script expects system environment to contain the following variables: mprage_dirpattern, preprocessed_dirname, paradigm_name, n_expected_funcruns, preproc_call")
+}
+
+##output configuration parameters for this run
+cat("---------\nSummary of preprocessAll.R configuration:\n---------\n")
+cat("  Source directory for raw MRI files:", goto, "\n")
+cat("  Destination root directory for processed MRI files:", loc_mrproc_root, "\n")
+cat("  Destination subdirectory for each subject:", preprocessed_dirname, "\n")
+cat("  Name of paradigm folder:", paradigm_name, ", expected runs:", n_expected_funcruns, "\n")
+if (useOfflineMB) {
+    cat("  Using offline-reconstructed multiband data (Tae Kim Pittsburgh sequence)\n")
+    cat("  Expected name of offline-reconstructed multiband files:", mb_filepattern, "\n")
+    cat("  Directory containing MB-reconstructed files:", MB_src, "\n")
+}
+if (useFieldmap) {
+    cat("  Using GRE fieldmap correction\n")
+    cat("  Expected name of GRE fieldmap source directories:", gre_fieldmap_dirpattern, "\n")
+    cat("  Fieldmap configuration file:", fieldmap_cfg, "\n")
 }
 
 ##handle all mprage directories
@@ -80,7 +103,7 @@ list.dirs <- function(...) {
 
 ##Much faster on *nix-friendly systems than above because can control recursion depth
 ##Note that the depth of 2 assumes a structure such as Project_Dir/SubjectID/mprage_dir where each subject has a single directory
-mprage_dirs <- system(paste0("find $PWD -iname \"", mprage_dirpattern, "\" -type d -mindepth 2 -maxdepth 2"), intern=TRUE)
+mprage_dirs <- system(paste0("find $PWD -mindepth 2 -maxdepth 2 -iname \"", mprage_dirpattern, "\" -type d"), intern=TRUE)
 
 ##find all renamed mprage directories for processing
 ##use beginning and end of line markers to force exact match
@@ -127,10 +150,12 @@ f <- foreach(d=mprage_toprocess, .inorder=FALSE) %dopar% {
         #this should never fire given logic above
         return("complete") #skip completed mprage directories
     } else {
-        script_args <- "-delete_dicom archive -template_brain MNI_2mm -cleanup -template_brain MNI_2mm"
-        if (file.exists("mprage.nii.gz")) { script_args <- paste(script_args, "-nifti mprage.nii.gz") }
+        if (file.exists("mprage.nii.gz")) {
+            preprocessMprage_call = sub("-dicom\\s+\\S+\\s+", "", preprocessMprage_call, perl=TRUE) #strip out call to dicom
+            preprocessMprage_call <- paste(preprocessMprage_call, "-nifti mprage.nii.gz")
+        }
         
-        ret_code <- system2("preprocessMprage", script_args, stderr="preprocessMprage_stderr", stdout="preprocessMprage_stdout")
+        ret_code <- system2("preprocessMprage", preprocessMprage_call, stderr="preprocessMprage_stderr", stdout="preprocessMprage_stdout")
         if (ret_code != 0) { stop("preprocessMprage failed in directory: ", file.path(outdir, "mprage")) }
 
         #echo current date/time to .mprage_complete to denote completed preprocessing
@@ -218,6 +243,8 @@ for (d in subj_dirs) {
         ##identify original reconstructed flies for this subject
         mbraw_dirs <- list.dirs(path=MB_src, recursive = FALSE, full.names=FALSE) #all original recon directories, leave off full names for grep
 
+	message("Searching for offline-reconstructed MB images")
+
         ##approximate grep is leading to problems with near matches!!
         ##example: 11263_20140307; WPC5640_11253_20140308
         ##srcmatch <- agrep(subid, mbraw_dirs, max.distance = 0.1, ignore.case = TRUE)[1L] #approximate id match in MRRC directory
@@ -295,6 +322,7 @@ for (d in subj_dirs) {
                 
                 ##Check for existence of unprocessed MB reconstructed NIfTI. If doesn't exist, add to copy queue
                 expectedNIfTI <- file.path(outdir, paste0(paradigm_name, runnums[m]), paste0(paradigm_name, runnums[m], ".nii.gz"))
+		cat("Searching for file: ", expectedNIfTI, "\n")
                 if (!file.exists(expectedNIfTI)) {
                     mb_src_queue <- c(mb_src_queue, mbfiles[m])
                     mb_dest_queue <- c(mb_dest_queue, expectedNIfTI)	       
@@ -310,6 +338,9 @@ for (d in subj_dirs) {
                                         magdir=magdir, phasedir=phasedir, mpragedir=mpragedir, stringsAsFactors=FALSE)
 
 }
+
+message("Copy destination queue")
+print(mb_dest_queue)
 
 ##copy any needed MB reconstructed NIfTIs into place
 ##for now, arbitrarily copy 12 at a time for a reasonable level of disk I/O
