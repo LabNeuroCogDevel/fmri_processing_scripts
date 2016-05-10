@@ -85,7 +85,7 @@ function dimon {
     rm -f GERT_Reco_dicom*
 
     #if afnirc has compressor on, then above will already generate nii.gz
-    if [ -f "${outbase}.nii" ]; then
+    if [[ -f "${outbase}.nii" && $FSLOUTPUTTYPE = NIFTI_GZ ]]; then
 	rel "gzip -f \"${outbase}.nii\"" #use -f to force overwrite in case where functional.nii.gz exists, but we want to replace it.
     fi
 

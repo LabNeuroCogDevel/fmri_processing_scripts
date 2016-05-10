@@ -31,8 +31,8 @@ function dicom_to_nifti {
 		fi
 	    fi
 
-	    funcFile="functional" #base name for preprocessing steps below
-	    funcNifti="functional.nii.gz"
+	    funcFile="${output_basename}" #base name for preprocessing steps below
+	    funcNifti="${output_basename}${ext}"
 
 	    #look for TR and slice acquisition order in Dicom
 	    firstDicom=$( find . -iname "${dicomPattern}" \( -type f -or -type l \) | head -1 )
@@ -89,9 +89,9 @@ function dicom_to_nifti {
 	    echo "${detectTR}" > .detect_tr
 	    echo "${detectSliceOrder}" > .detect_sliceorder
 	    
-	    dimon "${dicomPattern}" functional #convert dicom to nifti using Dimon
+	    dimon "${dicomPattern}" "${output_basename}" #convert dicom to nifti using Dimon
 
-	    echo "functional.nii.gz" > .functional #save name of functional file created for resume when dicoms have been deleted/archived
+	    echo "${output_basename}${ext}" > .functional #save name of functional file created for resume when dicoms have been deleted/archived
 
             #Ask user what to do with original DICOM files unless passed on command line
 	    if [ -z $delDicom ]; then
@@ -106,7 +106,7 @@ function dicom_to_nifti {
 	    case ${delDicom} in
 		y|Y) echo -e "\nDeleting DICOM files"; rm -f ${dicomPattern} ;;
 		n|N) echo -e "\nKeeping DICOM files" ;;
-		a|A) echo -e "\nArchiving DICOM files (functional_dicom.tar.gz)"; tar czf functional_dicom.tar.gz ${dicomPattern} && rm -f ${dicomPattern} ;;
+		a|A) echo -e "\nArchiving DICOM files (${output_basename}_dicom.tar.gz)"; tar czf ${output_basename}_dicom.tar.gz ${dicomPattern} && rm -f ${dicomPattern} ;;
 	    esac
 	    sleep 1
 

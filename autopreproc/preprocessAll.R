@@ -30,6 +30,10 @@ library(iterators)
 
 #pull in cfg environment variables from bash script
 mprage_dirpattern = Sys.getenv("mprage_dirpattern") #wildcard pattern defining names of relevant structural scans
+mprage_dicompattern = Sys.getenv("mprage_dicompattern")
+functional_dirpattern = Sys.getenv("functional_dirpattern")
+functional_dicompattern = Sys.getenv("functional_dicompattern")
+
 preprocessed_dirname = Sys.getenv("preprocessed_dirname") #name of subdirectory output for each processed fMRI scan
 paradigm_name = Sys.getenv("paradigm_name") #name of paradigm used as a prefix for processed run directories
 n_expected_funcruns = Sys.getenv("n_expected_funcruns") #number of runs per subject of the task
@@ -38,11 +42,10 @@ preprocessMprage_call = Sys.getenv("preprocessMprage_call")
 MB_src = Sys.getenv("loc_mb_root") #Name of directory containing offline-reconstructed fMRI data (only relevant for Tae Kim sequence Pittburgh data)
 mb_filepattern = Sys.getenv("mb_filepattern") #Wildcard pattern of MB reconstructed data within MB_src
 useOfflineMB = ifelse(nchar(MB_src) > 0, TRUE, FALSE) #whether to use offline-reconstructed hdr/img files as preprocessing starting point
-fmridicom_filepattern = Sys.getenv("fmri_dicompattern")
-mprage_dicompattern = Sys.getenv("mprage_dicompattern")
 
-#setup default parameters for processing mprage
+#setup default parameters
 if (mprage_dicompattern == "") { mprage_dicompattern = "MR*" }
+if (functional_dicompattern == "") { functional_dicompattern = "MR*" }
 if (preprocessMprage_call == "") { preprocessMprage_call = paste0("-dicom \"", mprage_dicompattern, "\" -delete_dicom archive -template_brain MNI_2mm") }
 
 #optional config settings
@@ -55,6 +58,9 @@ useFieldmap = ifelse(nchar(gre_fieldmap_dirpattern) > 0, TRUE, FALSE) #whether t
 if (any(c(mprage_dirpattern, preprocessed_dirname, paradigm_name, n_expected_funcruns, preproc_call) == "")) {
     stop("Script expects system environment to contain the following variables: mprage_dirpattern, preprocessed_dirname, paradigm_name, n_expected_funcruns, preproc_call")
 }
+
+##convert expected runs to numeric
+n_expected_funcruns <- as.numeric(n_expected_funcruns)
 
 ##output configuration parameters for this run
 cat("---------\nSummary of preprocessAll.R configuration:\n---------\n")
@@ -180,6 +186,8 @@ subj_dirs <- list.dirs(path=basedir, recursive=FALSE)
 all_funcrun_dirs <- list()
 mb_src_queue <- c() #reconstructed MB files to be copied
 mb_dest_queue <- c() #destinations for MB NIfTIs
+functional_src_queue <- c() #original run directories in MR_Raw to be copied
+functional_dest_queue <- c() #destination targets of raw data
 
 for (d in subj_dirs) {
     cat("Processing subject: ", d, "\n")
@@ -223,12 +231,10 @@ for (d in subj_dirs) {
     }
     
     ##create paradigm_run1-paradigm_run<N> folder structure and copy raw data
-    if (!file.exists(outdir)) { #create preprocessed folder if absent
+    if (!file.exists(outdir)) { #create preprocessed root folder if absent
         dir.create(outdir, showWarnings=FALSE, recursive=TRUE)
     } else {
-        ##preprocessed folder exists, check for .preprocessfunctional_complete files
-        ##in the case of 1 functional run, we don't create subdirectories
-        
+        ##preprocessed folder exists, check for .preprocessfunctional_complete files        
         extant_funcrundirs <- list.dirs(path=outdir, pattern=paste0(paradigm_name,"[0-9]+"), full.names=TRUE, recursive=FALSE)
         if (length(extant_funcrundirs) > 0L &&
             length(extant_funcrundirs) >= n_expected_funcruns &&
@@ -325,33 +331,77 @@ for (d in subj_dirs) {
 		cat("Searching for file: ", expectedNIfTI, "\n")
                 if (!file.exists(expectedNIfTI)) {
                     mb_src_queue <- c(mb_src_queue, mbfiles[m])
-                    mb_dest_queue <- c(mb_dest_queue, expectedNIfTI)	       
+                    mb_dest_queue <- c(mb_dest_queue, expectedNIfTI)
                 }
             }
         }
     } else {
+        ##check for existing run directories and setup copy queue as needed
+
+        funcdirs <- sort(normalizePath(Sys.glob(file.path(d, functional_dirpattern))))
+
+        
+        if (length(funcdirs) != n_expected_funcruns) {
+            message("Cannot find the expected number of functional run directories in ", d, "for pattern", function_dirpattern)
+            message("Skipping participant for now")
+            next
+        }
+        
+        for (r in 1:n_expected_funcruns) {
+            rundir <- file.path(outdir, paste0(paradigm_name, r))
+            if (!file.exists(rundir)) {
+                ##for now, the script only handles the case where the whole directory is missing
+                ##below is some scaffolding for a more sophisticated variant that checks for the unprocessed NIfTI etc.
+                ##but not going to put in time to perfect it right now
+
+                ##expectedNIfTI <- file.path(outdir, paste0(paradigm_name, r), paste0(paradigm_name, r, ".nii.gz"))
+		##cat("Searching for file: ", expectedNIfTI, "\n")
+                ##if (!file.exists(expectedNIfTI)) {
+                ##    ##Check for existence of at least one matching DICOM file in folder (in case DICOM->NIfTI hasn't run yet)
+                ##    ndicoms <- list.files(path=file.path(outdir, paste0(paradigm_name, r)), pattern=functional_dicompattern, full.names = TRUE)
+                ##    if (length(ndicoms==0L)) {
+                ##        message("Cannot find matching DICOMs in directory", 
+                ##    }
+
+                ##add raw DICOM directory to copy queue
+                dir.create(rundir) #create empty run directory for now
+                functional_src_queue <- c(functional_src_queue, funcdirs[r])
+                functional_dest_queue <- c(functional_dest_queue, rundir)
+            }            
+        }
+                
         refimgs <- NA #need to handle Prisma CMRR MB data here where reference images are placed in separate directory
     }
-
+    
     ##add all functional runs, along with mprage and fmap info, as a data.frame to the list
-    all_funcrun_dirs[[d]] <- data.frame(funcdir=list.dirs(pattern=paste0(paradigm_name, ".*"), path=outdir, recursive = FALSE), refimgs=refimgs, 
-                                        magdir=magdir, phasedir=phasedir, mpragedir=mpragedir, stringsAsFactors=FALSE)
-
+    all_funcrun_dirs[[d]] <- data.frame(funcdir=list.dirs(pattern=paste0(paradigm_name, ".*"), path=outdir, recursive = FALSE),
+                                        refimgs=refimgs, magdir=magdir, phasedir=phasedir, mpragedir=mpragedir, stringsAsFactors=FALSE)
 }
 
-message("Copy destination queue")
-print(mb_dest_queue)
+if (useOfflineMB) {    
+    message("Copy destination queue")
+    print(mb_dest_queue)
 
-##copy any needed MB reconstructed NIfTIs into place
-##for now, arbitrarily copy 12 at a time for a reasonable level of disk I/O
-registerDoMC(12) #setup number of jobs to fork
-if (length(mb_src_queue) > 0L) {
-   message("Copying MB reconstructed files into place.")
-   f <- foreach(fnum=1:length(mb_src_queue), .inorder=FALSE) %dopar% {
-     ##use 3dcopy to copy dataset as .nii.gz
-     cat(paste0(   "3dcopy \"", mb_src_queue[fnum], "\" \"", mb_dest_queue[fnum], "\"\n"))
-     system(paste0("3dcopy \"", mb_src_queue[fnum], "\" \"", mb_dest_queue[fnum], "\""), wait=TRUE)     
-   }
+    ##copy any needed MB reconstructed NIfTIs into place
+    ##for now, arbitrarily copy 12 at a time for a reasonable level of disk I/O
+    if (length(mb_src_queue) > 0L) {
+        registerDoMC(12) #setup number of jobs to fork
+        message("Copying MB reconstructed files into place.")
+        f <- foreach(fnum=1:length(mb_src_queue), .inorder=FALSE) %dopar% {
+            ##use 3dcopy to copy dataset as .nii.gz
+            cat(paste0(   "3dcopy \"", mb_src_queue[fnum], "\" \"", mb_dest_queue[fnum], "\"\n"))
+            system(paste0("3dcopy \"", mb_src_queue[fnum], "\" \"", mb_dest_queue[fnum], "\""), wait=TRUE)     
+        }
+    }
+} else {
+    if (length(functional_src_queue) > 0L) {
+        registerDoMC(12)
+        message("Copying raw DICOM folders into place")
+        f <- foreach(fnum=1:length(mb_src_queue), .inorder=FALSE) %dopar% {
+            cat(paste0(   "cp -Rp \"", functional_src_queue[fnum], "\" \"", functional_dest_queue[fnum], "\"\n"))
+            system(paste0("cp -Rp \"", functional_src_queue[fnum], "\" \"", functional_dest_queue[fnum], "\""), wait=TRUE)     
+        }
+    }
 }
 
 #rbind data frame together
@@ -367,7 +417,7 @@ f <- foreach(cd=iter(all_funcrun_dirs, by="row"), .inorder=FALSE) %dopar% {
     if (useOfflineMB) {
         funcpart <- paste("-4d", Sys.glob(paste0(paradigm_name, "*.nii.gz")))
     } else {
-        funcpart <- paste("-dicom \"", fmridicom_filepattern, "\" -delete_dicom archive") #assuming archive here
+        funcpart <- paste("-dicom \"", functional_dicompattern, "\" -delete_dicom archive -output_basename", basename(cd$funcdir)) #assuming archive here
     }
     
     mpragepart <- paste("-mprage_bet", file.path(cd$mpragedir, "mprage_bet.nii.gz"), "-warpcoef", file.path(cd$mpragedir, "mprage_warpcoef.nii.gz"))

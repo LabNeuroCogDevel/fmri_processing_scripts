@@ -92,6 +92,7 @@ function parse_args {
     nuisance_regression=0
     nuisance_compute=0
     nuisance_file=.nuisance_regressors
+    output_basename=functional #base prefix of NIfTI file after dicom -> NIfTI conversion
     MATLAB_RAM_limit=3 #3GB wavelet despike RAM limit by default (more is faster, but can be a hog when processing in parallel).
     MATLAB_single_thread=
     ref_vol=  #don't set a motion correction reference volume by default
@@ -328,6 +329,9 @@ function parse_args {
 	elif [ $1 = -nuisance_regression ]; then
 	    nuisance_regression=1
 	    nuisance_regressors="${2}"
+	    shift 2
+	elif [ $1 = -output_basename ]; then
+	    output_basename="${2}"
 	    shift 2
 	elif [ $1 = -ref_vol ] ; then
             ref_vol="${2}"
