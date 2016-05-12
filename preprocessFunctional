@@ -165,9 +165,14 @@ EndOfHelp
 }
 
 #Written: 5/18/2010
-#Last updated: 1/13/2016
+#Last updated: 5/10/2016
 #
 #Changelog:
+#5/10/2016 (MH)
+# - Support -func_refimg as DICOM for CMRR single-band images
+# - Prefer standard templates in shared location
+# - Allow user to specify basename of NIfTI output: -output_basename
+# - Support single DICOM image for -func_refimg
 #1/13/2016 (MH)
 # - various changes to support running on PSU ACI clusters (module load etc.)
 # - move log file setup to parse_args
