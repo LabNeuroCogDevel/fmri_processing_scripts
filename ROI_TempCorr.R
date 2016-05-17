@@ -9,12 +9,13 @@ printHelp <- function() {
       "  -out_file <filename for output>: The file to be output containing correlations among ROIs.",
       "",
       "Optional arguments are:",
-      "  -corr_method <pearson|spearman|robust|mcd|weighted|donostah|M|pairwiseQC|pairwiseGK>: Method to compute correlations among time series. Default: pearson",
+      "  -corr_method <pearson|spearman|robust|mcd|weighted|donostah|M|pairwiseQC|pairwiseGK|none>: Method to compute correlations among time series. Default: pearson",
       "      pearson is the standard Pearson correlation",
       "      spearman is Spearman correlation based on ranks",
       "      kendall is Kendall's tau correlation (also based on ranks, but with somewhat better statistical properties than Spearman)",
       "      robust uses the covRob function from the robust package with estim=\"auto\" to obtain robust estimate of correlation (reduce sensitivity to outliers)",
       "      mcd, weighted, donostah, M, pairwiseQC, pairwiseGK are different robust estimators of correlation. See ?covRob in the robust package for details.",
+      "      use 'none' to not compute the correlation matrix. See also AFNIs 3dmaskave. This can compute pca instead of mean over ROIs",
       "  -roi_reduce <pca|median|mean|huber>: Method to obtain a single time series for voxels within an ROI. Default: pca",
       "      pca takes the first eigenvector within the ROI, representing maximal shared variance",
       "      median uses the median within each ROI",
@@ -99,7 +100,7 @@ while (argpos <= length(args)) {
   } else if (args[argpos] == "-corr_method") {
     corr_method <- args[argpos + 1]
     argpos <- argpos + 2
-    stopifnot(corr_method %in% c("pearson", "spearman", "robust", "kendall", "mcd", "weighted", "donostah", "M", "pairwiseQC", "pairwiseGK"))    
+    stopifnot(corr_method %in% c("pearson", "spearman", "robust", "kendall", "mcd", "weighted", "donostah", "M", "pairwiseQC", "pairwiseGK", "none"))    
   } else if (args[argpos] == "-fisherz") {
     fisherz <- TRUE
     argpos <- argpos + 1
@@ -116,6 +117,11 @@ while (argpos <= length(args)) {
 }
 
 if (corr_method == "robust") { corr_method <- "auto" } #robust package uses "auto" to choose best robust estimator given problem complexity (matrix size)
+
+# check for input sanity before spending time loading things in
+if(corr_method == "none" && nchar(ts_out_file) == 0L) {
+ stop('corr_method = none and no ts_out_file! No point in running.')
+}
 
 suppressMessages(require(methods))
 suppressMessages(require(foreach))
@@ -399,8 +405,20 @@ if (length(censorVols) > 0L) {
 
 #output ts file if requested
 if (nchar(ts_out_file) > 0L) {
-    df <- cbind(censor=censorvec, roiavgmat)
-    write.table(df, file=ts_out_file, col.names=TRUE, row.names=TRUE)
+    message("Writing time series to: ", ts_out_file)
+    if(is.null(fname_censor1D)) {
+      df <- roiavgmat
+    }else{
+      df <- cbind(censor=censorvec, roiavgmat)
+    }
+    write.table(df, file=ts_out_file, col.names=F, row.names=F)
+}
+
+# just want to print time series, not actually compute corrleations
+# for DM 20160517
+if(corr_method == "none") { 
+  stopCluster(clusterobj)
+  quit(save="no", 0, TRUE)
 }
 
 message("Computing correlations among ROI times series using method: ", ifelse(corr_method=="auto", "robust", corr_method))
