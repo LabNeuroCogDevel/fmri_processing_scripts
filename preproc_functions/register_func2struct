@@ -41,10 +41,13 @@ function register_func2struct {
 	local target="epiref_brain_restore"
 	local oname="epiref"
 
-	#calculate ref -> func coregistration to concatenate with ref -> struct
-	rel "Using intermediate T2* reference file (epiref) as coregistration target" c
-	rel "flirt -in mc_target_brain_restore -ref epiref_brain_restore -out func_to_epiref -omat func_to_epiref.mat -dof 6 -interp spline"
-	rel "convert_xfm -omat epiref_to_func.mat -inverse func_to_epiref.mat"
+        if [[ ! -f epiref_to_func.mat  || ! -f .t2star_coreg_complete ]]; then
+            #calculate ref -> func coregistration to concatenate with ref -> struct
+            rel "Using intermediate T2* reference file (epiref) as coregistration target" c
+            rel "flirt -in mc_target_brain_restore -ref epiref_brain_restore -out func_to_epiref -omat func_to_epiref.mat -dof 6 -interp spline"
+            rel "convert_xfm -omat epiref_to_func.mat -inverse func_to_epiref.mat"
+            rel "date > .t2star_coreg_complete"
+        fi
     else
 	local target="mc_target_brain_restore"
 	local oname="func"
@@ -113,3 +116,5 @@ function register_func2struct {
 	touch .func2struct_complete
     fi
 }
+
+# vi: set shiftwidth=4 tabstop=8 expandtab:

@@ -133,3 +133,5 @@ function compute_motion_censor {
 
     return 0
 }
+
+# vi: set shiftwidth=4 tabstop=8 expandtab:
