@@ -49,9 +49,17 @@ function check_requirements {
 	    ref_vol=
 	fi
 
+	#copy reference image to local directory to make directory more portable
 	if [ ! -r .epiref_bet_complete ]; then
-		#copy reference image to local directory to make directory more portable
-		rel "fslmaths \"$funcRefimg\" epiref"
+              #if funcRegImg is a single DICOM file, change to NIfTI
+              dicom_hdr "$funcRefImg" 2>&1 | grep -q "ERROR: can't open.*as a DICOM file" #A 0 exit status from grep indicates a match
+              if [ $? -ne 0 ]; then
+                  rel "Converting -func_refimg to NIfTI" c
+                  rel "to3d -prefix epiref.nii.gz -ushort2float \"$funcRefimg\""
+              else
+                   #copy reference image to local directory to make directory more portable
+                  rel "fslmaths \"$funcRefimg\" epiref"
+              fi
 		
 		#skull strip reference image to improve coregistration
 		rel "bet epiref epiref_brain -f 0.3 -n -R" #include bias field correction given heavy bias for 32-channel data
@@ -94,3 +102,4 @@ function check_requirements {
     fi
 
 }
+# vim: set tabstop=7:

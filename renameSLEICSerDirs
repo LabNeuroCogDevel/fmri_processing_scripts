@@ -1,0 +1,32 @@
+#!/bin/bash
+
+which dicom_hdr >/dev/null 2>&1
+if [ $? -eq 1 ]; then
+    module load afni 2>&1 >/dev/null
+fi
+
+serList=$( ls -d ser[0-9]* )
+basedir=$( pwd )
+for s in ${serList}; do
+
+    firstDicom=$( find "$s" -iname "1.3.12*" -type f -print -quit )
+    
+    if [ ${#firstDicom} -eq 0 ]; then
+	echo "Unable to find any files of pattern 1.3.12* in dir: $s"
+	exit 1
+    fi
+
+    sername=$( dicom_hdr $firstDicom | grep -i "ACQ Protocol Name" | perl -pe "s:.*ACQ Protocol Name//(\w+).*$:\1:" )
+    sernumber=$( printf '%02d' ${s/ser/} )
+    #printf '%02d' 1
+
+    #is this a single-band reference image?    
+    sbref=
+    dicom_hdr $firstDicom | grep -q "REL Image Comments//Single-band reference" >/dev/null
+    if [ $? -eq 0 ]; then
+	sbref=_sbref
+    fi
+
+    mv "$s" "${sernumber}_${sername}${sbref}"
+    
+done

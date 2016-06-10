@@ -1,1 +1,6 @@
 .DS_Store
+
+.Rhistory
+
+#contains sensitive login info
+meson.expect

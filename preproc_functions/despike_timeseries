@@ -1,7 +1,6 @@
 #!/bin/bash
 
 function despike_timeseries {
-    local RAM_limit=3 #3GB MATLAB limit (more is faster, but can be a hog when processing in parallel).
 
     #Voxelwise despiking: optional step
     #Can use 3dDespike (time despiking) or wavelet despiking
@@ -40,18 +39,20 @@ function despike_timeseries {
 	    else
 		matlabCmd="addpath(genpath('${scriptDir}/wavelet_despike/linux_windows'));"
 	    fi
-	    matlabCmd="${matlabCmd} try; 
-WaveletDespike('predespike${ext}', 
-'postdespike',
-'LimitRAM', ${RAM_limit},
-'threshold', ${waveletThreshold}); 
-end; quit;
-"
+# 	    matlabCmd="${matlabCmd} try; 
+# WaveletDespike('predespike${ext}', 
+# 'postdespike',
+# 'LimitRAM', ${MATLAB_RAM_limit},
+# 'threshold', ${waveletThreshold}); 
+# end; quit;
+# "
+	    #cmd with spaces is breaking ACI at the moment (due to unquoted use of $@)
+	    matlabCmd="${matlabCmd}try;WaveletDespike('predespike${ext}','postdespike','LimitRAM',${MATLAB_RAM_limit},'threshold',${waveletThreshold});end;quit;"
 
 	    #need to unset display on Linux (at least wallace) to avoid matlab exiting on subsequent runs of the script
 	    OLDDISPLAY="${DISPLAY}"
 	    unset DISPLAY
-	    rel "matlab -nodisplay -r \"$matlabCmd\""
+	    rel "matlab -nodisplay ${MATLAB_single_thread} -r \"$matlabCmd\""
 	    export DISPLAY="${OLDDISPLAY}"
 
 	    #note: wavelet despike function sometimes changes the image orientation (e.g., from RPI to LPI), which yields errors

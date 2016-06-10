@@ -4,7 +4,6 @@
 #else savetemps=yes; pics=yes;
 #fi
 
-
 #function to convert fieldmap to radians per second
 function fieldmap_make_rads_per_sec() {
 
@@ -168,7 +167,7 @@ function prepare_fieldmap {
       local ctime=$(cat $lockfile)
       [[ ! $ctime =~ [0-9]? ]] && echo "Warning: malformed lock file $lockfile"
 
-      [ "$((( $now-$ctime )))" -gt "$(((2*60*60)))" ] && echo "it's been over 2 hours, you should remove $lockfile"
+      [ "$((( $now-$ctime )))" -gt "$(((1*60*60)))" ] && echo "it's been over 1 hour, you should remove $lockfile" && exit 1
 
       echo "waiting for another preprocessFunctional to finish (lock: $lockfile)"
       while [ -f "$lockfile" ]; do
@@ -183,26 +182,58 @@ function prepare_fieldmap {
       waitforlock "${fm_phasedir}/.fmphase_inprogress"
 
       if [ -f "${fm_phasedir}/.fieldmap_phase" ]; then
-          #processing of fieldmap phase already completed elsewhere
-          #simply copy this file to the functional directory
-          cp "${fm_phasedir}/.fieldmap_phase" "${funcdir}/.fieldmap_phase"
+          #Processing of fieldmap phase already completed elsewhere
+	  #Check that the file specified exists. If so, copy to local directory.
+	  #If not, see whether file can be corrected by fixing path
+	  read fm_phase_check < "${fm_phasedir}/.fieldmap_phase"
+	  if [ ! -f "${fm_phase_check}${ext}" ]; then
+	      rel "Cannot find file: ${fm_phase_check}${ext}. Attempting to correct pathname." c
+	      if [ -f "${fm_phasedir}/$( basename ${fm_phase_check} )${ext}" ]; then
+		  rel "Found phase by using directory ${fm_phasedir}" c
+		  echo "${fm_phasedir}/$( basename ${fm_phase_check} )${ext}" > "${fm_phasedir}/.fieldmap_phase"
+		  cp "${fm_phasedir}/.fieldmap_phase" "${funcdir}/.fieldmap_phase"
+	      else
+		  rel "Removing invalid file: ${fm_phasedir}/.fieldmap_phase" c
+		  rm -f "${fm_phasedir}/.fieldmap_phase"
+		  date +%s > "${fm_phasedir}/.fmphase_inprogress" #lock for re-processing
+	      fi
+	  else
+              cp "${fm_phasedir}/.fieldmap_phase" "${funcdir}/.fieldmap_phase"
+	  fi
       else
           date +%s > "${fm_phasedir}/.fmphase_inprogress" #lock for processing
       fi
     fi
 
-    if [[ "$fm_magnitudebase" =~ .*\*.* && ! -f ".fieldmap_magnitude" ]]; then
-      
+    if [[ "$fm_magnitudebase" =~ .*\*.* && ! -f ".fieldmap_magnitude" ]]; then	
       #if the lock file is present, sleep until complete
-      waitforlock "${fm_magnitudedir}/.fmmagnitude_inprogress" 
+	waitforlock "${fm_magnitudedir}/.fmmagnitude_inprogress" 
+	
+	if [ -f "${fm_magnitudedir}/.fieldmap_magnitude" ]; then
+          #Processing of fieldmap magnitude already completed elsewhere
+	  #Check that the file specified exists. If so, copy to local directory.
+	  #If not, see whether file can be corrected by fixing path
+          #TODO: If the problem can't be fixed by a path change and the fieldmaps have been processed already from DICOM,
+          #we need to undo this processing (see resetFieldmaps.bash script).
 
-      if [ -f "${fm_magnitudedir}/.fieldmap_magnitude" ]; then
-          #processing of fieldmap magnitude already complete elsewhere
-          #simply copy this file to the functional directory
-          cp "${fm_magnitudedir}/.fieldmap_magnitude" "${funcdir}/.fieldmap_magnitude"
-      else
-          date +%s > "${fm_magnitudedir}/.fmmagnitude_inprogress" #lock for processing
-      fi
+	    read fm_magnitude_check < "${fm_magnitudedir}/.fieldmap_magnitude"
+	    if [ ! -f "${fm_magnitude_check}${ext}" ]; then
+		rel "Cannot find file: ${fm_magnitude_check}${ext}. Attempting to correct pathname." c
+		if [ -f "${fm_magnitudedir}/echo1/$( basename ${fm_magnitude_check} )${ext}" ]; then
+		    rel "Found magnitude by using directory ${fm_magnitudedir}" c
+		    echo "${fm_magnitudedir}/echo1/$( basename ${fm_magnitude_check} )${ext}" > "${fm_magnitudedir}/.fieldmap_magnitude"
+		    cp "${fm_magnitudedir}/.fieldmap_magnitude" "${funcdir}/.fieldmap_magnitude"
+		else
+		    rel "Removing invalid file: ${fm_magnitudedir}/.fieldmap_magnitude" c
+		    rm -f "${fm_magnitudedir}/.fieldmap_magnitude" #NB. The dicoms may need to be unzipped if the dir fix above doesn't work.
+		    date +%s > "${fm_magnitudedir}/.fmmagnitude_inprogress" #lock for re-processing
+		fi
+	    else
+		cp "${fm_magnitudedir}/.fieldmap_magnitude" "${funcdir}/.fieldmap_magnitude"
+	    fi	    
+	else
+            date +%s > "${fm_magnitudedir}/.fmmagnitude_inprogress" #lock for processing
+	fi
     fi
 
     #check whether the number of dicoms in the magnitude directory is 2x the phase directory.
@@ -234,6 +265,8 @@ function prepare_fieldmap {
 	fi
     fi
 
+    #TODO: If local .fieldmap_phase exists, but points to invalid file, this will blow up.
+    #We handle invalid .fieldmap_phase in fieldmap directories above, but this needs to be handled, too (probably before above)
     if [ -f ".fieldmap_phase" ]; then
 	read fm_phase < .fieldmap_phase
 	rel "Using fieldmap phase $fm_phase from file $fm_phasedir/.fieldmap_phase" c

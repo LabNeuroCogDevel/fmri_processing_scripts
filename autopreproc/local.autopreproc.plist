@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>local.autopreproc</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/michael/Box_Sync/Data_Analysis/clock_analysis/fmri/autopreproc/autopreproc</string>
+		<string>-njobs</string>
+		<string>8</string>
+		<string>specc.cfg</string>
+		<string>mmclock.cfg</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/Users/michael/Documents/autopreproc_stderr</string>
+	<key>StandardOutPath</key>
+	<string>/Users/michael/Documents/autopreproc_stdout</string>
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict>
+			<key>Hour</key>
+			<integer>4</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/michael/Box_Sync/Data_Analysis/clock_analysis/fmri</string>
+</dict>
+</plist>

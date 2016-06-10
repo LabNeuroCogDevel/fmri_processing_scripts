@@ -99,6 +99,15 @@ set -e #exit if any error occurs (stop processing)
 scriptDir=$( dirname "$0" )
 source "${scriptDir}/preproc_functions/helper_functions" #contains rel for running/logging
 
+##load necessary modules if running on cluster (specific to ACI at the moment)
+if command -v module >/dev/null; then
+    module load fsl/5.0.8 >/dev/null 2>&1
+    module load afni/16.0.00 >/dev/null 2>&1
+    module load R/3.2.0 >/dev/null 2>&1
+    module load matlab/R2014b >/dev/null 2>&1
+    module load python/2.7.5 >/dev/null 2>&1
+fi
+
 #set defaults for dicomPattern, reference, betOpts, and outputFile
 cleanup=0
 cleanup_only=0
@@ -184,23 +193,29 @@ while [ _$1 != _ ] ; do
     fi
 done
 
+#prefer ACI installation
+if [ -d /storage/group/mnh5174_collab/standard ]; then
+    stddir=/storage/group/mnh5174_collab/standard
+else
+    stddir=$HOME/standard
+fi
 
 case "$reference" in
-    Tal_2mm)  bettedRefBrain=$HOME/standard/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm_brain;
-	unbettedRefBrain=$HOME/standard/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm;
-	refMask=$HOME/standard/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm_brain_mask_dil;
-	fnirtConfig=$HOME/standard/fnirtTalairachSettings.cnf;;
-    MNI_2mm) bettedRefBrain=$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm;
-	unbettedRefBrain=$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_2mm;
-	refMask=$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2mm_dil;
+    Tal_2mm)  bettedRefBrain=${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm_brain;
+	unbettedRefBrain=${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm;
+	refMask=${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm_brain_mask_dil;
+	fnirtConfig=${stddir}/fnirtTalairachSettings.cnf;;
+    MNI_2mm) bettedRefBrain=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm;
+	unbettedRefBrain=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_2mm;
+	refMask=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2mm_dil;
 	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
-    MNI_FSL_2mm) bettedRefBrain=$HOME/standard/fsl_mni152/MNI152_T1_2mm_brain;
-	unbettedRefBrain=$HOME/standard/fsl_mni152/MNI152_T1_2mm;
-	refMask=$HOME/standard/fsl_mni152/MNI152_T1_2mm_brain_mask_dil;
+    MNI_FSL_2mm) bettedRefBrain=${stddir}/fsl_mni152/MNI152_T1_2mm_brain;
+	unbettedRefBrain=${stddir}/fsl_mni152/MNI152_T1_2mm;
+	refMask=${stddir}/fsl_mni152/MNI152_T1_2mm_brain_mask_dil;
 	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
-    SPM_2mm)  bettedRefBrain=$HOME/standard/spm8_mni/T1_brain;
-	unbettedRefBrain=$HOME/standard/spm8_mni/T1;
-	refMask=$HOME/standard/spm8_mni/brainmask_0.5thresh;
+    SPM_2mm)  bettedRefBrain=${stddir}/spm8_mni/T1_brain;
+	unbettedRefBrain=${stddir}/spm8_mni/T1;
+	refMask=${stddir}/spm8_mni/brainmask_0.5thresh;
 	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
     *) echo -e "Reference brain not recognized. Options are MNI_2mm, MNI_FSL_2mm, SPM_2mm, and Tal_2mm."; exit 1 ;;
 esac
@@ -472,9 +487,6 @@ rel "applywarp --interp=nn --in=$nodil --ref=${T1}_biascorr -w template_to_subje
 rel "fslmaths ${T1}_biascorr_brain_mask -fillh ${T1}_biascorr_brain_mask"
 rel "fslmaths ${T1}_biascorr -mas ${T1}_biascorr_brain_mask ${T1}_bet" #will be used as -mprage_bet in preprocessFunctional
 
-#generate skull-stripped version of final warped file
-rel "fslmaths ${outputFile} -mas $nodil $( remove_ext ${outputFile} )_bet"
-
 if [[ -f "${bettedRefBrain}.nii" && ! -h ./template_brain.nii ]]; then
     ln -s "${bettedRefBrain}.nii" ./template_brain.nii
 elif [[ -f "${bettedRefBrain}.nii.gz" && ! -h ./template_brain.nii.gz ]]; then
@@ -509,11 +521,14 @@ if [ $( imtest ${T1}_bet_fast ) -eq 0 ]; then
     # regenerate the standard space structural with the updated bias field correction applied
     rel "applywarp -i ${T1}_biascorr -w ${T1}_warpcoef --ref=$unbettedRefBrain -o $outputFile --interp=spline"
     rel "fslmaths ${T1}_bet_fast_pve_2 -thr 0.5 -bin ${T1}_bet_fast_wmseg" #create binary WM mask
+
+    #generate skull-stripped version of final warped file (after final bias correction)
+    rel "fslmaths ${outputFile} -mas $nodil $( remove_ext ${outputFile} )_bet"
 fi
 
 #create png to check registration
 #invwarp -w "${T1}_warpcoef" -o warpcoef_inv -r "${T1}_bet"
-applywarp --ref="$unbettedRefBrain" --in="${T1}_bet" --warp="${T1}_warpcoef" --interp=spline --out=mprage_bet_warped
+applywarp --ref="$unbettedRefBrain" --mask="$refMask" --in="${T1}_bet" --warp="${T1}_warpcoef" --interp=spline --out="${T1}_bet_warped"
 
 #note: first input to slicer is rendered image, second is overlay
 slicer mprage_bet_warped "$bettedRefBrain" -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \

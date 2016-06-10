@@ -5,6 +5,13 @@ function parse_args {
     #parse input arguments, initialize default parameter settings
     #when called from preprocessFunctional, must pass "$@", which is all input parameters to script
 
+    #prefer ACI installation
+    if [ -d /storage/group/mnh5174_collab/standard ]; then
+	stddir=/storage/group/mnh5174_collab/standard
+    else
+	stddir=$HOME/standard
+    fi
+    
     #initialize defaults
     funcFile=
     smoothing_kernel="5"
@@ -41,6 +48,9 @@ function parse_args {
     nuisance_regression=0
     nuisance_compute=0
     nuisance_file=.nuisance_regressors
+    output_basename=functional #base prefix of NIfTI file after dicom -> NIfTI conversion
+    MATLAB_RAM_limit=3 #3GB wavelet despike RAM limit by default (more is faster, but can be a hog when processing in parallel).
+    MATLAB_single_thread=
     ref_vol=  #don't set a motion correction reference volume by default
     rescalingMethod="10000_globalmedian" #scale whole brain 4D by single constant to normalize median to 10000.
     sliceAcquisition= #never assume slice acquistion order. Force definition or use auto-detect from DICOM.
@@ -50,7 +60,7 @@ function parse_args {
     st_first= #default to empty and choose default based on slice acquisition order (sequential versus interleaved)
     thresholdMethod="98_2"
     tr= #never assume a TR. Force definition or use auto-detect from DICOM.
-    templateBrain="$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" #default to new 2009 MNI
+    templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" #default to new 2009 MNI
     templateName=MNI_3mm
     waveletDespike=0
     waveletM1000=0
@@ -307,6 +317,9 @@ function parse_args {
 	    nuisance_regression=1
 	    nuisance_regressors="${2}"
 	    shift 2
+	elif [ $1 = -output_basename ]; then
+	    output_basename="${2}"
+	    shift 2
 	elif [ $1 = -ref_vol ] ; then
             ref_vol="${2}"
             shift 2
@@ -349,12 +362,12 @@ function parse_args {
 	elif [ $1 = -template_brain ]; then
 	    templateName="${2}"
 	    case $2 in
-		Tal_3mm) templateBrain="$HOME/standard/talairach_fsl_mni152/TalFSL_MNI152_T1_3mm_brain" ;;
-		MNI_FSL_3mm) templateBrain="$HOME/standard/fsl_mni152/MNI152_T1_3mm_brain" ;;
-		MNI_3mm) templateBrain="$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" ;;
-		MNI_2.3mm) templateBrain="$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2.3mm" ;;
-		SPM_2mm) templateBrain="$HOME/standard/spm8_mni/T1_brain" ;;
-		MNI_2mm) templateBrain="$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm" ;;
+		Tal_3mm) templateBrain="${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_3mm_brain" ;;
+		MNI_FSL_3mm) templateBrain="${stddir}/fsl_mni152/MNI152_T1_3mm_brain" ;;
+		MNI_3mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" ;;
+		MNI_2.3mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2.3mm" ;;
+		SPM_2mm) templateBrain="${stddir}/spm8_mni/T1_brain" ;;
+		MNI_2mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm" ;;
 		*) echo -e "Reference brain -template_brain ${2} not recognized. Options are MNI_3mm, MNI_FSL_3mm, SPM_2mm, and Tal_3mm."; exit 1 ;;
 	    esac
 	    shift 2
@@ -477,6 +490,27 @@ function parse_args {
 
     #smoothed files include the FHWM as a sufix
     [ $no_smooth -eq 0 ] && smoothing_suffix="_${smoothing_kernel}" || smoothing_suffix=
+
+    if [ -n "${logFile}" ]; then
+	if [ -f "${logFile}" ]; then
+	    #stat and date are not portable across Linux and BSD...
+            [ $( uname ) = Darwin ] && mtime=$( stat -f "%Sm" -t "%Y%m%d_%H%M" "${logFile}" ) || mtime=$( date -r "${logFile}" +%Y%m%d_%H%M )
+	    mv "${logFile}" "${logFile}_${mtime}"
+	fi
+	
+        #add absolute path to log file location
+	logFile="$(pwd)/$( basename $logFile )" ##TODO: make path handling more robust to non-local directories
+	
+	echo "#!/bin/bash" > "${logFile}"
+	echo "## Log of preprocessFunctional commands" >> "${logFile}"
+	echo -e "## Call: $thiscommandinfo" >> "${logFile}"
+    fi
+
+    if uname -n | grep -q "comp-hm.*aci.ics.psu.edu"; then
+	rel "Running on ACI high-memory cluster. Increase MATLAB RAM limit and force MATLAB single threading." c
+	MATLAB_RAM_limit=16
+	MATLAB_single_thread="-singleCompThread"
+    fi
 
 }
 

@@ -62,6 +62,7 @@ fname_censor1D <- NULL
 corr_method <- "pearson"
 roi_reduce <- "pca"
 fisherz <- FALSE
+
 na_string <- "NA"
 clustersocketport <- 10290
 
@@ -358,7 +359,7 @@ roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, 
 
         ##cat("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.\n", file=".roilog", append=TRUE)
         message("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.")
-        ts <- rep(NA_real_, ncol(roivox))
+        ts <- rep(NA_real_, nrow(roivox))
     } else {
         if (sum(badvox) > 0) {
             ##cat("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.\n", file=".roilog", append=TRUE)
