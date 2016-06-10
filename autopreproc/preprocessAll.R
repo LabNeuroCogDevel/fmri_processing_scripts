@@ -38,7 +38,7 @@ preprocessed_dirname = Sys.getenv("preprocessed_dirname") #name of subdirectory 
 paradigm_name = Sys.getenv("paradigm_name") #name of paradigm used as a prefix for processed run directories
 n_expected_funcruns = Sys.getenv("n_expected_funcruns") #number of runs per subject of the task
 preproc_call = Sys.getenv("preproc_call") #parameters passed forward to preprocessFunctional
-preprocessMprage_call = Sys.getenv("preprocessMprage_call")
+preprocessMprage_call = Sys.getenv("preprocessMprage_call") #parameters passed forward to preprocessMprage
 MB_src = Sys.getenv("loc_mb_root") #Name of directory containing offline-reconstructed fMRI data (only relevant for Tae Kim sequence Pittburgh data)
 mb_filepattern = Sys.getenv("mb_filepattern") #Wildcard pattern of MB reconstructed data within MB_src
 useOfflineMB = ifelse(nchar(MB_src) > 0, TRUE, FALSE) #whether to use offline-reconstructed hdr/img files as preprocessing starting point
@@ -46,7 +46,10 @@ useOfflineMB = ifelse(nchar(MB_src) > 0, TRUE, FALSE) #whether to use offline-re
 #setup default parameters
 if (mprage_dicompattern == "") { mprage_dicompattern = "MR*" }
 if (functional_dicompattern == "") { functional_dicompattern = "MR*" }
-if (preprocessMprage_call == "") { preprocessMprage_call = paste0("-dicom \"", mprage_dicompattern, "\" -delete_dicom archive -template_brain MNI_2mm") }
+if (preprocessMprage_call == "") { preprocessMprage_call = paste0("-delete_dicom archive -template_brain MNI_2mm") }
+
+#add dicom pattern into the mix
+preprocessMprage_call <- paste0(preprocessMprage_call, " -dicom \"", mprage_dicompattern, "\"")
 
 #optional config settings
 loc_mrproc_root = Sys.getenv("loc_mrproc_root")
