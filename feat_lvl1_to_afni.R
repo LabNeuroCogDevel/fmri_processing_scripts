@@ -1,14 +1,18 @@
 #!/usr/bin/env Rscript
 
 #script to pull together FSL FEAT level 1 runs into an AFNI BRIK+HEAD format for review
-source("R_helper_functions.R")
-
 printHelp <- function() {
     #to do
 }
 
 #read in command line arguments.
-args <- commandArgs(trailingOnly = TRUE)
+args <- commandArgs(trailingOnly = FALSE)
+Sys.setenv(AFNIDIR="/opt/aci/sw/afni/16.0.00/bin")
+
+scriptpath <- dirname(sub("--file=", "", grep("--file=", args, fixed=TRUE, value=TRUE), fixed=TRUE))
+argpos <- grep("--args", args, fixed=TRUE)
+args <- args[(argpos+1):length(args)]
+source(file.path(scriptpath, "R_helper_functions.R"))
 
 if (length(args) == 0L) {
   message("feat_lvl1_to_afni expects a single .feat directory from a level 1 analysis -feat_dir <directory>.\n")
@@ -84,25 +88,30 @@ for (file in 1:length(pefiles)) {
 ##add in other files
 ##thresh_zstat files
 threshzfiles <- list.files(pattern="^thresh_zstat.*\\.nii.*", full.names=TRUE)
-threshznums <- as.numeric(sub(".*thresh_zstat(\\d+)\\.nii.*", "\\1", threshzfiles, perl=TRUE))
-threshzfiles <- threshzfiles[order(threshznums)]
-for (file in 1:length(threshzfiles)) {
-    tcatcall <- paste(tcatcall, threshzfiles[file])
-    zbriks <- c(zbriks, findex)
-    findex <- findex + 1
+if (length(threshzfiles) > 0L) {    
+    threshznums <- as.numeric(sub(".*thresh_zstat(\\d+)\\.nii.*", "\\1", threshzfiles, perl=TRUE))
+    threshzfiles <- threshzfiles[order(threshznums)]
+    for (file in 1:length(threshzfiles)) {
+        tcatcall <- paste(tcatcall, threshzfiles[file])
+        zbriks <- c(zbriks, findex)
+        findex <- findex + 1
+    }
 }
-
+    
 zfstatfiles <- list.files("stats", pattern="zfstat.*\\.nii.*", full.names=TRUE)
-
-for (file in 1:length(zfstatfiles)) {
-    tcatcall <- paste(tcatcall, zfstatfiles[file])
-    zbriks <- c(zbriks, findex)
-    findex <- findex + 1
+if (length(zfstatfiles) > 0L) {
+    for (file in 1:length(zfstatfiles)) {
+        tcatcall <- paste(tcatcall, zfstatfiles[file])
+        zbriks <- c(zbriks, findex)
+        findex <- findex + 1
+    }
 }
 
 #add residuals
-tcatcall <- paste(tcatcall, "stats/sigmasquareds.nii.gz")
-findex <- findex + 1
+if (file.exists("stats/sigmasquared.nii.gz")) {
+    tcatcall <- paste(tcatcall, "stats/sigmasquareds.nii.gz")
+    findex <- findex + 1
+}
 
 runAFNICommand(tcatcall)
 
