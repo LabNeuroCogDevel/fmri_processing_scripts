@@ -4,7 +4,7 @@ printHelp <- function() {
   cat("ROI_TempCorr is a script that computes temporal correlations among ROIs defined by an integer-valued mask (e.g., a set of numbered spheres).",
       "",
       "Required inputs are:",
-      "  -ts  <4D file>: The file containing time series of interest. Usually preprocessed resting-state data. Can be NIfTI or AFNI BRIK/HEAD",
+      "  -ts       <4D file>: The file containing time series of interest. Usually preprocessed resting-state data. Can be NIfTI or AFNI BRIK/HEAD",
       "  -rois <3D file>: The integer-valued mask file defining the set of ROIs. Computed correlation matrices will be nROIs x nROIs in size based on this mask.",
       "  -out_file <filename for output>: The file to be output containing correlations among ROIs.",
       "",
@@ -27,6 +27,7 @@ printHelp <- function() {
       "  -njobs <n>: Number of parallel jobs to run when computing correlations. Default: 4.",
       "  -na_string: Character string indicating how to represent missing correlations in output file. Default NA.",
       "  -ts_out_file <filename for time series output>: Output a file containing the average time series for each region before computing correlations.",
+      "  -ts_only: stop before running correlations. useful with -ts_out_file",
       "",
       "If the -ts file does not match the -rois file, the -ts file will be resampled to match the -rois file using 3dresample. This requires that the images be coregistered,",
       "  in the same stereotactic space, and have the same grid size.",
@@ -62,6 +63,9 @@ fname_censor1D <- NULL
 corr_method <- "pearson"
 roi_reduce <- "pca"
 fisherz <- FALSE
+
+# only do timeseries
+ts_only <- F
 
 na_string <- "NA"
 clustersocketport <- 10290
@@ -104,6 +108,9 @@ while (argpos <= length(args)) {
     stopifnot(corr_method %in% c("pearson", "spearman", "robust", "kendall", "mcd", "weighted", "donostah", "M", "pairwiseQC", "pairwiseGK", "none"))    
   } else if (args[argpos] == "-fisherz") {
     fisherz <- TRUE
+    argpos <- argpos + 1
+  } else if (args[argpos] == "-ts_only") {
+    ts_only <- T
     argpos <- argpos + 1
   } else if (args[argpos] == "-na_string") {
     na_string <- args[argpos + 1]
@@ -414,6 +421,9 @@ if (nchar(ts_out_file) > 0L) {
     }
     write.table(df, file=ts_out_file, col.names=F, row.names=F)
 }
+
+# WF20160906 - we only want the timeseries. we have that so quit.
+if(ts_only) { exit(0) }
 
 # just want to print time series, not actually compute corrleations
 # for DM 20160517
