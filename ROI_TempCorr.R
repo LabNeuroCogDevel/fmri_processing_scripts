@@ -65,6 +65,7 @@ roi_reduce <- "pca"
 fisherz <- FALSE
 
 # only do timeseries
+fname_brainmask  <-  NULL
 ts_only <- F
 
 na_string <- "NA"
@@ -423,7 +424,7 @@ if (nchar(ts_out_file) > 0L) {
 }
 
 # WF20160906 - we only want the timeseries. we have that so quit.
-if(ts_only) { exit(0) }
+if(ts_only) { quit(save="no", 0, FALSE) }
 
 # just want to print time series, not actually compute corrleations
 # for DM 20160517
