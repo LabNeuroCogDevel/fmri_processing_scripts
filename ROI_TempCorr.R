@@ -65,7 +65,7 @@ roi_reduce <- "pca"
 fisherz <- FALSE
 
 # only do timeseries
-fname_brainmask  <-  NULL
+#fname_brainmask  <- NULL 
 ts_only <- F
 
 na_string <- "NA"
