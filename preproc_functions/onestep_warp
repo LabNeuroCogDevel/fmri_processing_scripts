@@ -1,6 +1,9 @@
 #!/bin/bash
 #Apply fieldmap to EPI data at the same time as motion correction (one-step interpolation)
 
+# GLOBALS:
+ONESTEPWARP_GLOBALS=(templateBrain subjMask fm_phase mc_first prefix funcFile createBBRFmapWarp no_st st_first sliceMotion4D preMC despike postDespike postSS nowarp funcWarpInterp warpCoef)
+
 function onestep_warp {
 
     if [ $# -lt 1 ]; then
@@ -8,6 +11,11 @@ function onestep_warp {
 	exit 1
     fi
 
+    # record all the globals used by this function
+    print_vars_in ONESTEPWARP_GLOBALS
+
+
+    # figure out what to do based on the target
     local warp_target="$1"
 
     if [ $warp_target = standard ]; then
@@ -293,4 +301,4 @@ function onestep_warp {
     return 0
 
 }
-#vim: set tabstop=5:
+# vi: set shiftwidth=4 tabstop=8 expandtab:

@@ -421,4 +421,32 @@ function read_preproc_cmd {
  fi
 }
 
+
+# given the NAME of an array that contains the names of other variables 
+# (presumably global variable names used by a function)
+# print the variable name and value
+# e.g. GLOBALS=(template mask)
+#      printvariablesin GLOBALS
+# ouptut like:
+#      template=mni
+#      mask=subj_mask.nii.gz
+# saved to file '.$globalsarrayname.cfg'
+function print_vars_in {
+   # scary bash indirect reference of array index
+   # to build array globals from passed in variable name
+   local globalarrayname=$1
+   [ -z "$globalarrayname" ] && warn "$FUNC_NAME expects the name of a global array as only input" && return 1
+
+   local ref="$globalarrayname[@]"
+   local globals=(${!ref})
+
+   (
+   echo "# $(date +%F/%H:%M)"
+   for var in ${globals[@]};do
+      echo "$var='${!var}'"
+   done
+   echo
+   ) >> .${globalarrayname,,}.cfg
+}
+
 # vim: set tabstop=7:

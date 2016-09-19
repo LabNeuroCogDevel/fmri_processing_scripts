@@ -1,6 +1,11 @@
 #!/bin/bash
 
+WARP_TO_TEMPLATE_GLOBALS=(no_warp threshMask constrainToTemplate mc_first sliceMotion4D templateBrain warpCoef cleanup)
+
 function warp_to_template {
+
+    # WF20160919 -- record global variables used by this function
+    print_vars_in WARP_TO_TEMPLATE_GLOBALS
 
     #define subject mask
     if [ $no_warp -eq 1 ]; then
@@ -96,3 +101,4 @@ function warp_to_template {
     return 0
 
 }
+# vi: set shiftwidth=4 tabstop=8 expandtab:
