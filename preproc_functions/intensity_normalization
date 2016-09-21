@@ -1,7 +1,9 @@
 #!/bin/bash
+INTENSITY_NORMALIZATION_GLOBALS=(rescalingMethod median_intensity prefix funcFile smoothing_suffice rescalingFactor)
 
 function intensity_normalization {
     if [ ! -f ".rescaling_complete" ]; then
+        print_vars_in INTENSITY_NORMALIZATION_GLOBALS
 	#####
 	#Compute a mean functional volume after all of the preprocessing
 	#steps are complete. This image has been slice-timed, motion-corrected,
@@ -36,3 +38,4 @@ function intensity_normalization {
     return 0
 
 }
+# vi: set shiftwidth=4 tabstop=8 expandtab:
