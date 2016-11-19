@@ -48,13 +48,6 @@ function rm_completefiles {
 function parse_args {
     #parse input arguments, initialize default parameter settings
     #when called from preprocessFunctional, must pass "$@", which is all input parameters to script
-
-    #prefer ACI installation
-    if [ -d /storage/group/mnh5174_collab/standard ]; then
-	stddir=/storage/group/mnh5174_collab/standard
-    else
-	stddir=$HOME/standard
-    fi
     
     #initialize defaults
     funcFile=

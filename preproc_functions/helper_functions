@@ -1,5 +1,14 @@
 #!/bin/bash
 
+#prefer env variable, then ACI installation when looking for templates
+if [ -n "$MRI_STDDIR" ]; then
+    stddir="$MRI_STDDIR"
+elif [ -d /storage/group/mnh5174_collab/standard ]; then
+    stddir=/storage/group/mnh5174_collab/standard
+else
+    stddir=$HOME/standard
+fi
+
 #function for taking sequential processing pictures (used in FM unwarping for now)
 # Whether to take sequential pictures of processing steps
 [ -z "$pics" ] && pics=no #=yes, take
@@ -18,6 +27,14 @@ function _picture {
     imgname=$imgdir/${num}_$name.png
     slicer -u $1 -a $imgname
     convert -scale 200% -fill white -gravity southwest -annotate 0 "$num $name:  $2" $imgname $imgname
+}
+
+function dumpenv() {
+    for i in _ {a..z} {A..Z}; do
+	for var in `eval echo "\\${!$i@}"`; do
+	    echo ${var}=${!var}
+	done 
+    done
 }
 
 function deleteFile() {

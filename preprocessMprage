@@ -29,11 +29,14 @@ Command line options:
         Must be quoted (e.g., -b "-f 0.7"). Defaults to "-R -f 0.5 -v"
   -cleanup: cleanup intermediate files not needed for further processing.
   -cleanup_only: run cleanup of intermediate files, then exit. (after checking files)
+  -custom_brainmask: a NIfTI image containing a custom brain mask to be used instead of running a skull strip internally.
+        Must be the same dimensions as the structural scan. Technically, this can even be a skull-stripped volume such that
+        non-zero values are used to mask the structural image.
   -d -delete_dicom: delete or archive DICOM files. Options are -d n ("no": leaves DICOM
         untouched), -d y ("yes": deletes DICOM files), -d a ("archive":
         compresses files into archive file: mprage_dicom.tar.gz. If not
         passed, user will be prompted for action. Can also use "yes", "no", and "archive."
-  -h: print command help
+  -h -help: print command help
   -log: Name for log file that documents each command that is run. Default: preprocessMprage.log
   -n -nifti: skip DICOM conversion and start with specified NIFTI file. 
         Example: -n mprage.nii.gz (will complete bet, flirt, and
@@ -43,6 +46,10 @@ Command line options:
         Defaults to mprage_nonlinear_warp_<referenceName>.nii.gz
   -p -dicom: file pattern for dicom MR files. Defaults to "MR*". Please enclose the pattern in quotes or it may not function properly
   -r -template_brain: reference brain. Currently supports "MNI_2mm", "MNI_FSL_2mm", "SPM_2mm", and "Tal_2mm". Default is "MNI_2mm".
+  -ss_method: skull-stripping method used to create final brain-extracted data. Default is fnirt-inv. Options:
+        fnirt-inv: uses the template brain mask warped onto the subject's brain to define brain mask
+	bet: uses the bet program (FSL) to skull strip (also respects -bet_opts).
+	3dSkullStrip: uses the 3dSkullStrip program (can pass additional parameters using -bet_opts).
   -w -warpres: resolution of warp basis (nonlinear neighborhood size) in mm. Default is 8 mm.
   -weakbias: used for images with little and/or smooth bias fields (cf. fsl_anat).
 
@@ -54,9 +61,17 @@ EndOfHelp
 
 #Author: Michael Hallquist
 #Written: 5/2/2010
-#Last updated: 10/30/2014
+#Last updated: 11/14/2016
 #
 #Changelog:
+#11/14/2016
+# - Added robustfov into pipeline to help with neck cleanup on larger structural scans
+# - Allow bet or 3dSkullStrip to carry forward as brain-extracted image for subsequent processing (-ss_method)
+# - Allow for a custom brain mask to be used to help with manual tweaks of skull strip (-custom_brainmask)
+# - Allow for a .preproc_override file to supplant parameters passed on the command line. Useful for 
+#     manual custom processing to still be picked up by preprocessMprage being run in large batch (autopreproc).
+# - Implement .preprocessmprage_incomplete, consistent with preprocessFunctional approach
+# - Archive preprocessMprage.log on re-run, rather than deleting it (consistent with preprocessFunctional)
 #10/30/2014
 # - added check for initial file extension for NIfTI to make sure that it matches FSLOUTPUTYPE. Otherwise, pipeline may fail to use reoriented file.
 #4/5/2014
@@ -97,7 +112,9 @@ EndOfHelp
 set -e #exit if any error occurs (stop processing)
 
 scriptDir=$( dirname "$0" )
-source "${scriptDir}/preproc_functions/helper_functions" #contains rel for running/logging
+
+#contains rel for running/logging; also sets up stddir env variable
+source "${scriptDir}/preproc_functions/helper_functions"
 
 ##load necessary modules if running on cluster (specific to ACI at the moment)
 if command -v module >/dev/null; then
@@ -116,8 +133,17 @@ strongBias=1 #0 for minimal bias correction, 1 for strong bias
 dicomPattern="MR*"
 logFile="preprocessMprage.log"
 reference="MNI_2mm"
-betOpts="-R -f 0.5 -v" #default bet options
 wr=8 #warp resolution in mm
+robustfov=1
+ssmethod=fnirt-inv
+
+dotfile=.preprocessmprage
+
+#exit script if processing complete
+if [[ -f "${dotfile}_complete" && "$@" != *-startover* && "$@" != *-cleanup_only* && "$@" != *-help* ]]; then
+    echo -e "\n--- preprocessMprage already complete.\n"
+    exit 0
+fi
 
 #if no parameters are passed in, then print help and exit.
 if [ $# -eq 0 ]; then
@@ -130,75 +156,98 @@ datefmt='+%F+%I:%M'
 #needs to come before while loop because the positional parameters get popped off.
 thiscommandinfo="$0 $@ \n# preprocessMprage v$(perl -ne 'print $1 if /^#Last updated: (.*)/' $0) \n# Run started $(date $datefmt) "
 
-#process command line parameters
-while [ _$1 != _ ] ; do
-    if [[ $1 = -b || $1 = -bet_opts ]] ; then
-	betOpts="${2}"
-	shift 2
-    elif [[ $1 = -cleanup ]]; then
-	cleanup=1
-	shift 1
-    elif [[ $1 = -cleanup_only ]]; then
-	cleanup_only=1
-	shift 1
-    elif [[ $1 = -d || $1 = -delete_dicom ]]; then
-	low=$( echo "${2}" | awk '{print tolower($0)}' ) 	#force lower case input
-	if [[ $2 = "delete" || $2 = "yes" || $2 = "no" || $2 = "archive" ]]; then
-	    delDicom="${low}"
-	    shift 2
-	elif [[ $2 = "y" || $2 = "n" || $2 = "a" ]]; then
-	    echo "Use of single character deprecated. Please change to yes, no, archive."
-	    delDicom="${low}"
-	    shift 2
-	else
-	    echo -e "Unrecognized ${1}: ${2}.\n  Options are: ${1} delete yes no archive."
-	    exit 1
-	fi
-    elif [[ $1 = -p || $1 = -dicom ]]; then
-	dicomPattern="${2}"
-	shift 2
-    elif [[ $1 = -h || $1 = -help ]]; then
-	printHelp
-	exit 0
-    elif [ $1 = -log ]; then
-	logFile="${2}"
-	shift 2
-    elif [[ $1 = -no_bias ]]; then
-	biasCorrect=0
-	shift 1
-    elif [[ $1 = -n || $1 = -nifti ]]; then
-	nifti="${2}"
-	shift 2
-    elif [[ $1 = -o || $1 = -output ]]; then
-	outputFile="${2}"
-	shift 2
-    elif [[ $1 = -r || $1 = -template_brain ]]; then
-	reference="${2}"
-	shift 2
-    elif [[ $1 = -warpres || $1 = -w ]]; then
-	wr="${2}"
-	if [[ ! ${wr} =~ ^[0-9]+$ ]]; then
-	    echo "-warpres must be an integer (e.g., 10)."
-	    exit 1
-	fi
-	shift 2
-    elif [[ $1 = -weakbias ]]; then
-	strongBias=0
-	shift 1
-    else
-        printHelp
-        echo -e "----------------\n\n"
-        echo "Unrecognized command line parameter: ${1}"
-        exit 1
-    fi
-done
+# write to an incomplete file (later to be changed to complete if process finishes)
+echo -e "$thiscommandinfo " > ${dotfile}_incomplete
 
-#prefer ACI installation
-if [ -d /storage/group/mnh5174_collab/standard ]; then
-    stddir=/storage/group/mnh5174_collab/standard
-else
-    stddir=$HOME/standard
+#process command line parameters
+function parse_mprage_args() {
+
+    while [ _$1 != _ ] ; do
+	if [[ $1 = -b || $1 = -bet_opts ]] ; then
+	    betOpts="${2}"
+	    shift 2
+	elif [[ $1 = -cleanup ]]; then
+	    cleanup=1
+	    shift 1
+	elif [[ $1 = -cleanup_only ]]; then
+	    cleanup_only=1
+	    shift 1
+	elif [[ $1 = -custom_brainmask ]]; then
+	    brainmask="${2}"
+	    shift 2
+	elif [[ $1 = -d || $1 = -delete_dicom ]]; then
+	    low=$( echo "${2}" | awk '{print tolower($0)}' ) 	#force lower case input
+	    if [[ $2 = "delete" || $2 = "yes" || $2 = "no" || $2 = "archive" ]]; then
+		delDicom="${low}"
+		shift 2
+	    elif [[ $2 = "y" || $2 = "n" || $2 = "a" ]]; then
+		echo "Use of single character deprecated. Please change to yes, no, archive."
+		delDicom="${low}"
+		shift 2
+	    else
+		echo -e "Unrecognized ${1}: ${2}.\n  Options are: ${1} delete yes no archive."
+		exit 1
+	    fi
+	elif [[ $1 = -p || $1 = -dicom ]]; then
+	    dicomPattern="${2}"
+	    shift 2
+	elif [[ $1 = -h || $1 = -help ]]; then
+	    printHelp
+	    exit 0
+	elif [ $1 = -log ]; then
+	    logFile="${2}"
+	    shift 2
+	elif [[ $1 = -no_bias ]]; then
+	    biasCorrect=0
+	    shift 1
+	elif [[ $1 = -n || $1 = -nifti ]]; then
+	    nifti="${2}"
+	    shift 2
+	elif [[ $1 = -no_robustfov ]]; then
+	    robustfov=0
+	    shift 1
+	elif [[ $1 = -o || $1 = -output ]]; then
+	    outputFile="${2}"
+	    shift 2
+	elif [[ $1 = -r || $1 = -template_brain ]]; then
+	    reference="${2}"
+	    shift 2
+	elif [[ $1 = -ss_method ]]; then
+	    ssmethod="${2}"
+	    shift 2
+	elif [[ $1 = -warpres || $1 = -w ]]; then
+	    wr="${2}"
+	    if [[ ! ${wr} =~ ^[0-9]+$ ]]; then
+		echo "-warpres must be an integer (e.g., 10)."
+		exit 1
+	    fi
+	    shift 2
+	elif [[ $1 = -weakbias ]]; then
+	    strongBias=0
+	    shift 1
+	else
+            printHelp
+            echo -e "----------------\n\n"
+            echo "Unrecognized command line parameter: ${1}"
+            exit 1
+	fi
+    done
+
+}
+
+parse_mprage_args "$@" #parse command line inputs
+
+#if a .preproc_override file exists, parse args in that file, overriding the command line args in preceding step
+if [ -f .preproc_override ]; then
+    #there is a challenge of resplitting quoted arguments after read. This solution (eval) worked for this case
+    #http://stackoverflow.com/questions/17338863/split-a-string-stored-in-a-variable-into-multiple-words-using-spaces-but-not-t
+    read override_string < .preproc_override || echo "Did you forget a trailing newline in .preproc_override?"
+    echo "Overriding the following command line arguments from .preproc_override: $override_string"
+    eval override=($override_string)
+    parse_mprage_args "${override[@]}"
 fi
+
+#dumpenv #output all variables to screen for debugging
 
 case "$reference" in
     Tal_2mm)  bettedRefBrain=${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm_brain;
@@ -219,6 +268,9 @@ case "$reference" in
 	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
     *) echo -e "Reference brain not recognized. Options are MNI_2mm, MNI_FSL_2mm, SPM_2mm, and Tal_2mm."; exit 1 ;;
 esac
+
+#define warped brain mask without dilation (used for creating a final betted image)
+nodil=$( echo $refMask | sed -e 's/\(.*\)_dil$/\1/' )
 
 if [[ ! -f ${bettedRefBrain}.nii && ! -f ${bettedRefBrain}.nii.gz  ]]; then
     echo -e "Skull stripped reference brain not found: $bettedRefBrain\n"
@@ -259,11 +311,18 @@ fi
 
 if [ -n "${logFile}" ]; then
     if [ -f "${logFile}" ]; then
-	rm -f "${logFile}"
+	#stat and date are not portable across Linux and BSD...
+        [ $( uname ) = Darwin ] && mtime=$( stat -f "%Sm" -t "%Y%m%d_%H%M" "${logFile}" ) || mtime=$( date -r "${logFile}" +%Y%m%d_%H%M )
+	mv "${logFile}" "${logFile}_${mtime}"
     fi
+    
+    #add absolute path to log file location
+    logFile="$(pwd)/$( basename $logFile )" ##TODO: make path handling more robust to non-local directories
+
     echo "#!/bin/bash" > "${logFile}"
     echo "## Log of preprocessMprage commands" >> "${logFile}"
     echo -e "## Call: $thiscommandinfo" >> "${logFile}"
+    [ -n "$override_string" ] && echo "## Override from .preproc_override: $override_string" >> "${logFile}"
 fi
 
 #if .mprage_nifti file exists, then DICOM -> NIFTI conversion completed and we should read nifti from file
@@ -351,6 +410,7 @@ fi
 
 #strip off file extension to allow for suffix
 T1=$( remove_ext $nifti )
+[ -n "$brainmask" ] && brainmask=$( remove_ext $brainmask )
 
 #check for cleanup only
 if [ $cleanup_only -eq 1 ]; then
@@ -361,6 +421,17 @@ fi
 
 #reorient structural to RPI/LPI to match template
 rel "fslreorient2std $nifti $nifti"
+[ -n "$brainmask" ] && rel "fslreorient2std $brainmask $brainmask"
+
+if [ $robustfov -eq 1 ]; then
+    rel "robustfov -i \"${T1}\" -r \"${T1}_clipfov\""
+    T1="${T1}_clipfov" #now the base for all subsequent operations
+
+    if [ -n "$brainmask" ]; then
+	rel "robustfov -i \"${brainmask}\" -r \"${brainmask}_clipfov\""
+	brainmask="${brainmask}_clipfov"
+    fi
+fi
 
 #need to set default after processing options and dicom import
 #to account for reference choice and filename
@@ -375,7 +446,6 @@ quick_smooth() {
   # possibly do a tiny extra smooth to $out here?
   rel "imrm vol16"
 }
-
 
 type=1    # For FAST: 1 = T1w, 2 = T2w, 3 = PD
 
@@ -451,8 +521,20 @@ fi
 ###############
 #brain extract structural for FLIRT
 rel "Running brain extraction" c
-rel "bet ${T1} ${T1}_bet_initial ${betOpts}"
-
+if [ $ssmethod = bet ]; then
+    [ -z "$betOpts" ] && betOpts="-R -f 0.5 -v" #default bet options if not set manually
+    rel "bet ${T1}_biascorr ${T1}_bet_initial ${betOpts}"
+elif [ -n "${brainmask}" ]; then
+    if [ ! -f "${brainmask}${ext}" ]; then
+	echo "Cannot locate -custom_brainmask: ${brainmask}${ext}"
+	exit 1
+    fi
+    rel "fslmaths ${T1}_biascorr -mas $brainmask ${T1}_bet_initial" #apply custom brainmask
+    ssmethod=custom #override ssmethod so that fnirt-inv doesn't fire below
+else
+    [ -z "$betOpts" ] && betOpts="-touchup -orig_vol" #default 3dss options
+    rel "3dSkullStrip -input ${T1}_biascorr${ext} -prefix ${T1}_bet_initial${ext} ${betOpts}" #default option for initial strip
+fi
 
 ##############
 #warp structural to standard space (MNI or Talairach)
@@ -480,13 +562,19 @@ rel "fnirt --ref=$unbettedRefBrain --refmask=$refMask --in=${T1}_biascorr --aff=
         --fout=\"$( remove_ext ${outputFile} )_warpfield\" --cout=\"${T1}_warpcoef\" --iout=\"$outputFile\" \
 	--config=$fnirtConfig --logout=${T1}_to_${reference}_fnirt_settings.log --warpres=${wr},${wr},${wr} -v"
 
-rel "Generating brain mask based on inverse warp from template" c
 rel "invwarp --ref=${T1}_biascorr -w ${T1}_warpcoef -o template_to_subject_warpcoef"
-nodil=$( echo $refMask | sed -e 's/\(.*\)_dil$/\1/' )
-rel "applywarp --interp=nn --in=$nodil --ref=${T1}_biascorr -w template_to_subject_warpcoef -o ${T1}_biascorr_brain_mask"
-rel "fslmaths ${T1}_biascorr_brain_mask -fillh ${T1}_biascorr_brain_mask"
-rel "fslmaths ${T1}_biascorr -mas ${T1}_biascorr_brain_mask ${T1}_bet" #will be used as -mprage_bet in preprocessFunctional
+rel "applywarp --interp=spline --in=$bettedRefBrain --ref=${T1}_biascorr -w template_to_subject_warpcoef -o template_to_subject_brain"
 
+if [ $ssmethod = fnirt-inv ]; then
+    rel "Generating brain mask based on inverse warp from template" c
+    rel "applywarp --interp=nn --in=$nodil --ref=${T1}_biascorr -w template_to_subject_warpcoef -o ${T1}_biascorr_brain_mask"
+    rel "fslmaths ${T1}_biascorr_brain_mask -fillh ${T1}_biascorr_brain_mask"
+    rel "fslmaths ${T1}_biascorr -mas ${T1}_biascorr_brain_mask ${T1}_bet" #will be used as -mprage_bet in preprocessFunctional
+else
+    rel "fslmaths ${T1}_bet_initial ${T1}_bet" #straight copy
+    rel "fslmaths ${T1}_bet_initial -bin ${T1}_biascorr_brain_mask -odt char" #create brainmask from non-zero voxels of betted image
+fi
+    
 if [[ -f "${bettedRefBrain}.nii" && ! -h ./template_brain.nii ]]; then
     ln -s "${bettedRefBrain}.nii" ./template_brain.nii
 elif [[ -f "${bettedRefBrain}.nii.gz" && ! -h ./template_brain.nii.gz ]]; then
@@ -527,11 +615,10 @@ if [ $( imtest ${T1}_bet_fast ) -eq 0 ]; then
 fi
 
 #create png to check registration
-#invwarp -w "${T1}_warpcoef" -o warpcoef_inv -r "${T1}_bet"
-applywarp --ref="$unbettedRefBrain" --mask="$refMask" --in="${T1}_bet" --warp="${T1}_warpcoef" --interp=spline --out="${T1}_bet_warped"
+rel "applywarp --ref=\"$unbettedRefBrain\" --mask=\"$refMask\" --in=\"${T1}_bet\" --warp=\"${T1}_warpcoef\" --interp=spline --out=subject_to_template_brain"
 
 #note: first input to slicer is rendered image, second is overlay
-slicer mprage_bet_warped "$bettedRefBrain" -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
+slicer subject_to_template_brain "$bettedRefBrain" -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
     -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
     -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png
 
@@ -539,7 +626,7 @@ pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + 
 
 montage -label "Subject brain with template outline overlaid" highres2standard1.png -pointsize 30 -geometry +0+0 highres2standard1.png
 
-slicer "$bettedRefBrain" mprage_bet_warped -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
+slicer "$bettedRefBrain" subject_to_template_brain -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
     -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
     -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png
 
@@ -549,7 +636,7 @@ montage -label "Template with subject brain outline overlaid" highres2standard2.
 
 pngappend highres2standard1.png - highres2standard2.png struct_to_template.png; 
 rm -f sl?.png highres2standard2.png  highres2standard1.png
-imrm mprage_bet_warped
+imrm subject_to_template_brain
 
 #generate symbolic link to skull-stripped mprage file for compatibility with FSL tools
 ln -sfn "${T1}_bet.nii.gz" "${T1}_brain.nii.gz"
@@ -558,3 +645,19 @@ if [ $cleanup -eq 1 ]; then
     rel "Cleaning up preprocessMprage intermediate files." c
     cleanup_preprocessMprage
 fi
+
+# write finish time, mv incomplete to complete
+echo "# finished $(date $datefmt)" >> ${dotfile}_incomplete
+mv ${dotfile}_incomplete ${dotfile}_complete
+
+#suggestions for QA
+rel "QA suggestions (from least to most important):" c
+rel "Initial skull strip. Primarily a worry if large parts of brain tissue are missing (e.g., cerebellum)." c
+rel "   fslview ${T1}${ext} ${T1}_bet_initial${ext}" c
+rel "Linear (affine) alignment of skull-stripped subject brain onto template." c
+rel "This will be negatively affected if skull strip is poor. But you should only expect overall global alignment" c
+rel "   fslview template_brain${ext} ${T1}_warp_linear${ext}" c
+rel "Nonlinear warp of template brain onto subject (inverse warp). Check especially for global shape problems." c
+rel "   fslview ${T1}_bet${ext} template_to_subject_brain${ext}" c
+rel "Nonlinear warp of subject brain onto template. Look for alignment of sulci, especially along midline." c
+rel "   fslview template_brain${ext} $( remove_ext ${outputFile} )_bet${ext}" c
