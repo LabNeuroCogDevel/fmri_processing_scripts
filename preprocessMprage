@@ -36,6 +36,8 @@ Command line options:
         untouched), -d y ("yes": deletes DICOM files), -d a ("archive":
         compresses files into archive file: mprage_dicom.tar.gz. If not
         passed, user will be prompted for action. Can also use "yes", "no", and "archive."
+  -grad_unwarp: a file containing gradient nonlineatiy coefficients for a SIEMENS scanner (e.g., trio2.coeff.grad).
+        Structural image will be corrected for gradient distortion prior to transformation to template.
   -h -help: print command help
   -log: Name for log file that documents each command that is run. Default: preprocessMprage.log
   -n -nifti: skip DICOM conversion and start with specified NIFTI file. 
@@ -72,6 +74,7 @@ EndOfHelp
 #     manual custom processing to still be picked up by preprocessMprage being run in large batch (autopreproc).
 # - Implement .preprocessmprage_incomplete, consistent with preprocessFunctional approach
 # - Archive preprocessMprage.log on re-run, rather than deleting it (consistent with preprocessFunctional)
+# - Support gradient nonlinearity distortion correction: -grad_unwarp
 #10/30/2014
 # - added check for initial file extension for NIfTI to make sure that it matches FSLOUTPUTYPE. Otherwise, pipeline may fail to use reoriented file.
 #4/5/2014
@@ -113,8 +116,8 @@ set -e #exit if any error occurs (stop processing)
 
 scriptDir=$( dirname "$0" )
 
-#contains rel for running/logging; also sets up stddir env variable
-source "${scriptDir}/preproc_functions/helper_functions"
+source "${scriptDir}/preproc_functions/helper_functions" #contains rel for running/logging; also sets up stddir env variable
+source "${scriptDir}/preproc_functions/parse_args" #contains function for parsing command line args
 
 ##load necessary modules if running on cluster (specific to ACI at the moment)
 if command -v module >/dev/null; then
@@ -136,6 +139,7 @@ reference="MNI_2mm"
 wr=8 #warp resolution in mm
 robustfov=1
 ssmethod=fnirt-inv
+gcoeffs= #no gradient nonlinearity correction by default
 
 dotfile=.preprocessmprage
 
@@ -159,82 +163,7 @@ thiscommandinfo="$0 $@ \n# preprocessMprage v$(perl -ne 'print $1 if /^#Last upd
 # write to an incomplete file (later to be changed to complete if process finishes)
 echo -e "$thiscommandinfo " > ${dotfile}_incomplete
 
-#process command line parameters
-function parse_mprage_args() {
-
-    while [ _$1 != _ ] ; do
-	if [[ $1 = -b || $1 = -bet_opts ]] ; then
-	    betOpts="${2}"
-	    shift 2
-	elif [[ $1 = -cleanup ]]; then
-	    cleanup=1
-	    shift 1
-	elif [[ $1 = -cleanup_only ]]; then
-	    cleanup_only=1
-	    shift 1
-	elif [[ $1 = -custom_brainmask ]]; then
-	    brainmask="${2}"
-	    shift 2
-	elif [[ $1 = -d || $1 = -delete_dicom ]]; then
-	    low=$( echo "${2}" | awk '{print tolower($0)}' ) 	#force lower case input
-	    if [[ $2 = "delete" || $2 = "yes" || $2 = "no" || $2 = "archive" ]]; then
-		delDicom="${low}"
-		shift 2
-	    elif [[ $2 = "y" || $2 = "n" || $2 = "a" ]]; then
-		echo "Use of single character deprecated. Please change to yes, no, archive."
-		delDicom="${low}"
-		shift 2
-	    else
-		echo -e "Unrecognized ${1}: ${2}.\n  Options are: ${1} delete yes no archive."
-		exit 1
-	    fi
-	elif [[ $1 = -p || $1 = -dicom ]]; then
-	    dicomPattern="${2}"
-	    shift 2
-	elif [[ $1 = -h || $1 = -help ]]; then
-	    printHelp
-	    exit 0
-	elif [ $1 = -log ]; then
-	    logFile="${2}"
-	    shift 2
-	elif [[ $1 = -no_bias ]]; then
-	    biasCorrect=0
-	    shift 1
-	elif [[ $1 = -n || $1 = -nifti ]]; then
-	    nifti="${2}"
-	    shift 2
-	elif [[ $1 = -no_robustfov ]]; then
-	    robustfov=0
-	    shift 1
-	elif [[ $1 = -o || $1 = -output ]]; then
-	    outputFile="${2}"
-	    shift 2
-	elif [[ $1 = -r || $1 = -template_brain ]]; then
-	    reference="${2}"
-	    shift 2
-	elif [[ $1 = -ss_method ]]; then
-	    ssmethod="${2}"
-	    shift 2
-	elif [[ $1 = -warpres || $1 = -w ]]; then
-	    wr="${2}"
-	    if [[ ! ${wr} =~ ^[0-9]+$ ]]; then
-		echo "-warpres must be an integer (e.g., 10)."
-		exit 1
-	    fi
-	    shift 2
-	elif [[ $1 = -weakbias ]]; then
-	    strongBias=0
-	    shift 1
-	else
-            printHelp
-            echo -e "----------------\n\n"
-            echo "Unrecognized command line parameter: ${1}"
-            exit 1
-	fi
-    done
-
-}
-
+#now in preproc_functions/parse_args
 parse_mprage_args "$@" #parse command line inputs
 
 #if a .preproc_override file exists, parse args in that file, overriding the command line args in preceding step
@@ -256,7 +185,7 @@ case "$reference" in
 	fnirtConfig=${stddir}/fnirtTalairachSettings.cnf;;
     MNI_2mm) bettedRefBrain=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm;
 	unbettedRefBrain=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_2mm;
-	refMask=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2mm_dil;
+	refMask=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2mm_dil; #Nov2016: this is now a 1x dil, matching fsl_anat
 	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
     MNI_FSL_2mm) bettedRefBrain=${stddir}/fsl_mni152/MNI152_T1_2mm_brain;
 	unbettedRefBrain=${stddir}/fsl_mni152/MNI152_T1_2mm;
@@ -424,21 +353,27 @@ rel "fslreorient2std $nifti $nifti"
 [ -n "$brainmask" ] && rel "fslreorient2std $brainmask $brainmask"
 
 if [ $robustfov -eq 1 ]; then
-    rel "robustfov -i \"${T1}\" -r \"${T1}_clipfov\""
-    T1="${T1}_clipfov" #now the base for all subsequent operations
+    if [ $( imtest "${T1}_fullfov" ) -eq 0 ]; then
+	rel "Copying original mprage before FOV cleanup to ${T1}_fullfov" c
+	rel "imcp ${T1} ${T1}_fullfov" #shouldn't re-run this step on clipped data if fullfov already exists because it will keep chopping 1mm
+    fi
+    rel "robustfov -i \"${T1}_fullfov\" -r \"${T1}\""
 
     if [ -n "$brainmask" ]; then
-	rel "robustfov -i \"${brainmask}\" -r \"${brainmask}_clipfov\""
-	brainmask="${brainmask}_clipfov"
+	[ $( imtest "${brainmask}_fullfov" ) -eq 0 ] && rel "imcp \"${brainmask}\" \"${brainmask}_fullfov\""
+	rel "robustfov -i \"${brainmask}_fullfov\" -r \"${brainmask}\""
     fi
 fi
+
+#initial correction for any negative values in original image
+fix_negatives "$T1"
 
 #need to set default after processing options and dicom import
 #to account for reference choice and filename
 if [ -z "$outputFile" ]; then outputFile="${T1}_nonlinear_warp_${reference}"; fi
 
 #adapted from fsl_anat to create a blurred image by downsampling
-quick_smooth() {
+function quick_smooth() {
   in=$1
   out=$2
   rel "fslmaths $in -subsamp2 -subsamp2 -subsamp2 -subsamp2 vol16"
@@ -447,7 +382,7 @@ quick_smooth() {
   rel "imrm vol16"
 }
 
-type=1    # For FAST: 1 = T1w, 2 = T2w, 3 = PD
+type=1 # For FAST: 1 = T1w, 2 = T2w, 3 = PD
 
 #Adapted from fsl_anat
 #### BIAS FIELD CORRECTION (main work, although also refined later on if segmentation run)
@@ -468,7 +403,8 @@ if [ $biasCorrect -eq 1 ] ; then
 
         #get a rough brain mask - it can be *VERY* rough (i.e. missing huge portions of the brain or including non-brain, but non-background)
 	#use -f 0.1 to err on being over inclusive
-	rel "bet ${T1}_hpf ${T1}_hpf_brain -m -f 0.1"
+	# Nov2016: add -R to the mix to improve initial skull strip that is more sensible (avoids ridiculous over-inclusiveness)
+	rel "bet ${T1}_hpf ${T1}_hpf_brain -m -f 0.1 -R"
 
         # get a smoothed version without the edge effects
 	rel "fslmaths ${T1} -mas ${T1}_hpf_brain_mask ${T1}_hpf_s20" #mask by hpf brain
@@ -492,8 +428,9 @@ if [ $biasCorrect -eq 1 ] ; then
 
 	#for weak bias field correction, do not iterate the FAST as above (initfast, initfast2)
         # get a rough brain mask - it can be *VERY* rough (i.e. missing huge portions of the brain or including non-brain, but non-background) 
-	# use -f 0.1 to err on being over inclusive
-	rel "bet ${T1} ${T1}_initfast2_brain -m -f 0.1"
+	# use -f 0.1 to err on being over inclusive.
+	# Nov2016: add -R to the mix to improve initial skull strip that is more sensible (avoids ridiculous over-inclusiveness)
+	rel "bet ${T1} ${T1}_initfast2_brain -m -f 0.1 -R"
 	rel "fslmaths ${T1}_initfast2_brain ${T1}_initfast2_restore"
     fi
 
@@ -517,9 +454,8 @@ else
 fi
 
 
-
 ###############
-#brain extract structural for FLIRT
+#initial structural brain extraction for FLIRT
 rel "Running brain extraction" c
 if [ $ssmethod = bet ]; then
     [ -z "$betOpts" ] && betOpts="-R -f 0.5 -v" #default bet options if not set manually
@@ -535,6 +471,41 @@ else
     [ -z "$betOpts" ] && betOpts="-touchup -orig_vol" #default 3dss options
     rel "3dSkullStrip -input ${T1}_biascorr${ext} -prefix ${T1}_bet_initial${ext} ${betOpts}" #default option for initial strip
 fi
+
+#Handle gradient nonlinearity correction
+#NB: relative to HCP pipeline, this step is executed after initial bias field correction.
+#This was chosen because the bias field steps (based on fsl_anat) tended to be prone to small values outside the brain,
+#leading the bias-corrected image to have rather low mean values and the skull strip step to under extract.
+#There should be no adverse consequences conceptually to putting gradient unwarping just before the structural -> template
+#warp since it will simply apply the gradient correction on the full image sans bias field.
+if [ -n "$gcoeffs" ]; then
+    #check that command exists
+    command -v gradient_unwarp.py >/dev/null 2>&1 || { echo "Cannot find gradient_unwarp.py. Aborting." >&2; exit 1; }
+
+    #allow coeffs to be in scripts directory
+    if [ ! -r "$gcoeffs" ]; then
+	if [ ! -r "${scriptDir}/cfg_files/${gcoeffs}" ]; then
+	    echo "Unable to locate -grad_unwarp file: $gcoeffs"
+	    exit 1
+	else
+	    gcoeffs="${scriptDir}/cfg_files/${gcoeffs}"
+	fi
+    fi
+
+    #retain pre-gradient files
+    rel "immv ${T1}_biascorr ${T1}_biascorr_pregdc"
+    rel "immv ${T1}_bet_initial ${T1}_bet_initial_pregdc"
+
+    rel "gradient_unwarp.py \"${T1}_biascorr_pregdc${ext}\" \"${T1}_biascorr_gdc_orig${ext}\" siemens -g \"$gcoeffs\" -n"
+    rel "convertwarp --abs --ref=\"${T1}_biascorr_pregdc\" --warp1=fullWarp_abs --relout --out=gdc_warpfield" #--jacobian=gdc_jacobian
+    #fslmaths gdc_jacobian -Tmean gdc_jacobian #omitting because jacobian is unused in the unwarping process    
+    rel "applywarp --rel --interp=spline -i \"${T1}_biascorr_pregdc\" -r \"${T1}_biascorr_pregdc\" -w gdc_warpfield -o \"${T1}_biascorr\""
+    rel "applywarp --rel --interp=spline -i \"${T1}_bet_initial_pregdc\" -r \"${T1}_bet_initial_pregdc\" -w gdc_warpfield -o \"${T1}_bet_initial\""
+fi
+
+#correct any negative 
+fix_negatives "${T1}_biascorr"
+fix_negatives "${T1}_bet_initial"
 
 ##############
 #warp structural to standard space (MNI or Talairach)
@@ -565,6 +536,14 @@ rel "fnirt --ref=$unbettedRefBrain --refmask=$refMask --in=${T1}_biascorr --aff=
 rel "invwarp --ref=${T1}_biascorr -w ${T1}_warpcoef -o template_to_subject_warpcoef"
 rel "applywarp --interp=spline --in=$bettedRefBrain --ref=${T1}_biascorr -w template_to_subject_warpcoef -o template_to_subject_brain"
 
+#Apply gradient correction and nonlinear warp in one interpolation (need to convertwarp to concatenate both)
+if [ -n "$gcoeffs" ]; then
+    rel "immv \"$outputFile\" \"${outputFile}_twostepinterp\""
+    rel "convertwarp --ref=$unbettedRefBrain --warp1=gdc_warpfield --warp2=${T1}_warpcoef --out=${T1}_warpcoef_withgdc --relout"
+    rel "applywarp --rel --in=${T1}_biascorr_pregdc --ref=$unbettedRefBrain --warp=${T1}_warpcoef_withgdc --interp=spline --out=\"$outputFile\""
+fi
+
+#compute final skull-stripped image
 if [ $ssmethod = fnirt-inv ]; then
     rel "Generating brain mask based on inverse warp from template" c
     rel "applywarp --interp=nn --in=$nodil --ref=${T1}_biascorr -w template_to_subject_warpcoef -o ${T1}_biascorr_brain_mask"
@@ -577,8 +556,10 @@ fi
     
 if [[ -f "${bettedRefBrain}.nii" && ! -h ./template_brain.nii ]]; then
     ln -s "${bettedRefBrain}.nii" ./template_brain.nii
+    tbrain=template_brain.nii
 elif [[ -f "${bettedRefBrain}.nii.gz" && ! -h ./template_brain.nii.gz ]]; then
     ln -s "${bettedRefBrain}.nii.gz" ./template_brain.nii.gz
+    tbrain=template_brain.nii.gz
 fi
 
 #Perform tissue segmentation here to avoid running FAST multiple times with parallel preprocessFunctional jobs
@@ -639,7 +620,7 @@ rm -f sl?.png highres2standard2.png  highres2standard1.png
 imrm subject_to_template_brain
 
 #generate symbolic link to skull-stripped mprage file for compatibility with FSL tools
-ln -sfn "${T1}_bet.nii.gz" "${T1}_brain.nii.gz"
+ln -sfn "${T1}_bet${ext}" "${T1}_brain${ext}"
 
 if [ $cleanup -eq 1 ]; then
     rel "Cleaning up preprocessMprage intermediate files." c
@@ -651,13 +632,14 @@ echo "# finished $(date $datefmt)" >> ${dotfile}_incomplete
 mv ${dotfile}_incomplete ${dotfile}_complete
 
 #suggestions for QA
+rel "" c
 rel "QA suggestions (from least to most important):" c
 rel "Initial skull strip. Primarily a worry if large parts of brain tissue are missing (e.g., cerebellum)." c
 rel "   fslview ${T1}${ext} ${T1}_bet_initial${ext}" c
 rel "Linear (affine) alignment of skull-stripped subject brain onto template." c
 rel "This will be negatively affected if skull strip is poor. But you should only expect overall global alignment" c
-rel "   fslview template_brain${ext} ${T1}_warp_linear${ext}" c
+rel "   fslview $tbrain ${T1}_warp_linear${ext}" c
 rel "Nonlinear warp of template brain onto subject (inverse warp). Check especially for global shape problems." c
 rel "   fslview ${T1}_bet${ext} template_to_subject_brain${ext}" c
 rel "Nonlinear warp of subject brain onto template. Look for alignment of sulci, especially along midline." c
-rel "   fslview template_brain${ext} $( remove_ext ${outputFile} )_bet${ext}" c
+rel "   fslview $tbrain $( remove_ext ${outputFile} )_bet${ext}" c

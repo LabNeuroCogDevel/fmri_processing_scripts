@@ -58,6 +58,7 @@ njobs <- 4
 out_file <- "corr_rois.txt"
 ts_out_file <- ""
 fname_censor1D <- NULL
+fname_brainmask <- NULL
 corr_method <- "pearson"
 roi_reduce <- "pca"
 fisherz <- FALSE

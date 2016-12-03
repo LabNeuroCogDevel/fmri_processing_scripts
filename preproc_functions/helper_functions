@@ -3,8 +3,8 @@
 #prefer env variable, then ACI installation when looking for templates
 if [ -n "$MRI_STDDIR" ]; then
     stddir="$MRI_STDDIR"
-elif [ -d /storage/group/mnh5174_collab/standard ]; then
-    stddir=/storage/group/mnh5174_collab/standard
+elif [ -d /storage/group/mnh5174_collab/lab_resources/standard ]; then
+    stddir=/storage/group/mnh5174_collab/lab_resources/standard
 else
     stddir=$HOME/standard
 fi
@@ -36,6 +36,26 @@ function dumpenv() {
 	done 
     done
 }
+
+# Function to fix negative range problems (negative values mess up bias field 
+# This commonly happens for gradient unwarping, where the the value transformation outside the brain shifts some zeros into the negative range
+function fix_negatives() {
+    local im="$1"
+    minval=$( fslstats ${im} -p 0 )
+    maxval=$( fslstats ${im} -p 100 )
+    if [ X`echo "if ( $minval < 0 ) { 1 }" | bc -l` = X1 ] ; then
+	if [ X`echo "if ( $maxval > 0 ) { 1 }" | bc -l` = X1 ] ; then
+	    # if there are just some negative values among the positive ones then reset zero to the min value
+	    rel "fslmaths ${im} -sub $minval ${im} -odt float"
+	else
+	    # if all values are negative then make them positive, but retain any zeros as zeros
+	    rel "fslmaths ${im} -bin -binv zeromask"
+	    rel "fslmaths ${im} -sub $minval -mas zeromask ${im} -odt float"
+	    rel "imrm zeromask"
+	fi
+    fi
+}
+
 
 function deleteFile() {
     #echo "to del: $1"

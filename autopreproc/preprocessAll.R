@@ -42,6 +42,16 @@ preprocessMprage_call = Sys.getenv("preprocessMprage_call") #parameters passed f
 MB_src = Sys.getenv("loc_mb_root") #Name of directory containing offline-reconstructed fMRI data (only relevant for Tae Kim sequence Pittburgh data)
 mb_filepattern = Sys.getenv("mb_filepattern") #Wildcard pattern of MB reconstructed data within MB_src
 useOfflineMB = ifelse(nchar(MB_src) > 0, TRUE, FALSE) #whether to use offline-reconstructed hdr/img files as preprocessing starting point
+proc_freesurfer = as.numeric(Sys.getenv("proc_freesurfer")) #whether to run the structural scan through FreeSurferPipeline after preprocessMprage
+fs_subjects_dir = NULL
+if (is.na(proc_freesurfer)) {
+    proc_freesurfer <- FALSE
+} else if (proc_freesurfer == 1) {
+    proc_freesurfer <- TRUE
+    fs_subjects_dir <- Sys.getenv("SUBJECTS_DIR")
+} else {
+    proc_freesurfer <- FALSE #should I trap other possibilities here?    
+}
 
 #setup default parameters
 if (mprage_dicompattern == "") { mprage_dicompattern = "MR*" }
@@ -138,7 +148,7 @@ for (d in mprage_dirs) {
     } else if (!file.exists(file.path(outdir, "mprage"))) {
         #output directory exists, but mprage subdirectory does not
         mprage_toprocess <- c(mprage_toprocess, d)
-    } else if (!file.exists(file.path(outdir, "mprage", ".mprage_complete"))) {
+    } else if (!file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {
         #mprage subdirectory exists, but complete file does not
         mprage_toprocess <- c(mprage_toprocess, d)
     }
@@ -155,7 +165,7 @@ f <- foreach(d=mprage_toprocess, .inorder=FALSE) %dopar% {
     setwd(file.path(outdir, "mprage"))
     
     #call preprocessmprage
-    if (file.exists(".mprage_complete")) {
+    if (file.exists(".preprocessmprage_complete")) {
         #this should never fire given logic above
         return("complete") #skip completed mprage directories
     } else {
@@ -167,19 +177,50 @@ f <- foreach(d=mprage_toprocess, .inorder=FALSE) %dopar% {
         ret_code <- system2("preprocessMprage", preprocessMprage_call, stderr="preprocessMprage_stderr", stdout="preprocessMprage_stdout")
         if (ret_code != 0) { stop("preprocessMprage failed in directory: ", file.path(outdir, "mprage")) }
 
-        #echo current date/time to .mprage_complete to denote completed preprocessing
-        sink(".mprage_complete")
-        cat(as.character(Sys.time()))
-        sink()
+        #echo current date/time to .preprocessmprage_complete to denote completed preprocessing
+        #NB: newer versions of preprocessMprage (Nov2016 and beyond) handle this internally
+        if (!file.exists(".preprocessmprage_complete")) {
+            sink(".preprocessmprage_complete"); cat(as.character(Sys.time())); sink()
+        }
 
         if (file.exists("need_analyze")) { unlink("need_analyze") } #remove dummy file
         if (file.exists("analyze")) { unlink("analyze") } #remove dummy file
 
-        if (file.exists("mprage_bet.nii.gz")) {
-            file.symlink("mprage_bet.nii.gz", "mprage_brain.nii.gz") #symlink to _brain for compatibility with FEAT/FSL
-        }
     }
     return(d)
+}
+
+if (proc_freesurfer) {
+    #look for which subjects are already complete
+    fs_toproc <- c()
+    ids_toproc <- c()
+    for (d in mprage_dirs) {
+        subid <- basename(dirname(d))
+        outdir <- file.path(loc_mrproc_root, subid)
+        
+        if (!file.exists(file.path(outdir, "mprage"))) {
+            message("Cannot locate processed mprage data for: ", outdir)
+        } else if (!file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {
+            message("Cannot locate .preprocessmprage_complete in: ", outdir)
+        } else if (file.exists(file.path(fs_subjects_dir, subid))) {
+            message("Skipping FreeSurfer pipeline for subject: ", subid)
+        } else {
+            fs_toproc <- c(fs_toproc, file.path(outdir, "mprage"))
+            ids_toproc <- c(ids_toproc, subid)
+        }
+    }
+
+    if (length(fs_toproc) > 0) {
+        message("About to run FreeSurfer pipeline on the following datasets:")
+        print(fs_toproc)
+        
+        f <- foreach(d=1:length(fs_toproc), .inorder=FALSE) %dopar% {
+            setwd(fs_toproc[d])
+            ret_code <- system2(paste0("FreeSurferPipeline -T1 mprage_biascorr.nii.gz -T1brain mprage_bet.nii.gz -subject ", ids_toproc[d], " -subjectDir ", fs_subjects_dir),
+                                stderr="FreeSurferPipeline_stderr", stdout="FreeSurferPipeline_stdout")
+            if (ret_code != 0) { stop("FreeSurferPipeline failed in directory: ", fs_toproc[d]) }            
+        }
+    }
 }
 
 #get list of subject directories in root directory

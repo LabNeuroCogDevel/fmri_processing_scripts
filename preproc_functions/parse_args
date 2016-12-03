@@ -31,6 +31,7 @@ function rm_completefiles {
     deleteFile ".motion_correction_complete"
     deleteFile ".skull_strip_complete"
     deleteFile ".func2struct_complete"
+    deleteFile ".topup_complete"
     deleteFile ".warp_complete"
     deleteFile ".compute_warp_complete"
     deleteFile ".smoothing_complete"
@@ -514,4 +515,82 @@ function parse_args {
 	MATLAB_single_thread="-singleCompThread"
     fi
 
+}
+
+#process command line parameters for preprocessMprage
+function parse_mprage_args() {
+
+    while [ _$1 != _ ] ; do
+	if [[ $1 = -b || $1 = -bet_opts ]] ; then
+	    betOpts="${2}"
+	    shift 2
+	elif [[ $1 = -cleanup ]]; then
+	    cleanup=1
+	    shift 1
+	elif [[ $1 = -cleanup_only ]]; then
+	    cleanup_only=1
+	    shift 1
+	elif [[ $1 = -custom_brainmask ]]; then
+	    brainmask="${2}"
+	    shift 2
+	elif [[ $1 = -d || $1 = -delete_dicom ]]; then
+	    low=$( echo "${2}" | awk '{print tolower($0)}' ) 	#force lower case input
+	    if [[ $2 = "delete" || $2 = "yes" || $2 = "no" || $2 = "archive" ]]; then
+		delDicom="${low}"
+		shift 2
+	    elif [[ $2 = "y" || $2 = "n" || $2 = "a" ]]; then
+		echo "Use of single character deprecated. Please change to yes, no, archive."
+		delDicom="${low}"
+		shift 2
+	    else
+		echo -e "Unrecognized ${1}: ${2}.\n  Options are: ${1} delete yes no archive."
+		exit 1
+	    fi
+	elif [[ $1 = -p || $1 = -dicom ]]; then
+	    dicomPattern="${2}"
+	    shift 2
+	elif [[ $1 = -grad_unwarp ]]; then
+	    gcoeffs="${2}"
+	    shift 2
+	elif [[ $1 = -h || $1 = -help ]]; then
+	    printHelp
+	    exit 0
+	elif [ $1 = -log ]; then
+	    logFile="${2}"
+	    shift 2
+	elif [[ $1 = -no_bias ]]; then
+	    biasCorrect=0
+	    shift 1
+	elif [[ $1 = -n || $1 = -nifti ]]; then
+	    nifti="${2}"
+	    shift 2
+	elif [[ $1 = -no_robustfov ]]; then
+	    robustfov=0
+	    shift 1
+	elif [[ $1 = -o || $1 = -output ]]; then
+	    outputFile="${2}"
+	    shift 2
+	elif [[ $1 = -r || $1 = -template_brain ]]; then
+	    reference="${2}"
+	    shift 2
+	elif [[ $1 = -ss_method ]]; then
+	    ssmethod="${2}"
+	    shift 2
+	elif [[ $1 = -warpres || $1 = -w ]]; then
+	    wr="${2}"
+	    if [[ ! ${wr} =~ ^[0-9]+$ ]]; then
+		echo "-warpres must be an integer (e.g., 10)."
+		exit 1
+	    fi
+	    shift 2
+	elif [[ $1 = -weakbias ]]; then
+	    strongBias=0
+	    shift 1
+	else
+            printHelp
+            echo -e "----------------\n\n"
+            echo "Unrecognized command line parameter: ${1}"
+            exit 1
+	fi
+    done
 }

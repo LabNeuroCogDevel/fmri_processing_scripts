@@ -28,14 +28,13 @@ auxfilename <- "gfeat_aux"
 
 argpos <- 1
 while (argpos <= length(args)) {
-    if (args[argpos] == "-gfeat_dir") {
+    if (args[argpos] == "--gfeat_dir") {
         gfeatdir <- args[argpos + 1] #name of preprocessed fMRI data
-        stopifnot(file.exists(gfeatdir))
         argpos <- argpos + 2
-    } else if (args[argpos] == "-stat_outfile") { #name of output file for main stats file
+    } else if (args[argpos] == "--stat_outfile") { #name of output file for main stats file
         outfilename <- args[argpos + 1]
-        argpos <- argppos + 2
-    } else if (args[argpos] == "-aux_outfile") {
+        argpos <- argpos + 2
+    } else if (args[argpos] == "--aux_outfile") {
         auxfilename <- args[argpos + 1]
         argpos <- argpos + 2
     } else {
@@ -43,13 +42,20 @@ while (argpos <= length(args)) {
     }
 }
 
+if (!file.exists(gfeatdir)) {
+    stop("Unable to locate --gfeatdir:", gfeatdir, ". Did you pass in the absolute path?")
+}
+
 setwd(gfeatdir)
 
 ##find cope directories
 copedirs <- grep("/cope[0-9]+\\.feat", list.dirs(path=gfeatdir, full.names=TRUE, recursive=FALSE), value=TRUE, perl=TRUE)
+print(copedirs)
+
 copeafni <- c()
 for (d in 1:length(copedirs)) {
     ##run the L1 -> AFNI conversion for each separate cope
+    print(copedirs[d])
     system(paste("feat_lvl1_to_afni.R -feat_dir", copedirs[d]))
     copename <- readLines(file.path(copedirs[d], "design.lev")) #contains the L2 effect name (e.g., clock_onset)
 
