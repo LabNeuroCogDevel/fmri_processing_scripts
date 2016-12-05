@@ -1,5 +1,8 @@
 #!/usr/bin/env Rscript
 
+# run like
+# ./ROI_TempCorr.R -ts /Volumes/Phillips/WorkingMemory/11155/20130418/SpatialWM_v1_run1_768x720.5/nfswkmtd_functional.nii.gz -brainmask  /Volumes/Phillips/gm_50mask.nii 
+
 printHelp <- function() {
   cat("ROI_TempCorr is a script that computes temporal correlations among ROIs defined by an integer-valued mask (e.g., a set of numbered spheres).",
       "",
@@ -9,6 +12,7 @@ printHelp <- function() {
       "  -out_file <filename for output>: The file to be output containing correlations among ROIs.",
       "",
       "Optional arguments are:",
+      "  -corr_type <full|semi|partial>: what type of correlation; using function cor,spcor, or pcor. default to full, otherwise forced njobs to 1",
       "  -corr_method <pearson|spearman|robust|mcd|weighted|donostah|M|pairwiseQC|pairwiseGK|none>: Method to compute correlations among time series. Default: pearson",
       "      pearson is the standard Pearson correlation",
       "      spearman is Spearman correlation based on ranks",
@@ -33,7 +37,7 @@ printHelp <- function() {
       "  in the same stereotactic space, and have the same grid size.",
       "",
       "The script depends on the following R libraries: foreach, doSNOW, MASS, oro.nifti, robust, and pracma. These can be installed using:",
-      "  install.packages(c(\"foreach\", \"doSNOW\", \"MASS\", \"oro.nifti\", \"robust\", \"pracma\"))",
+      "  install.packages(c(\"foreach\", \"doSNOW\", \"MASS\", \"oro.nifti\", \"robust\", \"pracma\",\"ppcor\":))",
       sep="\n")
 }
 
@@ -60,6 +64,7 @@ njobs <- 4
 out_file <- "corr_rois.txt"
 ts_out_file <- ""
 fname_censor1D <- NULL
+corr_type   <- "full"
 corr_method <- "pearson"
 roi_reduce <- "pca"
 fisherz <- FALSE
@@ -103,6 +108,10 @@ while (argpos <= length(args)) {
     roi_reduce <- args[argpos + 1]
     argpos <- argpos + 2
     stopifnot(roi_reduce %in% c("pca", "mean", "median", "huber"))
+  } else if (args[argpos] == "-corr_type") {
+    corr_type <- args[argpos + 1]
+    argpos <- argpos + 2
+    stopifnot(corr_type %in% c("full","semi","partial"))    
   } else if (args[argpos] == "-corr_method") {
     corr_method <- args[argpos + 1]
     argpos <- argpos + 2
@@ -138,6 +147,7 @@ suppressMessages(require(doSNOW))
 suppressMessages(require(MASS))
 suppressMessages(require(oro.nifti))
 suppressMessages(require(pracma))
+#suppressMessages(require(ppcor))
 
 if (!is.null(fname_censor1D)) {
   stopifnot(file.exists(fname_censor1D))
@@ -148,16 +158,41 @@ if (!is.null(fname_censor1D)) {
 }
 
 #generate (robust) correlation matrix given a set of time series.
-genCorrMat <- function(roits, method="auto", fisherz=FALSE) {
+genCorrMat <- function(roits, method="auto", fisherz=FALSE,type="full") {
   #roits should be an time x roi data.frame
   
   suppressMessages(require(robust))
-  
+
+  # load ppcor if it's needed (not needed for 'full')
+  #if(type!='full') suppressMessages(require(ppcor))
+
+  # use generic corfun for correltaion
+  # but what cor function should that use? determine based on type
+  corfun <- function(x,...) {
+   switch(type,
+      full    = cor(x,...),
+      semi    = ppcor::spcor(x,...)$estimate,
+      partial = ppcor::pcor(x,...)$estimate
+   )
+  }
+
   #assume that parallel has been setup upstream
   njobs <- getDoParWorkers()
+
+  # for semi and partial, we cannot chunk the data!
+  if(njobs>1 && type %in% c('semi','partial')){
+    warning('Cannot use multiple jobs for semi or partial cor! Setting njobs to 1: i.e. -n 1')
+    njobs <- 1
+  }
   
   #sapply only works for data.frame
   if (!inherits(roits, "data.frame")) stop("genCorrMat only works properly with data.frame objects.")
+
+  # we can only use fancy pants when doing full (e.g. mcd|weighted|donostah|M|pairwiseQC|pairwiseGK)
+  # shouldn't see 'none' method b/c we quit earlier
+  if (type != 'full' && ! method %in% c("pearson", "spearman", "kendall")){
+   stop(sprintf('cannot use method %s with type %s',method,type))
+  }
   
   #remove missing ROI columns for estimating correlation
   nacols <- which(sapply(roits, function(col) all(is.na(col))))
@@ -175,6 +210,11 @@ genCorrMat <- function(roits, method="auto", fisherz=FALSE) {
   # how many chucks per core
   # for small datasets, need to make sure we didn't pick too high a number
   chunksPerProcessor <- 8
+
+  # if we only have one job, we want all the chunks together
+  # that is we want chunksize == nrow(lo.tri)
+  if(njobs == 1) { chunksPerProcessor <- 1 }
+
   repeat {
     chunksize <- floor(nrow(lo.tri)/njobs/chunksPerProcessor)
     if(chunksize >= 1) break
@@ -184,12 +224,18 @@ genCorrMat <- function(roits, method="auto", fisherz=FALSE) {
     if(chunksPerProcessor<1) stop('too many jobs for too little work, lower -n')
   }
 
+  # let us know when we are asking for a lot of work
+  # the threshold is less for non-full cor types
+  chunksizewarn <- 10^3
+  if(type !='full')  chunksizewarn <-  10^2 
+  if( chunksize > chunksizewarn) warning(sprintf('lots of datapoints (%d) going to each processor',chunksize))
+
   #do manual chunking: divide correlations across processors, where each processor handles 10 chunks in total (~350 corrs per chunk)
   corrvec <- foreach(pair=iter(lo.tri, by="row", chunksize=chunksize), .inorder=TRUE, .combine=c, .multicombine=TRUE, .packages="robust") %dopar% {
     #iter will pass entire chunk of lo.tri, use apply to compute row-wise corrs
     #basic cor for testing (much faster)
     if (method %in% c("pearson", "spearman", "kendall")) {
-      apply(pair, 1, function(x) cor(na.omit(cbind(nona[,x[1]], nona[,x[2]])), method=method)[1,2])  
+      apply(pair, 1, function(x) corfun(na.omit(cbind(nona[,x[1]], nona[,x[2]])), method=method)[1,2])  
     } else {
       apply(pair, 1, function(x) covRob(na.omit(cbind(nona[,x[1]], nona[,x[2]])), estim=method, corr=TRUE)$cov[1,2])
     }
@@ -434,7 +480,7 @@ if(corr_method == "none") {
 }
 
 message("Computing correlations among ROI times series using method: ", ifelse(corr_method=="auto", "robust", corr_method))
-cormat <- genCorrMat(as.data.frame(roiavgmat_censored), method=corr_method, fisherz=fisherz)
+cormat <- genCorrMat(as.data.frame(roiavgmat_censored), method=corr_method, fisherz=fisherz,type=corr_type)
 
 stopCluster(clusterobj)
 
