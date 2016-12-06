@@ -36,7 +36,7 @@ Command line options:
         untouched), -d y ("yes": deletes DICOM files), -d a ("archive":
         compresses files into archive file: mprage_dicom.tar.gz. If not
         passed, user will be prompted for action. Can also use "yes", "no", and "archive."
-  -grad_unwarp: a file containing gradient nonlineatiy coefficients for a SIEMENS scanner (e.g., trio2.coeff.grad).
+  -grad_unwarp: a file containing gradient nonlineatiy coefficients for a SIEMENS scanner (e.g., trio.coeff.grad).
         Structural image will be corrected for gradient distortion prior to transformation to template.
   -h -help: print command help
   -log: Name for log file that documents each command that is run. Default: preprocessMprage.log
@@ -478,6 +478,15 @@ fi
 #leading the bias-corrected image to have rather low mean values and the skull strip step to under extract.
 #There should be no adverse consequences conceptually to putting gradient unwarping just before the structural -> template
 #warp since it will simply apply the gradient correction on the full image sans bias field.
+
+#NB: also differing from HCP, the structural pipeline is generally performed with gradient-distorted images.
+#Gradient undistortion is applied when computing the warp to MNI to maximize alignment to template.
+#It is also applied at the end of the pipeline in files labeled _postgdc.
+#The logic is that preprocessFunctional can take advantage of gradient unwarping with no major overhaul if we
+# a) pass in the gradient-distorted mprage_bet
+# b) pass in the concatenated structural -> undistorted structural -> MNI transformation
+
+warpsuffix= #whether to include _postgdc in the flirt and fnirt steps (if gradient undistortion requested)
 if [ -n "$gcoeffs" ]; then
     #check that command exists
     command -v gradient_unwarp.py >/dev/null 2>&1 || { echo "Cannot find gradient_unwarp.py. Aborting." >&2; exit 1; }
@@ -492,20 +501,18 @@ if [ -n "$gcoeffs" ]; then
 	fi
     fi
 
-    #retain pre-gradient files
-    rel "immv ${T1}_biascorr ${T1}_biascorr_pregdc"
-    rel "immv ${T1}_bet_initial ${T1}_bet_initial_pregdc"
-
-    rel "gradient_unwarp.py \"${T1}_biascorr_pregdc${ext}\" \"${T1}_biascorr_gdc_orig${ext}\" siemens -g \"$gcoeffs\" -n"
-    rel "convertwarp --abs --ref=\"${T1}_biascorr_pregdc\" --warp1=fullWarp_abs --relout --out=gdc_warpfield" #--jacobian=gdc_jacobian
+    #initial run of gradient undistortion using python script
+    rel "gradient_unwarp.py \"${T1}_biascorr${ext}\" \"${T1}_biascorr_gdc_orig${ext}\" siemens -g \"$gcoeffs\" -n"
+    rel "convertwarp --abs --ref=\"${T1}_biascorr\" --warp1=fullWarp_abs --relout --out=gdc_warpfield" #--jacobian=gdc_jacobian
     #fslmaths gdc_jacobian -Tmean gdc_jacobian #omitting because jacobian is unused in the unwarping process    
-    rel "applywarp --rel --interp=spline -i \"${T1}_biascorr_pregdc\" -r \"${T1}_biascorr_pregdc\" -w gdc_warpfield -o \"${T1}_biascorr\""
-    rel "applywarp --rel --interp=spline -i \"${T1}_bet_initial_pregdc\" -r \"${T1}_bet_initial_pregdc\" -w gdc_warpfield -o \"${T1}_bet_initial\""
+    rel "applywarp --rel --interp=spline -i \"${T1}_biascorr\" -r \"${T1}_biascorr\" -w gdc_warpfield -o \"${T1}_biascorr_postgdc\""
+    rel "applywarp --rel --interp=spline -i \"${T1}_bet_initial\" -r \"${T1}_bet_initial\" -w gdc_warpfield -o \"${T1}_bet_initial_postgdc\""
+    warpsuffix=_postgdc
 fi
 
-#correct any negative 
-fix_negatives "${T1}_biascorr"
-fix_negatives "${T1}_bet_initial"
+#correct any negatives from GDC procedure
+fix_negatives "${T1}_biascorr_postgdc"
+fix_negatives "${T1}_bet_initial_postgdc"
 
 ##############
 #warp structural to standard space (MNI or Talairach)
@@ -515,7 +522,7 @@ flirtAffCoef="${T1}_to_${reference}_affine.mat"
 
 #if [ $( imtest "${T1}_warp_linear" ) -eq 0 ]; then
 rel "Running affine (linear) transformation for structural -> template" c
-rel "flirt -in ${T1}_bet_initial -ref $bettedRefBrain -omat ${flirtAffCoef} -out ${T1}\"_warp_linear\" -dof 12 -interp spline -v"
+rel "flirt -in ${T1}_bet_initial${warpsuffix} -ref $bettedRefBrain -omat ${flirtAffCoef} -out ${T1}\"_warp_linear\" -dof 12 -interp spline"
 #fi
 
 ###############
@@ -529,26 +536,41 @@ rel "Using warp resolution of $wr mm" c
 #Not sure of the relevance (the fsl_anat way leads to a smaller mask).
 
 #re-run fnirt even if output already exists because files upstream may have been changed (e.g., betted mprage)
-rel "fnirt --ref=$unbettedRefBrain --refmask=$refMask --in=${T1}_biascorr --aff=$flirtAffCoef \
+rel "fnirt --ref=$unbettedRefBrain --refmask=$refMask --in=${T1}_biascorr${warpsuffix} --aff=$flirtAffCoef \
         --fout=\"$( remove_ext ${outputFile} )_warpfield\" --cout=\"${T1}_warpcoef\" --iout=\"$outputFile\" \
 	--config=$fnirtConfig --logout=${T1}_to_${reference}_fnirt_settings.log --warpres=${wr},${wr},${wr} -v"
 
-rel "invwarp --ref=${T1}_biascorr -w ${T1}_warpcoef -o template_to_subject_warpcoef"
-rel "applywarp --interp=spline --in=$bettedRefBrain --ref=${T1}_biascorr -w template_to_subject_warpcoef -o template_to_subject_brain"
+#compute MNI -> anat transformation
+rel "invwarp --ref=${T1}_biascorr${warpsuffix} -w ${T1}_warpcoef -o template_to_subject_warpcoef"
+
+#define warp files used for struct -> MNI and MNI -> struct
+mni2anat="template_to_subject_warpcoef"
+anat2mni="${T1}_warpcoef"
 
 #Apply gradient correction and nonlinear warp in one interpolation (need to convertwarp to concatenate both)
 if [ -n "$gcoeffs" ]; then
     rel "immv \"$outputFile\" \"${outputFile}_twostepinterp\""
     rel "convertwarp --ref=$unbettedRefBrain --warp1=gdc_warpfield --warp2=${T1}_warpcoef --out=${T1}_warpcoef_withgdc --relout"
-    rel "applywarp --rel --in=${T1}_biascorr_pregdc --ref=$unbettedRefBrain --warp=${T1}_warpcoef_withgdc --interp=spline --out=\"$outputFile\""
+    rel "applywarp --rel --in=${T1}_biascorr --ref=$unbettedRefBrain --warp=${T1}_warpcoef_withgdc --interp=spline --out=\"$outputFile\""
+    mni2anat="template_to_subject_warpcoef_gdistort"
+    anat2mni="${T1}_warpcoef_withgdc"
 fi
+
+#warp template to subject (incl. gradient distortion if needed)
+rel "applywarp --interp=spline --in=$bettedRefBrain --ref=${T1}_biascorr -w ${mni2anat} -o template_to_subject_brain"
 
 #compute final skull-stripped image
 if [ $ssmethod = fnirt-inv ]; then
     rel "Generating brain mask based on inverse warp from template" c
-    rel "applywarp --interp=nn --in=$nodil --ref=${T1}_biascorr -w template_to_subject_warpcoef -o ${T1}_biascorr_brain_mask"
+    if [ -n "$gcoeffs" ]; then
+	#warp MNI template mask onto subject's brain, applying gradient disortion
+	rel "invwarp --ref=${T1}_biascorr -w gdc_warpfield -o gdc_inv_warpfield"
+	rel "convertwarp --ref=${T1}_biascorr --warp1=template_to_subject_warpcoef --warp2=gdc_inv_warpfield -o template_to_subject_warpcoef_gdistort"
+    fi
+
+    rel "applywarp --interp=nn --in=$nodil --ref=${T1}_biascorr -w ${mni2anat} -o ${T1}_biascorr_brain_mask"
     rel "fslmaths ${T1}_biascorr_brain_mask -fillh ${T1}_biascorr_brain_mask"
-    rel "fslmaths ${T1}_biascorr -mas ${T1}_biascorr_brain_mask ${T1}_bet" #will be used as -mprage_bet in preprocessFunctional
+    rel "fslmaths ${T1}_biascorr -mas ${T1}_biascorr_brain_mask ${T1}_bet"
 else
     rel "fslmaths ${T1}_bet_initial ${T1}_bet" #straight copy
     rel "fslmaths ${T1}_bet_initial -bin ${T1}_biascorr_brain_mask -odt char" #create brainmask from non-zero voxels of betted image
@@ -587,16 +609,26 @@ if [ $( imtest ${T1}_bet_fast ) -eq 0 ]; then
     rel "fslmaths ${T1}_fast_totbias -add 1 ${T1}_fast_totbias"
     rel "fslmaths ${T1}_bet_initbias -div ${T1}_fast_bias ${T1}_biascorr"
 
-    # regenerate the standard space structural with the updated bias field correction applied
-    rel "applywarp -i ${T1}_biascorr -w ${T1}_warpcoef --ref=$unbettedRefBrain -o $outputFile --interp=spline"
+    # regenerate the standard space structural with the updated bias field correction applied ${T1}_biascorr
+    rel "applywarp --rel --in=${T1}_biascorr --ref=$unbettedRefBrain --warp=${anat2mni} --interp=spline --out=\"$outputFile\""
     rel "fslmaths ${T1}_bet_fast_pve_2 -thr 0.5 -bin ${T1}_bet_fast_wmseg" #create binary WM mask
 
     #generate skull-stripped version of final warped file (after final bias correction)
     rel "fslmaths ${outputFile} -mas $nodil $( remove_ext ${outputFile} )_bet"
 fi
 
+#reapply gradient distortion correction on final native-space files
+if [ -n "$gcoeffs" ]; then
+    rel "applywarp --rel --interp=spline -i \"${T1}_biascorr\" -r \"${T1}_biascorr\" -w gdc_warpfield -o \"${T1}_biascorr_postgdc\""
+    rel "applywarp --rel --interp=spline -i \"${T1}_bet\" -r \"${T1}_bet\" -w gdc_warpfield -o \"${T1}_bet_postgdc\""
+
+    #correct any negatives from GDC procedure
+    fix_negatives "${T1}_biascorr_postgdc"
+    fix_negatives "${T1}_bet_initial_postgdc"
+fi
+
 #create png to check registration
-rel "applywarp --ref=\"$unbettedRefBrain\" --mask=\"$refMask\" --in=\"${T1}_bet\" --warp=\"${T1}_warpcoef\" --interp=spline --out=subject_to_template_brain"
+rel "applywarp --ref=\"$unbettedRefBrain\" --mask=\"$refMask\" --in=\"${T1}_bet\" --warp=\"${anat2mni}\" --interp=spline --out=subject_to_template_brain"
 
 #note: first input to slicer is rendered image, second is overlay
 slicer subject_to_template_brain "$bettedRefBrain" -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \

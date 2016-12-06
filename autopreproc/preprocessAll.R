@@ -216,7 +216,7 @@ if (proc_freesurfer) {
         
         f <- foreach(d=1:length(fs_toproc), .inorder=FALSE) %dopar% {
             setwd(fs_toproc[d])
-            ret_code <- system2(paste0("FreeSurferPipeline -T1 mprage_biascorr.nii.gz -T1brain mprage_bet.nii.gz -subject ", ids_toproc[d], " -subjectDir ", fs_subjects_dir),
+            ret_code <- system2("FreeSurferPipeline", paste0("-T1 mprage_biascorr.nii.gz -T1brain mprage_bet.nii.gz -subject ", ids_toproc[d], " -subjectDir ", fs_subjects_dir),
                                 stderr="FreeSurferPipeline_stderr", stdout="FreeSurferPipeline_stdout")
             if (ret_code != 0) { stop("FreeSurferPipeline failed in directory: ", fs_toproc[d]) }            
         }

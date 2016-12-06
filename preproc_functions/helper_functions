@@ -37,6 +37,42 @@ function dumpenv() {
     done
 }
 
+#Handle gradient nonlinearity correction
+function gradunwarp() {
+    local im=$( remove_ext "$1" ) #image to be unwarped
+    local gcoeffs="$2" #coefficient file
+    
+    if [ -z "$gcoeffs" ]; then
+	#no gradient unwarping requested
+	return 0
+    fi
+    
+    #allow coeffs to be in scripts directory
+    if [ ! -r "$gcoeffs" ]; then
+	if [ ! -r "${scriptDir}/cfg_files/${gcoeffs}" ]; then
+	    echo "Unable to locate -grad_unwarp file: $gcoeffs"
+	    exit 1
+	else
+	    gcoeffs="${scriptDir}/cfg_files/${gcoeffs}"
+	fi
+    fi
+    
+    #check that command exists
+    command -v gradient_unwarp.py >/dev/null 2>&1 || { echo "Cannot find gradient_unwarp.py. Aborting." >&2; exit 1; }
+
+    #local is4d=$( fslval $im dim4 )
+    rel "fslroi $im vol1 0 1" #gradient_unwarp.py only works on 3d images. pull first volume for this step
+
+    #retain pre-gradient files
+    rel "immv ${im} ${im}_pregdc"
+    
+    rel "gradient_unwarp.py \"vol1${ext}\" \"${im}_gdc_orig${ext}\" siemens -g \"$gcoeffs\" -n"
+    rel "convertwarp --abs --ref=\"${im}_pregdc\" --warp1=fullWarp_abs --relout --out=${im}_gdc_warpfield" #--jacobian=gdc_jacobian
+    #fslmaths gdc_jacobian -Tmean gdc_jacobian #omitting because jacobian is unused in the unwarping process    
+    rel "applywarp --rel --interp=spline -i \"${im}_pregdc\" -r \"${im}_pregdc\" -w ${im}_gdc_warpfield -o \"${im}\""
+    rel "imrm fullWarp_abs vol1"
+}
+
 # Function to fix negative range problems (negative values mess up bias field 
 # This commonly happens for gradient unwarping, where the the value transformation outside the brain shifts some zeros into the negative range
 function fix_negatives() {
