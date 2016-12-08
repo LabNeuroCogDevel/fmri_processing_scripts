@@ -554,6 +554,10 @@ if [ -n "$gcoeffs" ]; then
     rel "applywarp --rel --in=${T1}_biascorr --ref=$unbettedRefBrain --warp=${T1}_warpcoef_withgdc --interp=spline --out=\"$outputFile\""
     mni2anat="template_to_subject_warpcoef_gdistort"
     anat2mni="${T1}_warpcoef_withgdc"
+
+    #compute warp of MNI template onto subject's brain, applying gradient disortion
+    rel "invwarp --ref=${T1}_biascorr -w gdc_warpfield -o gdc_inv_warpfield"
+    rel "convertwarp --ref=${T1}_biascorr --warp1=template_to_subject_warpcoef --warp2=gdc_inv_warpfield -o template_to_subject_warpcoef_gdistort"
 fi
 
 #warp template to subject (incl. gradient distortion if needed)
@@ -562,12 +566,6 @@ rel "applywarp --interp=spline --in=$bettedRefBrain --ref=${T1}_biascorr -w ${mn
 #compute final skull-stripped image
 if [ $ssmethod = fnirt-inv ]; then
     rel "Generating brain mask based on inverse warp from template" c
-    if [ -n "$gcoeffs" ]; then
-	#warp MNI template mask onto subject's brain, applying gradient disortion
-	rel "invwarp --ref=${T1}_biascorr -w gdc_warpfield -o gdc_inv_warpfield"
-	rel "convertwarp --ref=${T1}_biascorr --warp1=template_to_subject_warpcoef --warp2=gdc_inv_warpfield -o template_to_subject_warpcoef_gdistort"
-    fi
-
     rel "applywarp --interp=nn --in=$nodil --ref=${T1}_biascorr -w ${mni2anat} -o ${T1}_biascorr_brain_mask"
     rel "fslmaths ${T1}_biascorr_brain_mask -fillh ${T1}_biascorr_brain_mask"
     rel "fslmaths ${T1}_biascorr -mas ${T1}_biascorr_brain_mask ${T1}_bet"

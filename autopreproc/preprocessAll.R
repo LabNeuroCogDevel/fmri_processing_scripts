@@ -60,6 +60,13 @@ if (preprocessMprage_call == "") { preprocessMprage_call = paste0("-delete_dicom
 
 #add dicom pattern into the mix
 preprocessMprage_call <- paste0(preprocessMprage_call, " -dicom \"", mprage_dicompattern, "\"")
+usegradunwarp=grepl("-grad_unwarp\\s+", preprocessMprage_call, perl=TRUE)
+gradunwarpsuffix=""
+if (usegradunwarp) {
+    message("Using structural -> MNI warp coefficients that include gradient undistortion: _withgdc.")
+    message("Also: assuming that all images provided to preprocessFunctional (incl. mprage and fieldmap) are not corrected for gradient disortion")
+    gradunwarpsuffix <- "_withgdc"
+} 
 
 #optional config settings
 loc_mrproc_root = Sys.getenv("loc_mrproc_root")
@@ -267,7 +274,7 @@ for (d in subj_dirs) {
 
     mpragedir <- file.path(loc_mrproc_root, subid, "mprage")
     if (file.exists(mpragedir)) {
-        if (! (file.exists(file.path(mpragedir, "mprage_warpcoef.nii.gz")) && file.exists(file.path(mpragedir, "mprage_bet.nii.gz")) ) ) {
+        if (! (file.exists(file.path(mpragedir, paste0("mprage_warpcoef", gradunwarpsuffix, ".nii.gz"))) && file.exists(file.path(mpragedir, "mprage_bet.nii.gz")) ) ) {
             stop("Unable to locate required mprage files in dir: ", mpragedir)
         }
     } else {
@@ -278,8 +285,8 @@ for (d in subj_dirs) {
     if (!file.exists(outdir)) { #create preprocessed root folder if absent
         dir.create(outdir, showWarnings=FALSE, recursive=TRUE)
     } else {
-        ##preprocessed folder exists, check for .preprocessfunctional_complete files        
-        extant_funcrundirs <- list.dirs(path=outdir, pattern=paste0(paradigm_name,"[0-9]+"), full.names=TRUE, recursive=FALSE)
+        ##preprocessed folder exists, check for .preprocessfunctional_complete files
+        extant_funcrundirs <- list.dirs(path=outdir, pattern=paste0("^", paradigm_name,"[0-9]+$"), full.names=TRUE, recursive=FALSE)
         if (length(extant_funcrundirs) > 0L &&
             length(extant_funcrundirs) >= n_expected_funcruns &&
             all(sapply(extant_funcrundirs, function(x) { file.exists(file.path(x, ".preprocessfunctional_complete")) }))) {
@@ -473,7 +480,7 @@ f <- foreach(cd=iter(all_funcrun_dirs, by="row"), .inorder=FALSE) %dopar% {
         funcpart <- paste0("-dicom \"", functional_dicompattern, "\" -delete_dicom archive -output_basename ", basename(cd$funcdir)) #assuming archive here
     }
     
-    mpragepart <- paste("-mprage_bet", file.path(cd$mpragedir, "mprage_bet.nii.gz"), "-warpcoef", file.path(cd$mpragedir, "mprage_warpcoef.nii.gz"))
+    mpragepart <- paste("-mprage_bet", file.path(cd$mpragedir, "mprage_bet.nii.gz"), "-warpcoef", file.path(cd$mpragedir, paste0("mprage_warpcoef", gradunwarpsuffix, ".nii.gz")))
     if (!is.na(cd$magdir)) {
         fmpart <- paste0("-fm_phase \"", cd$phasedir, "\" -fm_magnitude \"", cd$magdir, "\" -fm_cfg ", fieldmap_cfg)
     } else { fmpart <- "" }
