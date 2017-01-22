@@ -43,7 +43,7 @@ while (argpos <= length(args)) {
 setwd(featdir)
 
 #inside the stats directory we will have pes, copes, varcopes, and zstats
-zfiles <- list.files("stats", pattern="zstat.*\\.nii.*", full.names=TRUE)
+zfiles <- list.files("stats", pattern="zstat[0-9]+\\.nii.*", full.names=TRUE)
 statnums <- as.numeric(sub(".*zstat(\\d+)\\.nii.*", "\\1", zfiles, perl=TRUE))
 nstats <- length(zfiles)
 

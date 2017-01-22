@@ -341,6 +341,10 @@ fi
 T1=$( remove_ext $nifti )
 [ -n "$brainmask" ] && brainmask=$( remove_ext $brainmask )
 
+#need to set default after processing options and dicom import
+#to account for reference choice and filename
+if [ -z "$outputFile" ]; then outputFile="${T1}_nonlinear_warp_${reference}"; fi
+
 #check for cleanup only
 if [ $cleanup_only -eq 1 ]; then
     rel "Cleaning up intermediate files for preprocessMprage." c
@@ -368,10 +372,6 @@ fi
 #initial correction for any negative values in original image
 fix_negatives "$T1"
 
-#need to set default after processing options and dicom import
-#to account for reference choice and filename
-if [ -z "$outputFile" ]; then outputFile="${T1}_nonlinear_warp_${reference}"; fi
-
 #adapted from fsl_anat to create a blurred image by downsampling
 function quick_smooth() {
   in=$1
@@ -383,6 +383,17 @@ function quick_smooth() {
 }
 
 type=1 # For FAST: 1 = T1w, 2 = T2w, 3 = PD
+
+#Jan2017: bet with -f 0.1 on the hpf smoothed data is giving some insane results. This appears to result from
+#  air voxels becoming rather speckled as a function of the division by the smoothed image, resulting in the
+#  skull-stripping algorithm breaking down. More sensible in my mind is to create the rough brain mask up front
+#  and apply it within the bias correction steps.
+
+#get a rough brain mask - it can be *VERY* rough (i.e. missing huge portions of the brain or including non-brain, but non-background)
+#use -f 0.1 to err on being over inclusive
+# Nov2016: add -R to the mix to improve initial skull strip that is more sensible (avoids ridiculous over-inclusiveness)
+rel "bet ${T1} ${T1}_initial_brain -m -f 0.1 -R"
+rel "fslmaths ${T1}_initial_brain_mask -dilF ${T1}_initial_brain_mask_dil1x" #dilate 1x to be inclusive
 
 #Adapted from fsl_anat
 #### BIAS FIELD CORRECTION (main work, although also refined later on if segmentation run)
@@ -401,37 +412,28 @@ if [ $biasCorrect -eq 1 ] ; then
 	#divide T1 image by smoothed image
 	rel "fslmaths ${T1} -div ${T1}_s20 ${T1}_hpf"
 
-        #get a rough brain mask - it can be *VERY* rough (i.e. missing huge portions of the brain or including non-brain, but non-background)
-	#use -f 0.1 to err on being over inclusive
-	# Nov2016: add -R to the mix to improve initial skull strip that is more sensible (avoids ridiculous over-inclusiveness)
-	rel "bet ${T1}_hpf ${T1}_hpf_brain -m -f 0.1 -R"
-
         # get a smoothed version without the edge effects
-	rel "fslmaths ${T1} -mas ${T1}_hpf_brain_mask ${T1}_hpf_s20" #mask by hpf brain
+	rel "fslmaths ${T1} -mas ${T1}_initial_brain_mask_dil1x ${T1}_hpf_s20" #mask by original by rough brain
 	quick_smooth "${T1}_hpf_s20" "${T1}_hpf_s20" #smooth masked img
-	quick_smooth "${T1}_hpf_brain_mask" "${T1}_initmask_s20"
-	rel "fslmaths ${T1}_hpf_s20 -div ${T1}_initmask_s20 -mas ${T1}_hpf_brain_mask ${T1}_hpf2_s20"
-	rel "fslmaths ${T1} -mas ${T1}_hpf_brain_mask -div ${T1}_hpf2_s20 ${T1}_hpf2_brain"
+	quick_smooth "${T1}_initial_brain_mask_dil1x" "${T1}_initmask_s20"
+	rel "fslmaths ${T1}_hpf_s20 -div ${T1}_initmask_s20 -mas ${T1}_initial_brain_mask_dil1x ${T1}_hpf2_s20"
+	rel "fslmaths ${T1} -mas ${T1}_initial_brain_mask_dil1x -div ${T1}_hpf2_s20 ${T1}_hpf2_brain"
 
 	# make sure the overall scaling doesn't change (equate medians)
-	med0=$( fslstats ${T1} -k ${T1}_hpf_brain_mask -P 50 )
-	med1=$( fslstats ${T1}_hpf2_brain -k ${T1}_hpf_brain_mask -P 50 )
+	med0=$( fslstats ${T1} -k ${T1}_initial_brain_mask_dil1x -P 50 )
+	med1=$( fslstats ${T1}_hpf2_brain -k ${T1}_initial_brain_mask_dil1x -P 50 )
 	rel "fslmaths ${T1}_hpf2_brain -div $med1 -mul $med0 ${T1}_hpf2_brain"
 
 	rel "Estimating and removing bias field (stage 2 - detailed fields)" c
 	rel "fast -o ${T1}_initfast -l ${smooth} -b -B -t $type --iter=${niter} --nopve --fixed=0 -v ${T1}_hpf2_brain" #run on T1 with smoothed edge
 	rel "fast -o ${T1}_initfast2 -l ${smooth} -b -B -t $type --iter=${niter} --nopve --fixed=0 -v ${T1}_initfast_restore" #run again on bias corrected image from above
-	rel "fslmaths ${T1}_hpf_brain_mask ${T1}_initfast2_brain_mask" #copy mask for fast to match weak correction below
     else
 	niter=10  #FAST iterations
 	smooth=20 #bias field smoothing extent (FWHM) in mm; -l in FAST
 
 	#for weak bias field correction, do not iterate the FAST as above (initfast, initfast2)
-        # get a rough brain mask - it can be *VERY* rough (i.e. missing huge portions of the brain or including non-brain, but non-background) 
-	# use -f 0.1 to err on being over inclusive.
-	# Nov2016: add -R to the mix to improve initial skull strip that is more sensible (avoids ridiculous over-inclusiveness)
-	rel "bet ${T1} ${T1}_initfast2_brain -m -f 0.1 -R"
-	rel "fslmaths ${T1}_initfast2_brain ${T1}_initfast2_restore"
+	#copy across initial skull stripped brain from bet above
+	rel "fslmaths ${T1}_initial_brain ${T1}_initfast2_restore"
     fi
 
     # Run FAST (again) to improve bias field
@@ -440,8 +442,8 @@ if [ $biasCorrect -eq 1 ] ; then
     rel "Extrapolating bias field from central region" c
 
     # use the latest fast output
-    rel "fslmaths ${T1} -div ${T1}_fast_restore -mas ${T1}_initfast2_brain_mask ${T1}_fast_totbias"
-    rel "fslmaths ${T1}_initfast2_brain_mask -ero -ero -ero -ero ${T1}_initfast2_brain_mask2"
+    rel "fslmaths ${T1} -div ${T1}_fast_restore -mas ${T1}_initial_brain_mask_dil1x ${T1}_fast_totbias"
+    rel "fslmaths ${T1}_initial_brain_mask_dil1x -ero -ero -ero -ero ${T1}_initfast2_brain_mask2"
     rel "fslmaths ${T1}_fast_totbias -sub 1 ${T1}_fast_totbias" #subtract 1 from total bias
     rel "fslsmoothfill -i ${T1}_fast_totbias -m ${T1}_initfast2_brain_mask2 -o ${T1}_fast_bias"
     rel "fslmaths ${T1}_fast_bias -add 1 ${T1}_fast_bias" #re-add 1
@@ -453,6 +455,14 @@ else
     rel "fslmaths ${T1} ${T1}_biascorr"
 fi
 
+#compute a liberal brain mask for the bias-corrected image (with skull) to use after gradient correction.
+#this is mostly useful for reducing file sizes during gzip compression. Use the 98_2 method of FEAT
+p_2=$( fslstats ${T1}_biascorr -p 2 )
+p_98=$( fslstats ${T1}_biascorr -p 98 )
+thresh=$( echo "scale=5; $p_2 + ($p_98 - $p_2)/10" | bc )
+
+rel "fslmaths ${T1}_biascorr -thr $thresh -bin -fillh -dilF ${T1}_biascorr_mask"
+rel "fslmaths ${T1}_biascorr -mas ${T1}_biascorr_mask ${T1}_biascorr"
 
 ###############
 #initial structural brain extraction for FLIRT
@@ -505,14 +515,21 @@ if [ -n "$gcoeffs" ]; then
     rel "gradient_unwarp.py \"${T1}_biascorr${ext}\" \"${T1}_biascorr_gdc_orig${ext}\" siemens -g \"$gcoeffs\" -n"
     rel "convertwarp --abs --ref=\"${T1}_biascorr\" --warp1=fullWarp_abs --relout --out=gdc_warpfield" #--jacobian=gdc_jacobian
     #fslmaths gdc_jacobian -Tmean gdc_jacobian #omitting because jacobian is unused in the unwarping process    
-    rel "applywarp --rel --interp=spline -i \"${T1}_biascorr\" -r \"${T1}_biascorr\" -w gdc_warpfield -o \"${T1}_biascorr_postgdc\""
-    rel "applywarp --rel --interp=spline -i \"${T1}_bet_initial\" -r \"${T1}_bet_initial\" -w gdc_warpfield -o \"${T1}_bet_initial_postgdc\""
     warpsuffix=_postgdc
+    rel "applywarp --rel --interp=spline -i \"${T1}_biascorr\" -r \"${T1}_biascorr\" -w gdc_warpfield -o \"${T1}_biascorr${warpsuffix}\""
+    rel "applywarp --rel --interp=spline -i \"${T1}_bet_initial\" -r \"${T1}_bet_initial\" -w gdc_warpfield -o \"${T1}_bet_initial${warpsuffix}\""
+
+    #correct any negatives from GDC procedure
+    fix_negatives "${T1}_biascorr${warpsuffix}"
+    fix_negatives "${T1}_bet_initial${warpsuffix}"
+
+    rel "remask after GDC to zero out non-tissue voxels" c
+    rel "fslmaths ${T1}_bet_initial -bin -dilF ${T1}_bet_initial_mask_dil1x"
+    rel "fslmaths ${T1}_bet_initial${warpsuffix} -mas ${T1}_bet_initial_mask_dil1x"
+    rel "imrm ${T1}_bet_initial_mask_dil1x"
+    rel "fslmaths ${T1}_biascorr${warpsuffix} -mas ${T1}_biascorr_mask ${T1}_biascorr${warpsuffix}"
 fi
 
-#correct any negatives from GDC procedure
-fix_negatives "${T1}_biascorr_postgdc"
-fix_negatives "${T1}_bet_initial_postgdc"
 
 ##############
 #warp structural to standard space (MNI or Talairach)
@@ -520,6 +537,7 @@ fix_negatives "${T1}_bet_initial_postgdc"
 #note that flirt works with betted reference brain, but fnirt prefers unbetted
 flirtAffCoef="${T1}_to_${reference}_affine.mat"
 
+#use the postgdc files, if available, so that the flirt and fnirt steps are on postgdc files, then we convertwarp to bring together GDC + MNI warps
 #if [ $( imtest "${T1}_warp_linear" ) -eq 0 ]; then
 rel "Running affine (linear) transformation for structural -> template" c
 rel "flirt -in ${T1}_bet_initial${warpsuffix} -ref $bettedRefBrain -omat ${flirtAffCoef} -out ${T1}\"_warp_linear\" -dof 12 -interp spline"
@@ -551,6 +569,8 @@ anat2mni="${T1}_warpcoef"
 if [ -n "$gcoeffs" ]; then
     rel "immv \"$outputFile\" \"${outputFile}_twostepinterp\""
     rel "convertwarp --ref=$unbettedRefBrain --warp1=gdc_warpfield --warp2=${T1}_warpcoef --out=${T1}_warpcoef_withgdc --relout"
+
+    #not that ${T1}_biascorr is the pregdc file, so this is a one-step interpolation GDC + MNI
     rel "applywarp --rel --in=${T1}_biascorr --ref=$unbettedRefBrain --warp=${T1}_warpcoef_withgdc --interp=spline --out=\"$outputFile\""
     mni2anat="template_to_subject_warpcoef_gdistort"
     anat2mni="${T1}_warpcoef_withgdc"
@@ -617,12 +637,21 @@ fi
 
 #reapply gradient distortion correction on final native-space files
 if [ -n "$gcoeffs" ]; then
-    rel "applywarp --rel --interp=spline -i \"${T1}_biascorr\" -r \"${T1}_biascorr\" -w gdc_warpfield -o \"${T1}_biascorr_postgdc\""
-    rel "applywarp --rel --interp=spline -i \"${T1}_bet\" -r \"${T1}_bet\" -w gdc_warpfield -o \"${T1}_bet_postgdc\""
+    rel "applywarp --rel --interp=spline -i \"${T1}_biascorr\" -r \"${T1}_biascorr\" -w gdc_warpfield -o \"${T1}_biascorr${warpsuffix}\""
+    rel "applywarp --rel --interp=spline -i \"${T1}_bet\" -r \"${T1}_bet\" -w gdc_warpfield -o \"${T1}_bet${warpsuffix}\""
 
     #correct any negatives from GDC procedure
-    fix_negatives "${T1}_biascorr_postgdc"
-    fix_negatives "${T1}_bet_initial_postgdc"
+    fix_negatives "${T1}_biascorr${warpsuffix}"
+    fix_negatives "${T1}_bet${warpsuffix}"
+
+    #GDC procedure tends to create tiny values at many non-brain voxels since the gradient correction is applied wrt scanner coordinates
+    #To reduce gray voxels outside the head and reduce file size (since a run of zeros can be compressed efficiently,
+    #whereas a run of small values cannot, mask the postgdc files with dilated pre-gdc files
+    rel "fslmaths \"${T1}_bet\" -bin -dilF -fillh bet_mask"
+    
+    rel "fslmaths \"${T1}_biascorr${warpsuffix}\" -mas \"${T1}_biascorr_mask\" \"${T1}_biascorr${warpsuffix}\""
+    rel "fslmaths \"${T1}_bet${warpsuffix}\" -mas bet_mask \"${T1}_bet${warpsuffix}\""
+    rel "imrm bet_mask"
 fi
 
 #create png to check registration
@@ -647,7 +676,7 @@ montage -label "Template with subject brain outline overlaid" highres2standard2.
 
 pngappend highres2standard1.png - highres2standard2.png struct_to_template.png; 
 rm -f sl?.png highres2standard2.png  highres2standard1.png
-imrm subject_to_template_brain
+rel "imrm subject_to_template_brain"
 
 #generate symbolic link to skull-stripped mprage file for compatibility with FSL tools
 ln -sfn "${T1}_bet${ext}" "${T1}_brain${ext}"

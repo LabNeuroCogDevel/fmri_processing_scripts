@@ -285,7 +285,7 @@ if (length(maskvals) > 1000) {
   warning("More than 1000 putative ROIs identified in mask file: ", fname_roimask)
 }
 
-setDefaultClusterOptions(master="localhost", port=10290)
+setDefaultClusterOptions(master="localhost")
 clusterobj <- makeSOCKcluster(njobs)
 registerDoSNOW(clusterobj)
 
