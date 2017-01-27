@@ -525,7 +525,7 @@ if [ -n "$gcoeffs" ]; then
 
     rel "remask after GDC to zero out non-tissue voxels" c
     rel "fslmaths ${T1}_bet_initial -bin -dilF ${T1}_bet_initial_mask_dil1x"
-    rel "fslmaths ${T1}_bet_initial${warpsuffix} -mas ${T1}_bet_initial_mask_dil1x"
+    rel "fslmaths ${T1}_bet_initial${warpsuffix} -mas ${T1}_bet_initial_mask_dil1x ${T1}_bet_initial${warpsuffix}"
     rel "imrm ${T1}_bet_initial_mask_dil1x"
     rel "fslmaths ${T1}_biascorr${warpsuffix} -mas ${T1}_biascorr_mask ${T1}_biascorr${warpsuffix}"
 fi

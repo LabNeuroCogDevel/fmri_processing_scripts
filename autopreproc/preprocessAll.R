@@ -10,7 +10,7 @@
 #and if not specified, the script defaults to 8.
 
 args <- commandArgs(trailingOnly = TRUE)
-options(width=120)
+options(width=180)
 #location of raw MR data
 goto=Sys.getenv("loc_mrraw_root")
 if (! file.exists(goto)) { stop("Cannot find directory: ", goto) }
@@ -53,6 +53,15 @@ if (is.na(proc_freesurfer)) {
     proc_freesurfer <- FALSE #should I trap other possibilities here?    
 }
 
+proc_functional = as.numeric(Sys.getenv("proc_functional")) #whether to run preprocessFunctional (or just terminate after structurals)
+if (is.na(proc_functional)) {
+    proc_functional <- FALSE
+} else if (proc_functional == 1) {
+    proc_functional <- TRUE
+} else {
+    proc_functional <- FALSE #should I trap other possibilities here?    
+}
+
 #setup default parameters
 if (mprage_dicompattern == "") { mprage_dicompattern = "MR*" }
 if (functional_dicompattern == "") { functional_dicompattern = "MR*" }
@@ -85,6 +94,8 @@ n_expected_funcruns <- as.numeric(n_expected_funcruns)
 ##output configuration parameters for this run
 cat("---------\nSummary of preprocessAll.R configuration:\n---------\n")
 cat("  Source directory for raw MRI files:", goto, "\n")
+cat("  Process structurals through FreeSurferPipeline: ", as.character(proc_freesurfer), "\n")
+cat("  Process functional data: ", as.character(proc_functional), "\n")
 cat("  Destination root directory for processed MRI files:", loc_mrproc_root, "\n")
 cat("  Destination subdirectory for each subject:", preprocessed_dirname, "\n")
 cat("  Name of paradigm folder:", paradigm_name, ", expected runs:", n_expected_funcruns, "\n")
@@ -98,6 +109,7 @@ if (useFieldmap) {
     cat("  Expected name of GRE fieldmap source directories:", gre_fieldmap_dirpattern, "\n")
     cat("  Fieldmap configuration file:", fieldmap_cfg, "\n")
 }
+cat("--------\n\n")
 
 ##handle all mprage directories
 ##overload built-in list.dirs function to support pattern match
@@ -223,11 +235,19 @@ if (proc_freesurfer) {
         
         f <- foreach(d=1:length(fs_toproc), .inorder=FALSE) %dopar% {
             setwd(fs_toproc[d])
-            ret_code <- system2("FreeSurferPipeline", paste0("-T1 mprage_biascorr.nii.gz -T1brain mprage_bet.nii.gz -subject ", ids_toproc[d], " -subjectDir ", fs_subjects_dir),
+            #use the gradient distortion-corrected files if available
+            t1 <- ifelse(file.exists("mprage_biascorr_postgdc.nii.gz"), "mprage_biascorr_postgdc.nii.gz", "mprage_biascorr.nii.gz")
+            t1brain <- ifelse(file.exists("mprage_bet_postgdc.nii.gz"), "mprage_bet_postgdc.nii.gz", "mprage_bet.nii.gz")
+            ret_code <- system2("FreeSurferPipeline", paste0("-T1 ", t1, " -T1brain ", t1brain, " -subject ", ids_toproc[d], " -subjectDir ", fs_subjects_dir),
                                 stderr="FreeSurferPipeline_stderr", stdout="FreeSurferPipeline_stdout")
             if (ret_code != 0) { stop("FreeSurferPipeline failed in directory: ", fs_toproc[d]) }            
         }
     }
+}
+
+if (!proc_functional) {
+    cat("Ending preprocessAll.R because proc_functional is FALSE (i.e., we are all done)\n\n")
+    quit(save="no", status=0)
 }
 
 #get list of subject directories in root directory
@@ -241,7 +261,7 @@ functional_src_queue <- c() #original run directories in MR_Raw to be copied
 functional_dest_queue <- c() #destination targets of raw data
 
 for (d in subj_dirs) {
-    cat("Processing subject: ", d, "\n")
+    cat("\n------\nProcessing subject: ", d, "\n")
     setwd(d)
 
     subid <- basename(d)
@@ -388,7 +408,7 @@ for (d in subj_dirs) {
         }
 
         ##add all functional runs, along with mprage and fmap info, as a data.frame to the list
-        all_funcrun_dirs[[d]] <- data.frame(funcdir=list.dirs(pattern=paste0(paradigm_name, ".*"), path=outdir, recursive = FALSE),
+        all_funcrun_dirs[[d]] <- data.frame(funcdir=list.dirs(pattern=paste0(paradigm_name, "[0-9]+$"), path=outdir, recursive = FALSE),
                                         refimgs=refimgs, magdir=magdir, phasedir=phasedir, mpragedir=mpragedir, stringsAsFactors=FALSE)
 
     } else {
