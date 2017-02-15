@@ -88,6 +88,7 @@ Command line options:
   -nuisance_regression: regress out signals that are not of interest (most relevant to resting-state processing).
         Comma-delimited list (no spaces!) that can include: 6motion, rx, ry, rz, tx, ty, tz, wm (white matter), csf (cerebrospinal fluid), 
         gs (global signal). Derivatives of any of these can be added by using the prefix "d" (e.g., dcsf).
+        motion regs can also be prefixed with q for ^2 and qd for deriv of quad (e.g. qd6motion)
         If bandpass filtering is specified, nuisance regression is done by 3dBandpass (Hallquist et al. 2013, NeuroImage). Otherwise, use 3dDetrend.
         Example: -nuisance_regression 6motion,csf,wm,dcsf,dwm
   -output_basename: Base name of file output during DICOM -> NIfTI conversion. Default: functional
@@ -119,10 +120,11 @@ Command line options:
         -threshold 98_2 (FSL's default, 2nd %ile + (98th %ile - 2nd %ile)/10
         -threshold 10 (mask any voxels below the 10th percentile)
   -tr: TR duration in seconds.
+  -trunc: remove a given number of volumes (time steps) from the begining. old protocols did not discard these automaticly. ( n_rm_firstvols )
   -siemens: only relevant for -4d input. If set, slice timing correction will check for interleaved
         order and odd vs. even number of slices. If even, will create and use --ocustom file 2,4,6...1,3,5...
         This is necessary because of different slice acquisition on Siemens for even versus odd total slices.
-  -verbose: print whats going on (set -x)
+  -verbose: print whats going on (set -xv)
   -warpcoef: The warp coefficients used to transform the structural scan to standard space. Required.
   -warp_interpolation: The intepolation method used to warp functional data to the mprage and to the standard space (e.g., MNI). Default: spline.
         -warp_interpolation spline. Use cubic spline interpolation to apply warp coefficients. Faster than sinc and slightly more blurry, but more robust to mask. (Default)
@@ -135,6 +137,7 @@ Command line options:
   -wavelet_threshold: This is the coefficient threshold value used during maxima and minima coefficient definition. Default: 10. See BWT_Documentation.pdf for details.
 
 The major steps in the processing pipeline are, in order:
+  0)   fslorient (_) and optionally truncate (0)
   1)   Slice timing correction - t
   2)   Motion correction - m
   3)   Skull stripping and intensity thresholding - k
@@ -166,9 +169,14 @@ EndOfHelp
 }
 
 #Written: 2010/5/18
-#Last updated: 2016/05/10
+#Last updated: 2017/02/15
+#Last defaults change: before 2016/05/10
 #
 #Changelog:
+#2/15/2017 (WF)
+# - motion nuis. reg.: add quad and quad of deriv 
+# - add -trunc option to remove the first n volumes (PNC dataset)
+# - add bats tests for both
 #5/10/2016 (MH)
 # - Support -func_refimg as DICOM for CMRR single-band images
 # - Prefer standard templates in shared location
@@ -323,13 +331,18 @@ check_requirements
 #reorient images to match LPI/RPI orientation, which is useful to prevent huge rotations/translations in warp
 prefix="_" #tracks file prefix indicating which processing steps have been performed
 
+
 if [[ ! -f .reorient2std_complete && $( imtest "${prefix}${funcFile}" ) -eq 0 ]]; then
     rel "fslreorient2std ${funcFile} ${prefix}${funcFile}" #add underscore to $funcFile to make it easy later to prepend letters corresponding to each processing step
     #rel "fslmaths ${funcFile} ${prefix}${funcFile}" #alternate to skip this step.
     date > .reorient2std_complete
 fi
 
-numVols=$( fslhd ${funcFile} | grep '^dim4' | perl -pe 's/dim4\s+(\d+)/\1/' )
+# truncate volumes
+[ $n_rm_firstvols -gt 0 ] && remove_first_volumes
+
+
+numVols=$( fslhd $prefix${funcFile} | grep '^dim4' | perl -pe 's/dim4\s+(\d+)/\1/' )
 middleVol=$( echo "$numVols/2" | bc )
 
 ######

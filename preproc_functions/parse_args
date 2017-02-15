@@ -5,12 +5,24 @@ function parse_args {
     #parse input arguments, initialize default parameter settings
     #when called from preprocessFunctional, must pass "$@", which is all input parameters to script
 
-    #prefer ACI installation
-    if [ -d /storage/group/mnh5174_collab/standard ]; then
-	stddir=/storage/group/mnh5174_collab/standard
-    else
-	stddir=$HOME/standard
+    # where can we find standard space brain templates
+    # prefer ACI installation
+    local standard_spaces=(\
+       /storage/group/mnh5174_collab/standard \
+       /opt/ni_tools/standard_templates \
+       $HOME/standard \
+     )
+
+    stddir=
+    for stddir in ${standard_spaces[@]}; do
+       [ -d "$stddir" ] && break
+    done
+
+    if [ ! -d "$stddir" ]; then
+      echo "cannot find standard space templates '$stddir'! looked in ${standard_spaces[@]}" >&2
+      return 1
     fi
+
     
     #initialize defaults
     funcFile=
@@ -67,6 +79,7 @@ function parse_args {
     waveletThreshold=10
     verbose=
     KEEP_MOTION_FILES=
+    n_rm_firstvols=0
 
     #figure out file extension for FSL programs
     if [ -z $FSLOUTPUTTYPE ]; then
@@ -386,6 +399,10 @@ function parse_args {
 	    #deprecated: -siemens preferred
 	    detectSiemens=1
 	    shift 1
+       elif [ $1 = -trunc   ]; then
+           n_rm_firstvols=$2
+           shift 2
+
 	elif [ $1 = -verbose ]; then
 	    verbose=1
 	    set -xv
