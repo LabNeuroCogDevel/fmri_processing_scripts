@@ -1,5 +1,7 @@
 #!/bin/bash
 
+CORRECT_MOTION_GLOBALS=(prefix funcNifti motionSinc ref_vol ext)
+
 function correct_motion {
     preMC="${prefix}${funcNifti}"
     prefix="m${prefix}" #add m to file prefix to denote motion correction
@@ -28,25 +30,35 @@ function correct_motion {
     # 
 
     rel "Running motion correction" c
+    needToComputeMCStat=
 
-    if [ -n "$ref_vol" ]; then
+    # default to mean (instead of numbered volume or median)
+    [ -z "$ref_vol" ] && ref_vol=mean
+    
+
+    if [[ "$ref_vol" =~ ^[0-9-]+$ ]]; then
 	rel "Using volume number: $ref_vol for motion correction" c
 	rel "3dbucket -overwrite \"${preMC}[$ref_vol]\" -prefix \"mc_target${ext}\" 2> /dev/null"
+        needToComputeMCStat=
+    elif [[ "$ref_vol" =~ ^(mean|median)$ ]]; then
+	rel "Using $ref_vol volume of motion-corrected functional as registration reference for $preMC" c
+	rel "3dTstat -overwrite -$ref_vol -prefix premc_stat_vol.nii.gz \"${preMC}\"" #mean image pre-correction
+        needToComputeMCStat=1
     else
-	rel "Using mean volume of motion-corrected functional as registration reference for $preMC" c
-	rel "3dTstat -overwrite -mean -prefix premc_mean_vol.nii.gz \"${preMC}\"" #mean image pre-correction
+       rel "ref_vol of '$ref_vol'!" c
+       return 1
     fi
 
     #for now, a slightly junky if else for 3dvolreg versus mcflirt
     if [ $mc_program = "3dvolreg" ]; then
-	if [ -z "$ref_vol" ]; then
+	if [ -n $needToComputeMCStat ]; then
 	    #have to run motion correction twice to get a reasonable motion-corrected mean volume
 	    #cf. http://fcp-indi.github.io/docs/developer/workflows/func_preproc.html
 	    #first run: coregister to mean functional of pre-motion-corrected data (hence, mean could be a bit blurry)
-	    rel "3dvolreg -quintic -twopass -base premc_mean_vol.nii.gz -zpad 4 -prefix mc_initial.nii.gz \"${preMC}\""
+	    rel "3dvolreg -quintic -twopass -base premc_stat_vol.nii.gz -zpad 4 -prefix mc_initial.nii.gz \"${preMC}\""
 
-	    #second run: now take the mean of the corrected series and use that as the coregistration target
-	    rel "3dTstat -overwrite -mean -prefix mc_target.nii.gz mc_initial.nii.gz"	       
+	    #second run: now take the mean|median of the corrected series and use that as the coregistration target
+	    rel "3dTstat -overwrite -$ref_vol -prefix mc_target.nii.gz mc_initial.nii.gz"	       
 	fi
 
 	#reverting to quintic interpolation because of notes on AFNI message board about ringing artifacts with Fourier approach:
@@ -75,8 +87,8 @@ function correct_motion {
 	rm -f _temp.aff12.1D
     else
 	#if no reference volume specified, correct to the mean volume
-	if [ -z "$ref_vol" ]; then
-	    rel "mcflirt -in \"${preMC}\" -o mc_initial -reffile premc_mean_vol"
+	if [ -n "$needToComputeMCStat" ]; then
+	    rel "mcflirt -in \"${preMC}\" -o mc_initial -reffile premc_stat_vol"
 	    rel "fslmaths mc_initial -Tmean mc_target" #mean motion-corrected image
 	fi
 
@@ -95,3 +107,5 @@ function correct_motion {
     return 0
 
 }
+
+# vi: set shiftwidth=4 tabstop=8 expandtab:

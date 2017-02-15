@@ -315,7 +315,8 @@ function cleanup_preprocessFunctional {
     #[ -d mc_mats ] && rm -rf mc_mats #original motion transformation matrices
 
     deleteFile example_func${ext}
-    deleteFile premc_mean_vol${ext}
+    deleteFile premc_stat_vol${ext}
+    deleteFile premc_mean_vol${ext} # old name
     #deleteFile mc_initial${ext} #initial motion correction to mean functional
     #deleteFile mc_target_mask${ext} #brain mask for mc_target used for rmsdiff in motion_plots
 
@@ -388,7 +389,8 @@ function cleanup_preprocessFunctional {
       deleteFile mc_target_brain_restore${ext}
 
       deleteFile mc_mean_vol_target${ext}
-      deleteFile premc_mean_vol${ext}
+      deleteFile premc_stat_vol${ext}
+      deleteFile premc_mean_vol${ext} # old name
 
       # in case we missed the empty upre
       deleteFile ${upre}mt_${funcFile}${ext}
