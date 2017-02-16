@@ -1,6 +1,14 @@
 #!/bin/bash
 #Apply fieldmap to EPI data at the same time as motion correction (one-step interpolation)
 
+unable_warp_msg(){
+  echo "Unable to figure out what warp was intended." 
+  echo "  combination of" 
+  for var in warp_target no_warp sliceMotion4D fm_phase no_st st_first mc_first despike; do
+     echo "     $var: ${!var}"
+  done
+}
+
 # GLOBALS:
 ONESTEPWARP_GLOBALS=(templateBrain subjMask fm_phase mc_first prefix funcFile createBBRFmapWarp no_st st_first sliceMotion4D preMC despike postDespike postSS nowarp funcWarpInterp warpCoef)
 
@@ -139,8 +147,23 @@ function onestep_warp {
             fi 
 
 
+        elif [ $no_warp -eq 1 -a $st_first -eq 1 -a $despike -eq 0 ]; then
+          #WF20170216 -- here for MJ following gu 2015 pnas
+	  towarp="${postSS}" #warp functionals after skull strip + intensity: ktm0_funcfile
+
+          # if we were going to concat the motion correction mats we'd want to use 
+          # WF doesn't think this is what we want. 
+	  #towarp="${preMC}" # t0_funcfile
+          
+          # what does this do?!
+	  volwise=0
+
+          # motion correction already preformed and we dont want to warp
+          # so we are done
+          return 0
+
 	else 
-	    echo "Unable to figure out what warp was intended."
+            unable_warp_msg
 	    exit 1
 	fi
     elif [ $warp_target = standard ]; then #warp to standard space
@@ -222,7 +245,7 @@ function onestep_warp {
 		--warp2=${warpCoef} --relout"
 	    
 	else
-	    echo "Unable to figure out what warp was intended."
+            unable_warp_msg
 	    exit 1
 	fi
 
