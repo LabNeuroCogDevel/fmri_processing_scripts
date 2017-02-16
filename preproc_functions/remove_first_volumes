@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-REMOVE_FIRST_VOLUMES_GLOBALS=(n_rm_firstvols prefix funcFile)
+REMOVE_FIRST_VOLUMES_GLOBALS=(n_rm_firstvols prefix funcNifti)
 
 remove_first_volumes() {
   print_vars_in REMOVE_FIRST_VOLUMES_GLOBALS
@@ -9,7 +9,7 @@ remove_first_volumes() {
   # we'd start the new file on index 1
   if [ ! -r .trunc_complete ]; then
     rel "truncating: remove $n_rm_firstvols volumes" c
-    rel "3dTcat $prefix$funcFile'[$n_rm_firstvols..$]' -prefix '0$prefix$funcFile'"
+    rel "3dTcat $prefix$funcNifti'[$n_rm_firstvols..$]' -prefix '0$prefix$funcNifti'"
     date > .trunc_complete
   fi
   prefix="0$prefix" 
