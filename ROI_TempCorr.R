@@ -21,6 +21,7 @@ printHelp <- function() {
       "      mean uses the mean within each ROI",
       "      huber uses the huber robust estimate of the center of the distribution (robust to outliers)",
       "  -brainmask <3D file>: A 0/1 mask file defining voxels in the brain. This will be applied to the ROI mask before computing correlations.",
+      "  -dropvols <integer=0>: The number of initial volumes to drop from all voxel time series prior to computing correlations (e.g., for steady state problems)",
       "  -censor <1D file>: An AFNI-style 1D censor file containing a single column of 0/1 values where 0 represents volumes to be censored (e.g., for motion scrubbing)",
       "  -fisherz: Apply Fisher's z transformation (arctanh) to normalize correlation coefficients. Not applied by default.",
       "  -njobs <n>: Number of parallel jobs to run when computing correlations. Default: 4.",
@@ -62,7 +63,7 @@ fname_brainmask <- NULL
 corr_method <- "pearson"
 roi_reduce <- "pca"
 fisherz <- FALSE
-
+dropvols <- 0
 na_string <- "NA"
 
 argpos <- 1
@@ -106,6 +107,9 @@ while (argpos <= length(args)) {
     argpos <- argpos + 1
   } else if (args[argpos] == "-na_string") {
     na_string <- args[argpos + 1]
+    argpos <- argpos + 2
+  } else if (args[argpos] == "-dropvols") {
+    dropvols <- as.numeric(args[argpos + 1]) #number of vols to drop
     argpos <- argpos + 2
   } else {
     stop("Not sure what to do with argument: ", args[argpos])
@@ -363,17 +367,24 @@ rownames(roiavgmat) <- paste0("vol", 1:nrow(roiavgmat))
 
 ##apply censoring to resulting time series
 censorvec <- rep(0, nrow(roiavgmat))
+goodVols <- 1:nrow(roiavgmat)
+
 if (length(censorVols) > 0L) {
     message("Censoring volumes ", paste0(censorVols, collapse=", "), " based on ", fname_censor1D)
-    goodVols <- 1:nrow(roiavgmat)
     goodVols <- goodVols[-censorVols]
     censorvec[censorVols] <- 1
-    roiavgmat_censored <- roiavgmat[goodVols,]
-} else {
-    roiavgmat_censored <- roiavgmat
 }
 
-#output ts file if requested
+##drop initial volumes if requested
+if (dropvols > 0) {
+    message("Dropping ", dropvols, " volumes from ROI time series prior to correlation.")
+    goodVols <- goodVols[-1*(1:dropvols)]
+    censorvec[1:dropvols] <- 1
+}
+
+roiavgmat_censored <- roiavgmat[goodVols,]
+
+##output ts file if requested
 if (nchar(ts_out_file) > 0L) {
     df <- cbind(censor=censorvec, roiavgmat)
     write.table(df, file=ts_out_file, col.names=TRUE, row.names=TRUE)
