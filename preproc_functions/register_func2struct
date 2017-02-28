@@ -1,5 +1,7 @@
 #!/bin/bash
+REGISTER_FUNC2STRUCT_GLOBALS=(mprageBet fm_phase unwarpdir bbr_pedir funcRefimg funcStructFlirtDOF bbrCapable createBBRFmapWarp)
 function register_func2struct {
+    print_vars_in REGISTER_FUNC2STRUCT_GLOBALS
     #Obtain a transformation matrix that co-registers the subject's
     #structural T1 scan with the functional T2* image used as the motion coregistration target (mc_target).
 

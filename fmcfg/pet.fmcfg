@@ -63,7 +63,7 @@ greTE2=7.38 # ms
 # Scansheet: ep2d_BOLD_resting_320meas > Routine > Phase enc. dir. # A>>P 
 # Scansheet: gre_field_mapping > Routine > Phase enc. dir. | R>>L
 
-unwarpdir="x" # R>>L #x+ gives proper results for MM data using convertwarp and flirt -bbr -pedir.
+unwarpdir="y-" # 
 
 ######################################################################
 # Signal loss threshold: Determines where the signal loss in the EPI is too great
