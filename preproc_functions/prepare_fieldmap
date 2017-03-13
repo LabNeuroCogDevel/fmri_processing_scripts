@@ -73,6 +73,7 @@ PREPARE_FIELDMAP_GLOBALS=(bbrCapable funcStructFlirtDOF fm_cfg mcMats fm_phase f
 # 12) Undistort target functional (mc_target) based on EPI-aligned fieldmap, and generate voxel shift map
 # 13) Generate image of shift map overlaid on fieldmap magnitude image
 function prepare_fieldmap {
+  
     print_vars_in PREPARE_FIELDMAP_GLOBALS
     # FM = space of fieldmap
     # EF = space of mc_target
@@ -100,11 +101,15 @@ function prepare_fieldmap {
     [ -z "$fm_phase" ] && rel "no 'fm_phase' (skipping prepare_fieldmap)" c  && return 0 #skip fieldmap 
 
 
+    # we need to do this before testing if complete
+    # because we use the warpdir sourced from the file
+    # later (one-step warp)
+    find_and_source_config "$fm_cfg" || return 1
+
     if [[ -n "${fm_phase}" && -f ".prepare_fieldmap_complete" ]]; then
 	return 0 #preparefieldmap already completed
     fi
 
-    find_and_source_config "$fm_cfg" || return 1
 
     local funcdir=$(pwd) #define working directory for functional processing
 
@@ -734,6 +739,7 @@ find_and_source_config(){
     
     # source config file or warn
     if [ -n "$fm_cfg" -a -r "$fm_cfg" ]; then
+      rel "using '$fm_cfg' for fieldmap config" c
       source $fm_cfg 
     else
       echo "ERROR: readable config file not provided or understood ($fm_cfg)" >&2

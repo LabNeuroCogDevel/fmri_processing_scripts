@@ -377,7 +377,6 @@ if [[ -z $st_first && -z $mc_first && $sliceMotion4D -eq 0 && $no_st -eq 0 ]]; t
 	st_first=0
     fi
 fi
-
 if [ $sliceMotion4D -eq 1 ]; then
     #Option 1: 4-D slice timing + motion correction
     correct_slice_motion_4d

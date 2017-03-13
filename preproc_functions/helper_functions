@@ -438,6 +438,9 @@ function print_vars_in {
    # to build array globals from passed in variable name
    local globalarrayname=$1
    [ -z "$globalarrayname" ] && warn "$FUNC_NAME expects the name of a global array as only input" && return 1
+   #savefile=.${globalarrayname,,}.cfg
+   # above breaks on OSX, change use tr instead of ,, to lowercase  
+   savefile=".$(echo ${globalarrayname}|tr A-Z a-z).cfg"
 
    local ref="$globalarrayname[@]"
    local globals=(${!ref})
@@ -448,7 +451,7 @@ function print_vars_in {
       echo "$var='${!var}'"
    done
    echo
-   ) >> .${globalarrayname,,}.cfg
+   ) >> $savefile
 }
 
 # vim: set tabstop=7:

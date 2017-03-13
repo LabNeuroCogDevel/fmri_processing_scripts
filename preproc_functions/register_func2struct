@@ -32,7 +32,7 @@ function register_func2struct {
 	    -y|y-) bbr_pedir=-2 ;; 
 	    z)     bbr_pedir=3  ;;
 	    -z|z-) bbr_pedir=-3 ;;
-	    *)     echo "Unable to determine unwarping direction"
+	    *)     echo "Unable to determine unwarping direction from '$unwarpdir'"
 		exit 1 ;;
 	esac
 
