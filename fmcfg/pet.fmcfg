@@ -60,8 +60,9 @@ greTE2=7.38 # ms
 #   see which gives better undistortion (the wrong sign will increase the amount of distortion rather than 
 #   decrease it).
 
-# Scansheet: ep2d_BOLD_resting_320meas > Routine > Phase enc. dir. # A>>P 
-# Scansheet: gre_field_mapping > Routine > Phase enc. dir. | R>>L
+# update 20170410 with "COL" and "ROW" dicom header
+# Scansheet: ep2d_BOLD_resting_320meas > Routine > Phase enc. dir. # "COL" A>>P 
+# Scansheet: gre_field_mapping > Routine > Phase enc. dir. # "ROW"  R>>L
 
 unwarpdir="y-" # 
 
