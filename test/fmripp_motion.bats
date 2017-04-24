@@ -91,6 +91,3 @@ teardown() {
   [ "$(col nf 1)" == "$dry" ]
 }
 
-
-
-

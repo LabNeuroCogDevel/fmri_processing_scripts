@@ -1,9 +1,14 @@
 #!/bin/bash
 
-# rm_completefiles -- in helper_functions 
-function parse_args {
-    #parse input arguments, initialize default parameter settings
-    #when called from preprocessFunctional, must pass "$@", which is all input parameters to script
+## where to look for finding the standard space template directory
+# expect files like:
+#   talairach_fsl_mni152/TalFSL_MNI152_T1_3mm_brain
+#   fsl_mni152/MNI152_T1_3mm_brain
+#   mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm
+#   mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2.3mm
+#   spm8_mni/T1_brain
+#   mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm
+function find_standard_template_dir(){
 
     # where can we find standard space brain templates
     # prefer ACI installation
@@ -13,7 +18,7 @@ function parse_args {
        $HOME/standard \
      )
 
-    stddir=
+    local stddir=
     for stddir in ${standard_spaces[@]}; do
        [ -d "$stddir" ] && break
     done
@@ -23,6 +28,17 @@ function parse_args {
       return 1
     fi
 
+    echo $stddir
+    return 0
+
+}
+
+## parse input arguments, initialize default parameter settings
+## when called from preprocessFunctional, must pass "$@", which is all input parameters to script
+# rm_completefiles -- in helper_functions 
+function parse_args {
+    stddir=$(find_standard_template_dir)
+    [ -z $stddir ] && return 1
     
     #initialize defaults
     funcFile=
@@ -57,6 +73,7 @@ function parse_args {
     no_st=0
     no_smooth=0
     no_warp=0
+    autocorr_with_basis=0 # -rmautocorr, 20170420WF -- added in nuisance_regression, 3dREMLfit basis 
     nuisance_regression=0
     nuisance_compute=0
     nuisance_file=.nuisance_regressors
@@ -336,6 +353,9 @@ function parse_args {
 	elif [ $1 = -ref_vol ] ; then
             ref_vol="${2}"
             shift 2
+       elif [ $1 = -rmautocorr ]; then
+           autocorr_with_basis=1
+           shift
 	elif [ $1 = -rescaling_method ]; then
 	    if [[ $2 = "10000_globalmedian" || $2 = "100_voxelmean" ]]; then
 		rescalingMethod="${2}"
@@ -482,6 +502,11 @@ function parse_args {
 
     if [[ $sliceMotion4D -eq 1 && $mc_first -eq 1 ]]; then
 	echo "Cannot request -mc_first with -4d_slice_motion"
+	exit 1
+    fi
+
+    if [[ $autocorr_with_basis -eq 1 && $bandpass_filter -eq 0 ]]; then
+	echo "Cannot request -rmautocorr without -bandpass_filter "
 	exit 1
     fi
 
