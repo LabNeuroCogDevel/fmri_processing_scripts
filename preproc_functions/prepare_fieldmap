@@ -144,6 +144,12 @@ function prepare_fieldmap {
     local fm_magnitudedir=$( dirname "$fm_magnitude" )
     local fm_magnitudebase=$( basename "$fm_magnitude" )
 
+    # 20170426WF -- fieldmap paths must be absolute
+    # abspath is a funciton in helper_functions
+    fm_phasedir=$(abspath $fm_phasedir)
+    fm_magnitudedir=$(abspath $fm_magnitudedir)
+    # TODO: consolidate this code with fileVar for loop below
+
     #randomly sleep 0-2 seconds to avoid lock file collisision
     #Apr2014: I'm not really sure if this is necessary... problems may have emerged from running fslreorient2std simultaneously on originals...
     #Still, for 2 seconds, I'll keep it.

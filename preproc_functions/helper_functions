@@ -20,6 +20,16 @@ function _picture {
     convert -scale 200% -fill white -gravity southwest -annotate 0 "$num $name:  $2" $imgname $imgname
 }
 
+# give absolute path from a potentionally relative path
+# 20170426WF -- added for prepare_fieldmap
+# path given doesn't have to exist, but the directory (dirname) does
+abspath() { 
+ [ -z "$1" ] && return 1
+ dir=$(dirname $1)
+ [ ! -d "$dir" ] && return 1
+ echo $(cd $dir;pwd)/$(basename $1)
+}
+
 function deleteFile() {
     #echo "to del: $1"
 
