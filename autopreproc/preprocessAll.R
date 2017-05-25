@@ -269,9 +269,9 @@ for (d in subj_dirs) {
     ##define root directory for subject's processed data
     if (loc_mrproc_root == "") {
         ##assume that we should create a subdirectory relative to the subject directory
-        outdir <- file.path(d, preprocessed_dirname) #e.g., /Volumes/Serena/MMClock/MR_Raw/10637/MBclock_recon
+        outdir <- file.path(d, preprocessed_dirname) #e.g., /gpfs/group/mnh5174/default/MMClock/MR_Raw/10637/MBclock_recon
     } else {
-        outdir <- file.path(loc_mrproc_root, subid, preprocessed_dirname) #e.g., /Volumes/Serena/MMClock/MR_Proc/10637/native_nosmooth
+        outdir <- file.path(loc_mrproc_root, subid, preprocessed_dirname) #e.g., /gpfs/group/mnh5174/default/MMClock/MR_Proc/10637/native_nosmooth
     }
 
     #determine directories for fieldmap if using

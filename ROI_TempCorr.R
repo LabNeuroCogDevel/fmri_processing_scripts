@@ -47,12 +47,12 @@ if (length(args) == 0L) {
 }
 
 #for testing
-##fname_rsproc <- "/Volumes/Serena/Raj/Preprocess_Rest/10638_20140507/brnswudktm_rest_5.nii.gz" #name of preprocessed fMRI data
-##fname_roimask <- "/Volumes/Serena/Raj/Preprocess_Rest/power264_mni2.3mm.nii.gz"
-##fname_roimask <- "/Volumes/Serena/bars_ica/scripts/Sci160+tlrc.nii.gz"
+##fname_rsproc <- "/gpfs/group/mnh5174/default/Raj/Preprocess_Rest/10638_20140507/brnswudktm_rest_5.nii.gz" #name of preprocessed fMRI data
+##fname_roimask <- "/gpfs/group/mnh5174/default/Raj/Preprocess_Rest/power264_mni2.3mm.nii.gz"
+##fname_roimask <- "/gpfs/group/mnh5174/default/bars_ica/scripts/Sci160+tlrc.nii.gz"
 ##fname_brainmask <- "/Users/michael/standard/fsl_mni152/MNI152_T1_2mm_brain_mask.nii" #optional brain mask to ensure that we don't sample time series from air, CSF, etc.
 ##fname_brainmask <- "/Users/michael/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2.3mm.nii"
-#fname_censor1D <- "/Volumes/Serena/MMClock/MR_Proc/10637_20140304/mni_5mm_wavelet/clock1/motion_info/censor_union.1D"
+#fname_censor1D <- "/gpfs/group/mnh5174/default/MMClock/MR_Proc/10637_20140304/mni_5mm_wavelet/clock1/motion_info/censor_union.1D"
 
 #defaults
 njobs <- 4

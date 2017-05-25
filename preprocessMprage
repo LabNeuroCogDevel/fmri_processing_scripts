@@ -105,7 +105,7 @@ EndOfHelp
 #   it was failing on a couple datasets
 #5/4/2011:
 # - Switched from using the oriented output file from dcm2nii;
-#   its usage is counterindicated (had fucked up qform/sform values)
+#   its usage is counterindicated (had messed up qform/sform values)
 # - Changed the code that determines which nii.gz file to use as anatomical.
 #   now uses regex to determine correct file 
 #3/10/2011:
@@ -120,12 +120,9 @@ source "${scriptDir}/preproc_functions/helper_functions" #contains rel for runni
 source "${scriptDir}/preproc_functions/parse_args" #contains function for parsing command line args
 
 ##load necessary modules if running on cluster (specific to ACI at the moment)
-if command -v module >/dev/null; then
-    module load fsl/5.0.8 >/dev/null 2>&1
-    module load afni/16.0.00 >/dev/null 2>&1
-    module load R/3.2.0 >/dev/null 2>&1
-    module load matlab/R2014b >/dev/null 2>&1
-    module load python/2.7.5 >/dev/null 2>&1
+if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then
+    #setup DEPENd lab environment and programs
+    source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash
 fi
 
 #set defaults for dicomPattern, reference, betOpts, and outputFile

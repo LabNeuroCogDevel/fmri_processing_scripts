@@ -3,8 +3,8 @@
 #prefer env variable, then ACI installation when looking for templates
 if [ -n "$MRI_STDDIR" ]; then
     stddir="$MRI_STDDIR"
-elif [ -d /storage/group/mnh5174_collab/lab_resources/standard ]; then
-    stddir=/storage/group/mnh5174_collab/lab_resources/standard
+elif [ -d /gpfs/group/mnh5174/default/lab_resources/standard ]; then
+    stddir=/gpfs/group/mnh5174/default/lab_resources/standard
 else
     stddir=$HOME/standard
 fi

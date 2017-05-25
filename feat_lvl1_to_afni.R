@@ -7,7 +7,8 @@ printHelp <- function() {
 
 #read in command line arguments.
 args <- commandArgs(trailingOnly = FALSE)
-Sys.setenv(AFNIDIR="/opt/aci/sw/afni/16.0.00/bin")
+##Sys.setenv(AFNIDIR="/opt/aci/sw/afni/16.0.00/bin")
+Sys.setenv(AFNIDIR="/opt/aci/sw/afni/17.0.02/bin")
 
 scriptpath <- dirname(sub("--file=", "", grep("--file=", args, fixed=TRUE, value=TRUE), fixed=TRUE))
 argpos <- grep("--args", args, fixed=TRUE)

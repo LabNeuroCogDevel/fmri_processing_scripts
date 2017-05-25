@@ -1,0 +1,49 @@
+#!/bin/bash
+set -e
+basedir="${1}"
+
+l1featdirs=$( find "$basedir" -iname "*.feat" -type d )
+
+#l1 checks (still running)
+for f in ${l1featdirs}; do
+    if [ -f ${f}/report.html ]; then
+	#for L1, either an error or a message of "STILL RUNNING" would count as problematic
+	grep -q "Error" ${f}/report.html && errors=1 || errors=0
+	grep -q "STILL RUNNING" ${f}/report.html && errors=1
+	if [ $errors -eq 1 ]; then
+	    echo "FEAT directory listed as having errors or STILL RUNNING: ${f}"
+	    rmproceed=
+	    until [[ "$rmproceed" = [NnYy] ]]; do
+		read -sn1 -p "  Delete? (y/n)" rmproceed
+	    done
+
+	    if [[ "$rmproceed" == "Y" || "$rmproceed" == "y" ]]; then
+		echo "  Now deleting $f"
+		rm -rf "${f}"
+	    fi
+	fi	    
+    fi
+done
+
+l2featdirs=$( find "$basedir" -iname "*.gfeat" -type d )
+for f in ${l2featdirs}; do
+    if [ -f ${f}/report.html ]; then
+	#grep -q "Errors occured during the analysis" ${f}/report.html && errors=1 || errors=0
+	grep -q "Error" ${f}/report.html && errors=1 || errors=0
+	#for L1
+	#grep -q "STILL RUNNING" ${f}/report.html && errors=1 || errors=0
+	if [ $errors -eq 1 ]; then
+	    echo "GFEAT directory listed as having errors: ${f}"
+	    rmproceed=
+	    until [[ "$rmproceed" = [NnYy] ]]; do
+		read -sn1 -p "  Delete? (y/n)" rmproceed
+	    done
+
+	    if [[ "$rmproceed" == "Y" || "$rmproceed" == "y" ]]; then
+		echo "  Now deleting $f"
+		rm -rf "${f}"
+	    fi
+	fi	    
+    fi
+done
+
