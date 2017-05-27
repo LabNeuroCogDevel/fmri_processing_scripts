@@ -8,6 +8,7 @@ printHelp <- function() {
         "  -in_file <txt file>: A text file containing rows that include the x, y, and z coordinate for each ROI of interest (ROIs x coordinates)",
         "  -out_file <txt file>: The output file containing the ROI names that correspond to coordinates from the -in_file",
         "  -xyz_cols <x y z>: The columns containing the the x, y, and z coordinates (where the first column in a file is 1). Example: -xyz_cols 3 4 5",
+        "  -roinum_col <number>: The column number in -in_file containing the ROI number. If not specified, ROIs will be numbered in ascending order",
         "",
         "Optional arguments are:",
         "  -afnidir <directory of AFNI installation>: Absolute path to AFNI directory, used to run whereami. If not passed, the script will try to determine.",
@@ -30,6 +31,7 @@ out_file <- "rois_names.txt"
 xyzcols <- NULL
 in_file <- ""
 afnidir <- NULL
+roinum_col <- NULL
 
 argpos <- 1
 while (argpos <= length(args)) {
@@ -44,6 +46,9 @@ while (argpos <= length(args)) {
         argpos <- argpos + 2
     } else if (args[argpos] == "-out_file") {
         out_file <- args[argpos + 1] #name of file to be written
+        argpos <- argpos + 2
+    } else if (args[argpos] == "-roinum_col") {
+        roinum_col <- as.numeric(args[argpos + 1]) #column containing roi number in -in_file
         argpos <- argpos + 2
     } else if (args[argpos] == "-xyz_cols") {
         xyzcols <- args[(argpos + 1):(argpos + 3)] #1-based positions of x, y, and z columns within roi file
@@ -96,5 +101,12 @@ coords <- lookup[coordlines+2] ##first line after header is TLRC, second is MNI
 ##coords <- sub("<a href=.*$", "", coords, perl=TRUE)
 coords <- sub("^\\s*(-?\\d+\\s*mm.*\\{MNI\\})\\s*<a href=.*$", "\\1", coords, perl=TRUE)
 
-df <- data.frame(roi=1:length(bestguess), label=bestguess, coordinates=coords)
+if (!is.null(roinum_col)) {
+    coordfile <- read.table(in_file)
+    roinums <- coordfile[,roinum_col]
+} else {
+    roinums <- 1:length(bestguess)
+}
+
+df <- data.frame(roi=roinums, label=bestguess, coordinates=coords)
 write.table(df, file=out_file, quote=TRUE, sep="\t", row.names=FALSE)
