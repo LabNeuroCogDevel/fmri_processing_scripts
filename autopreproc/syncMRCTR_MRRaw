@@ -1,81 +1,109 @@
 #!/bin/bash
-
-source ~/.bashrc
-
 set -ex
-#setup master connection to meson
-ls $HOME/.ssh/controlmasters/*WPC-6290* 2>/dev/null 1>/dev/null || ./meson.expect
 
-if [[ $# -ne 3 ]]; then
-    echo "Expect three parameters: <meson data directory> <local output directory> <expected subject id regex>"
-    exit 1
+#source ~/.bashrc
+#setup master connection to remote
+#ls $HOME/.ssh/controlmasters/*WPC-6290* 2>/dev/null 1>/dev/null || ./remote.expect
+
+#if [[ $# -ne 3 ]]; then
+#    echo "Expect three parameters: <remote data directory> <local output directory> <expected subject id regex>"
+#    exit 1
+#fi
+
+#remote_mrraw_root="${1}"
+#local_dir="${2}"
+#remote_subid_regex="${3}"
+#remote_subid_regex="${4}"
+
+[ -z "${remote_host}" ] && echo "Expect remote_host variable to be set in environment" && exit 1
+[ -z "${remote_mrraw_root}" ] && echo "Expect remote_mrraw_root variable to be set in environment" && exit 1
+[ -z "${remote_folder_depth}"] && remote_folder_depth=1 #how many subfolders beneath remote_mrraw_root to look for subjects
+[ -z "${remote_subid_regex}" ] && echo "Expect remote_subid_regex variable to be set in environment" && exit 1
+[ -z "${loc_mrraw_root}" ] && echo "Expect loc_mrraw_root variable to be set in environment" && exit 1
+
+[ ! -d "${loc_mrraw_root}" ] && echo "Cannot find local dir: ${loc_mrraw_root}" && exit 1
+
+[ ! -f "${loc_mrraw_root}/mrraw_dircache" ] && touch "${loc_mrraw_root}/mrraw_dircache" #create empty directory cache if not in place
+
+#obtain list of subject directories on remote
+if [ -n "${remote_folder_filter}" ]; then
+    #filter out a specific regex pattern (typically folders) on remote host that indicate data not to be copied
+    ssh ${remote_host} "find ${remote_mrraw_root} -mindepth ${remote_folder_depth} -maxdepth ${remote_folder_depth} -type d" | grep -Ev "${remote_folder_filter}" | grep -E "${remote_subid_regex}" | sort > "${loc_mrraw_root}/mrraw_dirlist"
+else
+    ssh ${remote_host} "find ${remote_mrraw_root} -mindepth ${remote_folder_depth} -maxdepth ${remote_folder_depth} -type d" | grep -E "${remote_subid_regex}" | sort > "${loc_mrraw_root}/mrraw_dirlist"
 fi
 
-meson_dir="${1}"
-local_dir="${2}"
-subid_regex="${3}"
-
-[ ! -d "${local_dir}" ] && echo "Cannot find local dir: ${local_dir}" && exit 1
-
-[ ! -f "${local_dir}/mrraw_dircache" ] && touch "${local_dir}/mrraw_dircache" #create empty directory cache if not in place
-
-#obtain list of subject directories on meson
-ssh meson "find ${meson_dir} -mindepth 2 -maxdepth 2 -type d" | grep -Ev "(multiband|shimtest)" | grep -E "${subid_regex}" | sort > "${local_dir}/mrraw_dirlist"
 
 #compare listing from ssh with cached list of directories already processed
-comm -23 <(sort "${local_dir}/mrraw_dirlist") <(sort "${local_dir}/mrraw_dircache") > "${local_dir}/newsubs"
+comm -23 <(sort "${loc_mrraw_root}/mrraw_dirlist") <(sort "${loc_mrraw_root}/mrraw_dircache") > "${loc_mrraw_root}/newsubs"
 
 #process subjects to ignore
-if [[ -f "${local_dir}/.autopreproc_ignore" && $( awk 'END{print NR}' "${local_dir}/newsubs" ) -gt 0 ]]; then
+if [[ -f "${loc_mrraw_root}/.autopreproc_ignore" && $( awk 'END{print NR}' "${loc_mrraw_root}/newsubs" ) -gt 0 ]]; then
     #use sed to remove trailing white space or comments beginning with pound
-    grep -v -f <(sed -E -e 's/[[:space:]]*$|[[:space:]]*#.*$//' "${local_dir}/.autopreproc_ignore") "${local_dir}/newsubs" > "${local_dir}/newsubs_filt" || touch "${local_dir}/newsubs_filt" #grep returns exit 1 on no match, so create empty file
-    grep -f <(sed -E -e 's/[[:space:]]*$|[[:space:]]*#.*$//' "${local_dir}/.autopreproc_ignore") "${local_dir}/newsubs" > "${local_dir}/newsubs_match" || touch "${local_dir}/newsubs_match"
+    grep -v -f <(sed -E -e 's/[[:space:]]*$|[[:space:]]*#.*$//' "${loc_mrraw_root}/.autopreproc_ignore") "${loc_mrraw_root}/newsubs" > "${loc_mrraw_root}/newsubs_filt" || touch "${loc_mrraw_root}/newsubs_filt" #grep returns exit 1 on no match, so create empty file
+    grep -f <(sed -E -e 's/[[:space:]]*$|[[:space:]]*#.*$//' "${loc_mrraw_root}/.autopreproc_ignore") "${loc_mrraw_root}/newsubs" > "${loc_mrraw_root}/newsubs_match" || touch "${loc_mrraw_root}/newsubs_match"
 
-    if [ $( awk 'END{print NR}' "${local_dir}/newsubs_match" ) -gt 0 ]; then
+    if [ $( awk 'END{print NR}' "${loc_mrraw_root}/newsubs_match" ) -gt 0 ]; then
 	echo "The following subjects were filtered based on .autopreproc_ignore"
-	sed -e 's/^/   /' "${local_dir}/newsubs_match" #white space pad beginning of line
+	sed -e 's/^/   /' "${loc_mrraw_root}/newsubs_match" #white space pad beginning of line
 	echo ""
-	mv -f "${local_dir}/newsubs_filt" "${local_dir}/newsubs"
-	rm -f "${local_dir}/newsubs_match"
+	mv -f "${loc_mrraw_root}/newsubs_filt" "${loc_mrraw_root}/newsubs"
+	rm -f "${loc_mrraw_root}/newsubs_match"
     else
-	rm -f "${local_dir}/newsubs_match" "${local_dir}/newsubs_filt"
+	rm -f "${loc_mrraw_root}/newsubs_match" "${loc_mrraw_root}/newsubs_filt"
     fi
 fi
 
-nnew=$( awk 'END{print NR}' "${local_dir}/newsubs" )
+nnew=$( awk 'END{print NR}' "${loc_mrraw_root}/newsubs" )
 if [ $nnew -gt 0 ]; then
 
     #loop over any new subjects to process
     while read dirname
     do
-	echo "Processing $dirname"
-	nclock=($( ssh -n meson "find $dirname -mindepth 1 -maxdepth 1 -iname \"*clock*\" -type d" ))
-	
-	if [ ${#nclock[@]} -gt 0 ]; then
-	    if [ ! -d "${local_dir}/$( basename $dirname )" ]; then
-		rsync --recursive --verbose --perms --times \
-		    --filter='-p .DS_Store' \
-		    --filter="- /.DocumentRevisions-V100/" \
-		    --filter="- /.Spotlight-V100/" \
-		    --filter="- /.Trashes/" \
-		    --filter="- /.TemporaryItems/" \
-		    "meson:${dirname}/" \
-		    "${local_dir}/$( basename $dirname )"
-	    else
-		echo "   ${local_dir}/$( basename $dirname ) exists"
-	    fi
+	if [ ! -d "${loc_mrraw_root}/$( basename $dirname )" ]; then
+	    rsync --recursive --verbose --perms --times \
+		  --filter='-p .DS_Store' \
+		  --filter="- /.DocumentRevisions-V100/" \
+		  --filter="- /.Spotlight-V100/" \
+		  --filter="- /.Trashes/" \
+		  --filter="- /.TemporaryItems/" \
+		  "${remote_host}:${dirname}/" \
+		  "${loc_mrraw_root}/$( basename $dirname )"
+	    [ -n "${postrsync_exec}" ] && eval "${postrsync_exec} ${loc_mrraw_root}/$( basename $dirname )"
 	else
-	    echo "   Not a clock scan"
+	    echo "   ${loc_mrraw_root}/$( basename $dirname ) exists"
 	fi
+
+	#older syntax that requires at least one directory in the folder to contain "clock"
+	
+	#echo "Processing $dirname"
+	#nclock=($( ssh -n ${remote_host} "find $dirname -mindepth 1 -maxdepth 1 -iname \"*clock*\" -type d" ))
+	
+	#if [ ${#nclock[@]} -gt 0 ]; then
+	#    if [ ! -d "${loc_mrraw_root}/$( basename $dirname )" ]; then
+	#	rsync --recursive --verbose --perms --times \
+	#	    --filter='-p .DS_Store' \
+	#	    --filter="- /.DocumentRevisions-V100/" \
+	#	    --filter="- /.Spotlight-V100/" \
+	#	    --filter="- /.Trashes/" \
+	#	    --filter="- /.TemporaryItems/" \
+	#	    "${remote_host}:${dirname}/" \
+	#	    "${loc_mrraw_root}/$( basename $dirname )"
+	#    else
+	#	echo "   ${loc_mrraw_root}/$( basename $dirname ) exists"
+	#    fi
+	#else
+	#    echo "   Not a clock scan"
+	#fi
 	#echo $?
-    done < "${local_dir}/newsubs"
+    done < "${loc_mrraw_root}/newsubs"
 
     #add processed subjects to cache
-    cat "${local_dir}/newsubs" >> "${local_dir}/mrraw_dircache"
+    cat "${loc_mrraw_root}/newsubs" >> "${loc_mrraw_root}/mrraw_dircache"
 
 else
-    echo "No new subjects detected on MRRC server."
+    echo "No new subjects detected on ${remote_host} server."
 fi
 
-rm -f "${local_dir}/newsubs"
-rm -f "${local_dir}/mrraw_dirlist" #cleanup dir listing from ssh
+rm -f "${loc_mrraw_root}/newsubs"
+rm -f "${loc_mrraw_root}/mrraw_dirlist" #cleanup dir listing from ssh

@@ -43,12 +43,14 @@ MB_src = Sys.getenv("loc_mb_root") #Name of directory containing offline-reconst
 mb_filepattern = Sys.getenv("mb_filepattern") #Wildcard pattern of MB reconstructed data within MB_src
 useOfflineMB = ifelse(nchar(MB_src) > 0, TRUE, FALSE) #whether to use offline-reconstructed hdr/img files as preprocessing starting point
 proc_freesurfer = as.numeric(Sys.getenv("proc_freesurfer")) #whether to run the structural scan through FreeSurferPipeline after preprocessMprage
+
 fs_subjects_dir = NULL
 if (is.na(proc_freesurfer)) {
     proc_freesurfer <- FALSE
 } else if (proc_freesurfer == 1) {
     proc_freesurfer <- TRUE
     fs_subjects_dir <- Sys.getenv("SUBJECTS_DIR")
+    freesurfer_id_prefix = Sys.getenv("freesurfer_id_prefix") #string to prepend onto subject id for uniqueness
 } else {
     proc_freesurfer <- FALSE #should I trap other possibilities here?    
 }
@@ -221,11 +223,11 @@ if (proc_freesurfer) {
             message("Cannot locate processed mprage data for: ", outdir)
         } else if (!file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {
             message("Cannot locate .preprocessmprage_complete in: ", outdir)
-        } else if (file.exists(file.path(fs_subjects_dir, subid))) {
+        } else if (file.exists(file.path(fs_subjects_dir, paste0(freesurfer_id_prefix, subid)))) {
             message("Skipping FreeSurfer pipeline for subject: ", subid)
         } else {
             fs_toproc <- c(fs_toproc, file.path(outdir, "mprage"))
-            ids_toproc <- c(ids_toproc, subid)
+            ids_toproc <- c(ids_toproc, paste0(freesurfer_id_prefix, subid))
         }
     }
 
@@ -417,7 +419,7 @@ for (d in subj_dirs) {
         funcdirs <- sort(normalizePath(Sys.glob(file.path(d, functional_dirpattern))))
 
         if (length(funcdirs) != n_expected_funcruns) {
-            message("Cannot find the expected number of functional run directories in ", d, "for pattern", function_dirpattern)
+            message("Cannot find the expected number of functional run directories in ", d, "for pattern", functional_dirpattern)
             message("Skipping participant for now")
             next
         }
@@ -444,7 +446,7 @@ for (d in subj_dirs) {
                 ##dir.create(rundir) #create empty run directory for now
                 functional_src_queue <- c(functional_src_queue, funcdirs[r])
                 functional_dest_queue <- c(functional_dest_queue, rundir)
-            }            
+            }
         }
                 
         refimgs <- NA #need to handle Prisma CMRR MB data here where reference images are placed in separate directory

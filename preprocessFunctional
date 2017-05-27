@@ -165,9 +165,11 @@ EndOfHelp
 }
 
 #Written: 5/18/2010
-#Last updated: 5/10/2016
+#Last updated: 5/27/2017
 #
 #Changelog:
+#5/27/2017
+# - Support -func_refimg detect to have script look for DICOM with the same protocol name, but single-band reference
 #5/10/2016 (MH)
 # - Support -func_refimg as DICOM for CMRR single-band images
 # - Prefer standard templates in shared location

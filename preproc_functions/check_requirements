@@ -20,6 +20,15 @@ function check_requirements {
 	read tr < .detect_tr
     fi
 
+    if [ -f .detect_series ]; then
+	read series < .detect_series
+    fi
+
+    if [ -f .detect_protocolname ]; then
+	read protocolname < .detect_protocolname
+    fi
+
+    
     #check that slice acquisition order and TR was specified or detected in case of 4d input
     if [ -n "$funcFile" ]; then
 	if [[ -z $sliceAcquisition && $no_st -eq 0 && -z $sliceTimesFile ]]; then #only enforce provision of slice acquisition order if slice timing in pipeline.
@@ -39,6 +48,49 @@ function check_requirements {
     fi
 
     if [ -n "$funcRefimg" ]; then
+	if [ "$funcRefimg" == "detect" ]; then
+	    #look for dicom in previous and following series
+	    if [ -z "$series" ]; then
+		echo "series variable not set, but -func_refimg detect specified. Cannot determine how to search for SBref"
+		exit 1
+	    fi
+
+	    if [ -z "$protocolname" ]; then
+		echo "protocolname variable not set, but -func_refimg detect specified. Cannot determine how to search for SBref"
+		exit 1
+	    fi
+	    
+	    #find first file matching the dicom pattern in subfolders of the directory
+	    local pardir=$(cd ../; pwd)
+	    local sbrefFound=0
+	    while IFS= read -r -d '' dir; do
+		#echo "find '$dir' -iname '$dicomPattern' -type f -print -quit"
+		firstDicom=$( find "$dir" -iname "$dicomPattern" -type f -print -quit )
+		#echo "dcm: $firstDicom"
+		
+		if [ -n "${firstDicom}" ]; then #check the number of characters in the string
+		    local cDicom=$( dicom_hdr -sexinfo "${firstDicom}" )
+		    local cProtocol=$( echo "${cDicom}" | grep -i "ACQ Protocol Name" | perl -pe "s:.*ACQ Protocol Name//(\w+).*$:\1:" )
+		    local cSeries=$( echo "${cDicom}" | grep "REL Series Number//" | perl -pe 's|^.*REL Series Number//(\d+).*$|\1|' ) #series number
+
+		    echo "${cDicom}" | grep -q "REL Image Comments//Single-band reference" && local cSbref=1 || local cSbref=0
+		    
+		    #echo "cprotocol: $cProtocol, cSeries: $cSeries, issbref: $cSbref, series to match: $series, proto to match: $protocolname"
+		    if [[ "$cProtocol" == "$protocolname" && ( $cSeries == $(( series - 1)) || $cSeries == $(( series + 1)) ) && $cSbref == 1 ]]; then
+			sbrefFound=1
+			funcRefimg="${firstDicom}"
+			rel "  Detected SBref image -func_refimg: ${funcRefimg}" c
+			break
+		    fi
+		fi
+	    done < <(find $pardir -mindepth 1 -maxdepth 1 -type d -print0)
+
+	    if [ $sbrefFound -eq 0 ]; then
+		rel "Unable to detect -func_refimg in $pardir. Cannot continue." c
+		exit 1
+	    fi
+	fi
+	
 	if [[ ! -f "$funcRefimg" ]] && [[ ! -h "${funcRefimg}" ]]; then
 	    echo -e "Functional reference scan (-func_refimg) specified but not found: ${funcRefimg}.\nExiting.\n"
 	    exit 1
