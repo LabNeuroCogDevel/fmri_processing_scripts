@@ -57,6 +57,9 @@ Command line options:
   -fm_cfg: configuration file for handling fieldmap (TEs, echo spaceing, etc.)
   -func_refimg: T2* image (as NIfTI) used as intermediate registration target (i.e., func -> ref -> structural -> template).
         This is useful when the T2* images have poor GM/WM contrast (such as 1.0s MB 5x sequence) and BBR is doing poorly for some subjects.
+        Note: this can be a single DICOM image, which will be converted to NIfTI.
+        Note: this can also be a directory, in which case the script assumes it is the subject's raw directory and will search for an SBref 
+	  image corresponding to the protocol name of the functional data and is either the previous or subsequent series number.
   -func_struc_dof: The number of degrees of freedom to be used when co-registering the mean subject
         functional (EPI) scan to the subject structural (T1) scan. Defaults to bbr (boundary based registration).
         -func_struc_dof bbr. BBR segments the T1 to create a white matter boundary mask, which is used to help align EPI and T1.
@@ -66,6 +69,7 @@ Command line options:
   -help: Print command help.
   -hp_filter: high-pass filtering frequency (in volumes). Anything faster than this value will be passed. Default is 80. 
         Can also be specified in seconds using suffix "s", such as -hp_filter 100s.
+  -ica_aroma: automatically remove motion artifacts using ICA-AROMA method of Pruim 2015 NeuroImage. Applied after smoothing
   -log: Name for log file that documents each command that is run. Default: preprocessFunctional.log
   -mc_first: run motion correction before slice timing correction, regardless of slice acquisition order.
   -mc_movie: create .mpg movies of head movement before and after motion correction (depends on create4DMovie).
@@ -88,6 +92,8 @@ Command line options:
         Comma-delimited list (no spaces!) that can include: 6motion, rx, ry, rz, tx, ty, tz, wm (white matter), csf (cerebrospinal fluid), 
         gs (global signal). Derivatives of any of these can be added by using the prefix "d" (e.g., dcsf).
         If bandpass filtering is specified, nuisance regression is done by 3dBandpass (Hallquist et al. 2013, NeuroImage). Otherwise, use 3dDetrend.
+        If a number follows csf or wm (e.g., csf5), then an anatomical CompCor approach is taken with the desired number of principal components
+	   computed using AFNI 3dmaskSVD.
         Example: -nuisance_regression 6motion,csf,wm,dcsf,dwm
   -output_basename: Base name of file output during DICOM -> NIfTI conversion. Default: functional
   -ref_vol: Reference volume to be used in motion correction. Will default to mean volume if not passed.
@@ -141,10 +147,11 @@ The major steps in the processing pipeline are, in order:
   5)   Field map unwarping (optional) - u
   6)   Co-registration and warping to standard space - w
   7)   Smoothing - s
-  8)   High-pass filtering - f
-  9)   Intensity normalization - n
-  10)  Nuisance regression (optional) - r
-  11)  Bandpass filtering (optional) - b
+  8)   ICA-AROMA (optional) - a
+  9)   High-pass filtering - f
+  10)  Intensity normalization - n
+  11)  Nuisance regression (optional) - r
+  12)  Bandpass filtering (optional) - b
 
 Note that if the slice acquisition order is sequential, then the default is to appply motion correction before slice timing correction, whereas for
 interleaved acquisition, the default is slice timing first. The order of these steps can be explicitly specified using -st_first, -mc_first, or -no_st.
@@ -169,7 +176,9 @@ EndOfHelp
 #
 #Changelog:
 #5/27/2017
-# - Support -func_refimg detect to have script look for DICOM with the same protocol name, but single-band reference
+# - Support -func_refimg <directory> to have script look for DICOM with the same protocol name, but single-band reference, within subject's raw dir
+# - Support -ica_aroma to execute ICA-based Automatic Removal of Motion Artifact algorithm (Pruim 2015).
+# - Support csf<ncomponents> and wm<ncomponents> syntax in -nuisance_regression to support aCompCor approach by extracting principal components
 #5/10/2016 (MH)
 # - Support -func_refimg as DICOM for CMRR single-band images
 # - Prefer standard templates in shared location
@@ -413,6 +422,9 @@ fi
 
 # spatial smoothing
 spatial_smooth                 # preproc_functions/spatial_smooth
+
+# ICA-AROMA (denoising of motion artifacts)
+ica_aroma                      # preproc_functions/ica_aroma
 
 # high pass filtering
 highpass_filter                # preproc_functions/highpass_filter

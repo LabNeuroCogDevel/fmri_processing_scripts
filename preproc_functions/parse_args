@@ -35,10 +35,11 @@ function rm_completefiles {
     deleteFile ".warp_complete"
     deleteFile ".compute_warp_complete"
     deleteFile ".smoothing_complete"
+    deleteFile ".ica_aroma_complete"
     deleteFile ".temporal_filtering_complete"
     deleteFile ".rescaling_complete"
     deleteFile ".thresholding_complete"
-    deleteFile ".despike_complete"
+    deleteFile ".despike_complete"    
     deleteFile ".fmunwarp_complete"
     deleteFile ".prepare_fieldmap_complete"
     deleteFile ".nuisance_regression_complete"
@@ -73,6 +74,7 @@ function parse_args {
     funcStructFlirtDOF="bbr" #boundary-based registration in FSL 5.0+
     funcWarpInterp="spline"
     hpFilter=80 #default to 80 TR high-pass filter
+    ica_aroma=0 #whether to run smoothed data through ICA-AROMA
     logFile="preprocessFunctional.log"
     mc_first= #default to empty and choose at stage of motion + slice timing depending on user specification and slice acquisition order
     mc_movie=0
@@ -269,6 +271,9 @@ function parse_args {
 	elif [ $1 = -hp_filter ]; then
 	    hpFilter="${2}"
 	    shift 2
+	elif [ $1 = -ica_aroma ]; then
+	    ica_aroma=1
+	    shift 1
 	elif [ $1 = -log ]; then
 	    logFile="${2}"
 	    shift 2

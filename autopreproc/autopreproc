@@ -64,6 +64,7 @@ function resetcfg {
     proc_functional=0
     functional_dirpattern=
     functional_dicompattern=
+    detect_refimg=0
 }
 
 njobs=8 #default to 8 parallel jobs

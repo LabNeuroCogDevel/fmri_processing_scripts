@@ -64,6 +64,16 @@ if (is.na(proc_functional)) {
     proc_functional <- FALSE #should I trap other possibilities here?    
 }
 
+detect_refimg = as.numeric(Sys.getenv("detect_refimg")) #whether to pass raw directory to preprocessFunctional in order to detect refimg
+if (is.na(detect_refimg)) {
+    detect_refimg <- FALSE
+} else if (detect_refimg == 1) {
+    detect_refimg <- TRUE
+} else {
+    detect_refimg <- FALSE #should I trap other possibilities here?    
+}
+
+
 #setup default parameters
 if (mprage_dicompattern == "") { mprage_dicompattern = "MR*" }
 if (functional_dicompattern == "") { functional_dicompattern = "MR*" }
@@ -448,13 +458,16 @@ for (d in subj_dirs) {
                 functional_dest_queue <- c(functional_dest_queue, rundir)
             }
         }
-                
-        refimgs <- NA #need to handle Prisma CMRR MB data here where reference images are placed in separate directory
-        ##because of the unsophisticated cp -rp approach for dicoms, we cannot do the dir.create step above and then
-        ##list.dirs below. This works in the MB case because of the more careful checks on number of runs etc.
+
+        if (detect_refimg) {
+            refimgs <- d #pass forward subject's raw directory to preprocessFunctional to have refimg detected
+        } else  {
+            refimgs <- NA #need to handle Prisma CMRR MB data here where reference images are placed in separate directory
+            ##because of the unsophisticated cp -rp approach for dicoms, we cannot do the dir.create step above and then
+            ##list.dirs below. This works in the MB case because of the more careful checks on number of runs etc.
+        }
         
-        all_funcrun_dirs[[d]] <- data.frame(funcdir=rundirs,
-                                            refimgs=refimgs, magdir=magdir, phasedir=phasedir, mpragedir=mpragedir, stringsAsFactors=FALSE)
+        all_funcrun_dirs[[d]] <- data.frame(funcdir=rundirs, refimgs=refimgs, magdir=magdir, phasedir=phasedir, mpragedir=mpragedir, stringsAsFactors=FALSE)
 
     }
     

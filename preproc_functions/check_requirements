@@ -48,7 +48,8 @@ function check_requirements {
     fi
 
     if [ -n "$funcRefimg" ]; then
-	if [ "$funcRefimg" == "detect" ]; then
+	if [ -d "$funcRefimg"  ]; then
+	    #if -funcRefImg is a directory, assume that this is the raw directory for the subject and we should detect the reference	    
 	    #look for dicom in previous and following series
 	    if [ -z "$series" ]; then
 		echo "series variable not set, but -func_refimg detect specified. Cannot determine how to search for SBref"
@@ -61,7 +62,7 @@ function check_requirements {
 	    fi
 	    
 	    #find first file matching the dicom pattern in subfolders of the directory
-	    local pardir=$(cd ../; pwd)
+	    local rawdir=$funcRefimg
 	    local sbrefFound=0
 	    while IFS= read -r -d '' dir; do
 		#echo "find '$dir' -iname '$dicomPattern' -type f -print -quit"
@@ -83,10 +84,10 @@ function check_requirements {
 			break
 		    fi
 		fi
-	    done < <(find $pardir -mindepth 1 -maxdepth 1 -type d -print0)
+	    done < <(find $rawdir -mindepth 1 -maxdepth 1 -type d -print0)
 
 	    if [ $sbrefFound -eq 0 ]; then
-		rel "Unable to detect -func_refimg in $pardir. Cannot continue." c
+		rel "Unable to detect -func_refimg in $rawdir. Cannot continue." c
 		exit 1
 	    fi
 	fi
@@ -118,6 +119,11 @@ function check_requirements {
 	rel "imrm epiref_brain_seg" #not needed for anything
 	#use epiref_brain_restore for coregistration
     fi
+
+    #if no warp and ICA-AROMA are both requested, we must compute the warp to MNI to have the script work properly
+    if [[ $no_warp -eq 1 && $ica_aroma -eq 1 ]]; then
+	compute_warp=1
+    fi
     
     #check for existence of required files
     #mprageBet and warpCoef only required if warping to a standard template (or just computing via -compute_warp_only).
@@ -148,5 +154,4 @@ function check_requirements {
 	    exit 1
 	fi
     fi
-
 }

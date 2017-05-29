@@ -31,7 +31,9 @@ function compute_nuisance_regressors {
     OLDIFS="${IFS}"
     IFS=',' read -ra reg <<< "$nuisance_regressors"
     IFS="${OLDIFS}"
-    reg=$( printf "%s\n" "${reg[@]}" | sort -u ) #eliminate any duplicate regressors
+    #reg=$( printf "%s\n" "${reg[@]}" | sort -u ) #eliminate any duplicate regressors
+    #switched to perl because it does not reorder regressors
+    reg=$( printf "%s\n" "${reg[@]}" | perl -ne 'print if ! $a{$_}++' ) #eliminate any duplicate regressors
 
     for r in $reg; do
 	if [[ "$r" =~ ^(6motion|rx|ry|rz|tx|ty|tz)$ && ! -f ".motion_demean" ]]; then 
@@ -46,7 +48,7 @@ function compute_nuisance_regressors {
 		-derivative -demean -write .motion_deriv
 	fi
 
-	if [[ "$r" =~ ^(csf|dcsf)$ && ! -f ".csf_ts" ]]; then
+	if [[ "$r" =~ ^(csf|dcsf|csf[0-9]+|dcsf[0-9]+)$ && ! -f ".csf_ts" ]]; then
 	    #technically should probably change this to allow for use of templates for -warp_compute
 	    if [ $no_warp -eq 0 ]; then
 		#if we have a warp to standard space then use the inverse warp to transform the csf mask from the probabilistic atlas to subject space
@@ -57,7 +59,6 @@ function compute_nuisance_regressors {
 		    #thr 0.98 without erosion works well here: 274 voxels
 		    rel "fslmaths \"$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_csf_tal_nlin_asym_09c_2.3mm\" -thr 0.98 -bin .template_csf_prob"
 		elif [ $templateName = MNI_2mm ]; then
-
 		    rel "fslmaths \"$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_csf_tal_nlin_asym_09c_2mm\" -thr 0.98 -bin .template_csf_prob"
 		elif [ $templateName = SPM_2mm ]; then
 		    #thr 0.6 works best here: 193 voxels
@@ -69,8 +70,8 @@ function compute_nuisance_regressors {
 		    rel "Unsupported template brain for CSF extraction: $templateName" c
 		    exit 1
 		fi
-		
-		rel "3dmaskave -mask .template_csf_prob${ext} -q ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskave failed. Unable to extract CSF voxels. Check your mask! .template_csf_prob${ext}" && exit 1 )
+
+		local csfmask=.template_csf_prob${ext}    
 	    else
 		#use the subject's segmented anatomical scan to identify the csf voxels
 		
@@ -100,32 +101,35 @@ function compute_nuisance_regressors {
 		    rel "cluster -i .csf_pve_thr0p8 -t 1.0 --osize=.csf_pve_clustsize_noero --no_table"
 		    rel "fslmaths .csf_pve_clustsize_noero -thr 15.01 -bin -mas ${postSS}_tmean_mask .csf_mask_noero -odt char"
 
-		    #obtain CSF timeseries from CSF mask in functional space
-		    rel "3dmaskave -mask .csf_mask_noero${ext} -q ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskave failed. Unable to extract CSF voxels. Check your mask! .wm_mask_noero${ext}" && exit 1 )
-
+		    local csfmask=.csf_mask_noero${ext}
 		else
-		    rel "3dmaskave -mask .csf_mask${ext} -q ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskave failed. Unable to extract CSF voxels. Check your mask! .csf_mask${ext}" && exit 1 )
+		    local csfmask=.csf_mask${ext}
 		fi
-
+		
 		#cleanup some intermediate files
 		rel "imrm .csf_pve_thr0p8 .csf_pve_thr0p8_ero1 .csf_pve_clustsize .csf_pve_clustsize_noero"
-
 	    fi
-
+	    
+	    #extract CSF time series. If a number follows the CSF specification, this is an aCompCor approach with the specified number of components
+	    if [[ "$r" =~ ^(csf[0-9]+|dcsf[0-9]+)$ ]]; then
+		rel "3dmaskSVD -vnorm -mask $csfmask -sval ${r/?(d)csf/} -polort 2 ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskSVD failed. Unable to extract CSF voxels. Check your mask! $csfmask" && exit 1 )
+	    else
+		rel "3dmaskave -mask $csfmask -q ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskave failed. Unable to extract CSF voxels. Check your mask! $csfmask" && exit 1 )
+	    fi
+	    
 	    rel "1d_tool.py -overwrite -infile .csf_ts -derivative -write .csf_ts_deriv"
 	fi
 
-	if [[ "$r" =~ ^(wm|dwm)$ && ! -f ".wm_ts" ]]; then
+	if [[ "$r" =~ ^(wm|dwm|wm[0-9]+|dwm[0-9]+)$ && ! -f ".wm_ts" ]]; then
 	    if [ $no_warp -eq 0 ]; then
-		#if we have a warp to standard space then use the inverse warp to transform the csf mask from the probabilistic atlas to subject space
+		#if we have a warp to standard space then use the inverse warp to transform the wm mask from the probabilistic atlas to subject space
 		if [ $templateName = MNI_3mm ]; then
 		    #0.9 with erosion gives nice mask: 793 voxels
 		    rel "fslmaths \"$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_wm_tal_nlin_asym_09c_3mm\" -thr 0.9 -bin -eroF .template_wm_prob"
 		elif [ $templateName = MNI_2.3mm ]; then
 		    #0.95 with erosion: 2681 voxels
 		    rel "fslmaths \"$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_wm_tal_nlin_asym_09c_2.3mm\" -thr 0.95 -bin -eroF .template_wm_prob"
-		elif [ $templateName = MNI_2mm ]; then
-		    
+		elif [ $templateName = MNI_2mm ]; then		    
 		    rel "fslmaths \"$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_wm_tal_nlin_asym_09c_2mm\" -thr 0.95 -bin -eroF .template_wm_prob"
 		elif [ $templateName = SPM_2mm ]; then
 		    #0.85 with erosion: 2981 voxels
@@ -134,11 +138,11 @@ function compute_nuisance_regressors {
 		    #0.8 with erosion: 659 voxels
 		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_white_3mm.nii\" -thr 0.8 -bin -eroF .template_wm_prob"	    
 		else
-		    rel "Unsupported template brain for CSF extraction: $templateName" c
+		    rel "Unsupported template brain for WM extraction: $templateName" c
 		    exit 1
 		fi
 
-		rel "3dmaskave -mask .template_wm_prob${ext} -q ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskave failed. Unable to extract WM voxels. Check your mask! .template_wm_prob${ext}" && exit 1 )
+		local wmmask=.template_wm_prob${ext}
 	    else
 
 		#fast segmentation should have been run during preprocessMprage
@@ -170,16 +174,22 @@ function compute_nuisance_regressors {
 		    rel "cluster -i .wm_pve_thr0p8_ero1 -t 1.0 --osize=.wm_pve_clustsize_ero1 --no_table"
 		    rel "fslmaths .wm_pve_clustsize_ero1 -thr 50.01 -bin -mas ${postSS}_tmean_mask .wm_mask_ero1 -odt char"
 
-		    #obtain average WM timeseries from WM mask in functional space
-		    rel "3dmaskave -mask .wm_mask_ero1${ext} -q ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskave failed. Unable to extract WM voxels. Check your mask! .wm_mask_ero1${ext}" && exit 1 )
+		    local wmmask=.wm_mask_ero1${ext}
 		else
-		    rel "3dmaskave -mask .wm_mask${ext} -q ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskave failed. Unable to extract WM voxels. Check your mask! .wm_mask${ext}" && exit 1 )
+		    local wmmask=.wm_mask${ext}
 		fi    
 
 		#cleanup some intermediate files
 		rel "imrm .wm_pve_thr0p8 .wm_pve_thr0p8_ero2 .wm_pve_thr0p8_ero1 .wm_pve_clustsize .wm_pve_clustsize_noero_ero1"
 	    fi
 
+	    #extract WM time series. If a number follows the WM specification, this is an aCompCor approach with the specified number of components
+	    if [[ "$r" =~ ^(wm[0-9]+|wm[0-9]+)$ ]]; then
+		rel "3dmaskSVD -vnorm -mask $wmmask -sval ${r/?(d)wm/} -polort 2 ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskSVD failed. Unable to extract WM voxels. Check your mask! $wmmask" && exit 1 )
+	    else
+		rel "3dmaskave -mask $wmmask -q ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskave failed. Unable to extract WM voxels. Check your mask! $wmmask" && exit 1 )
+	    fi
+	    
 	    rel "1d_tool.py -overwrite -infile .wm_ts -derivative -write .wm_ts_deriv"
 	fi
 
