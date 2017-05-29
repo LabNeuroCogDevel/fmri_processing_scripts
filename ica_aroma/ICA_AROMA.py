@@ -6,6 +6,7 @@ from future import standard_library
 standard_library.install_aliases()
 from builtins import str
 import os
+from sys import exit #use sys.exit to transmit exit status to caller
 import argparse
 import subprocess
 import ICA_AROMA_functions as aromafunc
@@ -59,7 +60,7 @@ if args.inFeat:
 	if not os.path.isdir(inFeat): 
 		print('The specified Feat directory does not exist.')
 		print('\n----------------------------- ICA-AROMA IS CANCELED -----------------------------\n')
-		exit()
+		exit(1)
 
 	# Define the variables which should be located in the Feat directory
 	inFile = os.path.join(args.inFeat,'filtered_func_data.nii.gz')
@@ -134,7 +135,7 @@ if not (denType == 'nonaggr') and not (denType == 'aggr') and not (denType == 'b
 # If the criteria for file/directory specifications have not been met. Cancel ICA-AROMA.
 if cancel:
 	print('\n----------------------------- ICA-AROMA IS CANCELED -----------------------------\n')
-	exit()
+	exit(1)
 
 #------------------------------------------- PREPARE -------------------------------------------#
 

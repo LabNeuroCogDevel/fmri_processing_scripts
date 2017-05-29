@@ -278,8 +278,7 @@ source "${scriptDir}/preproc_functions/spatial_smooth"
 source "${scriptDir}/preproc_functions/highpass_filter"
 source "${scriptDir}/preproc_functions/intensity_normalization"
 source "${scriptDir}/preproc_functions/nuisance_regression"
-
-##load necessary modules if running on cluster (specific to ACI at the moment)
+source "${scriptDir}/preproc_functions/ica_aroma"
 
 ##load necessary modules if running on cluster (specific to ACI at the moment)
 if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then

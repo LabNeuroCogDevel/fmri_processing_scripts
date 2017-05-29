@@ -1,17 +1,20 @@
 #!/bin/bash
 
 function ica_aroma {
-
+    
     #Run ICA-AROMA on data after spatial smoothing is complete
     if [ $ica_aroma -eq 1 ]; then
 	preAroma="${postSmooth}" #should always fall after this step
 	prefix="a${prefix}"
-	postAroma="${prefix}{funcFile}"
+	postAroma="${prefix}${funcFile}${smoothing_suffix}"
 
 	if [ -f ".ica_aroma_complete" ]; then
 	    return 0
 	fi
 
+	#need absolute paths to ICA_AROMA.py script. (should eventually move this to the main script and make global)
+	local funcdir=$(pwd) #define working directory for functional processing
+	
 	#need to handle case when data are in native space. In conventional pipeline, data are already in MNI space
 	#if data are in native space, then we need to have computed the warp for this to work
 	
@@ -27,7 +30,7 @@ function ica_aroma {
 	    fi
 
 	    #handle no_warp situation
-	    if [ $no_warp -eq 1]; then
+	    if [ $no_warp -eq 1 ]; then
 		rel "convertwarp --ref=${stddir}/fsl_mni152/MNI152_T1_2mm --premat=func_to_struct.mat --warp1=$warpCoef \
 		    		 --warp2=$stddir/mni_icbm152_nlin_asym_09c/fonov_mni152_to_fsl_mni152_warpcoef.nii.gz --relout --out=func_to_fsl_warpfield"
 		local warptoFSL="func_to_fsl_warpfield"
@@ -35,7 +38,7 @@ function ica_aroma {
 		local warptoFSL="$stddir/mni_icbm152_nlin_asym_09c/fonov_mni152_to_fsl_mni152_warpcoef.nii.gz"
 	    fi
 
-	    rel "python \"${scriptDir}/ICA_AROMA.py\" -in \"${preAroma}\" -out ica_aroma -mc motion.par -warp \"$warptoFSL\""
+	    rel "python \"${scriptDir}/ica_aroma/ICA_AROMA.py\" -tr ${tr} -in \"${funcdir}/${preAroma}${ext}\" -out \"${funcdir}/ica_aroma\" -mc \"${funcdir}/motion.par\" -warp \"$warptoFSL\""
 
 	    [ $no_warp -eq 1 ] && rel "imrm func_to_fsl_warpfield"
 

@@ -190,6 +190,12 @@ function cleanup_preprocessFunctional {
 	dspre=""
     fi
 
+    apre=""
+    if [ ${ica_aroma} -eq 1 ]; then
+	apre="a"
+	rm -rf ica_aroma/melodic.ica #work folder from ICA decomposition
+    fi
+    
     if [ $no_warp -eq 0 ]; then
 	wpre="w"
     else
@@ -217,14 +223,15 @@ function cleanup_preprocessFunctional {
     deleteFile ${wpre}${dspre}k${upre}mt_${funcFile}${ext}
     deleteFile ${wpre}${dspre}k${upre}mt_${funcFile}_extents_mask${ext}
     deleteFile s${wpre}${dspre}k${upre}mt_${funcFile}${smoothing_suffix}${ext}
-    deleteFile fs${wpre}${dspre}k${upre}mt_${funcFile}${smoothing_suffix}${ext}
+    deleteFile ${apre}s${wpre}${dspre}k${upre}mt_${funcFile}${smoothing_suffix}${ext}
+    deleteFile f${apre}s${wpre}${dspre}k${upre}mt_${funcFile}${smoothing_suffix}${ext}
 
     deleteFile k${upre}mt_${funcFile}_Tmin${ext}
     deleteFile k${upre}mt_${funcFile}_Tmin_10pctThr${ext}
     deleteFile ${upre}mt_tmean${ext}
     deleteFile ${dspre}k${upre}mt_tmean${ext}
     deleteFile ${wpre}${dspre}k${upre}mt_${funcFile}_tmean${ext}
-    deleteFile fs${wpre}${dspre}kmt_mean_float${ext}
+    deleteFile f${apre}s${wpre}${dspre}kmt_mean_float${ext}
     deleteFile k${upre}mt_${funcFile}_98_2_mask${ext}
     deleteFile k${upre}mt_${funcFile}_98_2_mask_dil1x${ext}
     deleteFile k${upre}mt_${funcFile}_masked${ext}
@@ -238,14 +245,15 @@ function cleanup_preprocessFunctional {
     deleteFile ${wpre}${upre}${dspre}kmt_${funcFile}${ext}
     deleteFile ${wpre}${upre}${dspre}kmt_${funcFile}_extents_mask${ext}
     deleteFile s${wpre}${upre}${dspre}kmt_${funcFile}${smoothing_suffix}${ext}
-    deleteFile fs${wpre}${upre}${dspre}kmt_${funcFile}${smoothing_suffix}${ext}
+    deleteFile ${apre}s${wpre}${upre}${dspre}kmt_${funcFile}${smoothing_suffix}${ext}
+    deleteFile f${apre}s${wpre}${upre}${dspre}kmt_${funcFile}${smoothing_suffix}${ext}
 
     deleteFile ${dspre}kmt_${funcFile}_Tmin${ext}
     deleteFile ${dspre}kmt_${funcFile}_Tmin_10pctThr${ext}
     deleteFile mt_tmean${ext}
     deleteFile kmt_tmean${ext}
     deleteFile ${wpre}${upre}${dspre}kmt_${funcFile}_tmean${ext}
-    deleteFile fs${wpre}${upre}${dspre}kmt_mean_float${ext}
+    deleteFile f${apre}s${wpre}${upre}${dspre}kmt_mean_float${ext}
     deleteFile kmt_${funcFile}_98_2_mask${ext}
     deleteFile kmt_${funcFile}_98_2_mask_dil1x${ext}
     deleteFile kmt_${funcFile}_masked${ext}
@@ -262,14 +270,15 @@ function cleanup_preprocessFunctional {
     deleteFile ${wpre}${dspre}kt${upre}m_${funcFile}${ext}
     deleteFile ${wpre}${dspre}kt${upre}m_${funcFile}_extents_mask${ext}
     deleteFile s${wpre}${dspre}kt${upre}m_${funcFile}${smoothing_suffix}${ext}
-    deleteFile fs${wpre}${dspre}kt${upre}m_${funcFile}${smoothing_suffix}${ext}
+    deleteFile ${apre}s${wpre}${dspre}kt${upre}m_${funcFile}${smoothing_suffix}${ext}
+    deleteFile f${apre}s${wpre}${dspre}kt${upre}m_${funcFile}${smoothing_suffix}${ext}
 
     deleteFile kt${upre}m${dspre}_${funcFile}_Tmin${ext}
     deleteFile kt${upre}m${dspre}_${funcFile}_Tmin_10pctThr${ext}
     deleteFile t${upre}m${dspre}_tmean${ext}
     deleteFile kt${upre}m${dspre}_tmean${ext}
     deleteFile ${wpre}kt${upre}m${dspre}_${funcFile}_tmean${ext}
-    deleteFile fs${wpre}kt${upre}m${dspre}_mean_float${ext}
+    deleteFile f${apre}s${wpre}kt${upre}m${dspre}_mean_float${ext}
     deleteFile kt${upre}m${dspre}_${funcFile}_98_2_mask${ext}
     deleteFile kt${upre}m${dspre}_${funcFile}_98_2_mask_dil1x${ext}
     deleteFile kt${upre}m${dspre}_${funcFile}_mask${ext}
@@ -286,14 +295,15 @@ function cleanup_preprocessFunctional {
     deleteFile ${wpre}${upre}${dspre}ktm_${funcFile}${ext}
     deleteFile ${wpre}${upre}${dspre}ktm_${funcFile}_extents_mask${ext}
     deleteFile s${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
-    deleteFile fs${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
+    deleteFile ${apre}s${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
+    deleteFile f${apre}s${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
 
     deleteFile ktm_${funcFile}_Tmin${ext}
     deleteFile ktm_${funcFile}_Tmin_10pctThr${ext}
     deleteFile tm_tmean${ext}
     deleteFile ktm_${funcFile}_tmean${ext}
     deleteFile ${wpre}${upre}${dspre}ktm_${funcFile}_tmean${ext}
-    deleteFile fs${wpre}${upre}${dspre}ktm_mean_float${ext}
+    deleteFile f${apre}s${wpre}${upre}${dspre}ktm_mean_float${ext}
     deleteFile s${wpre}${upre}${dspre}ktm_mean_float${ext}
     deleteFile ktm_${funcFile}_98_2_mask${ext}
     deleteFile ktm_${funcFile}_98_2_mask_dil1x${ext}
@@ -361,6 +371,6 @@ function cleanup_preprocessFunctional {
     deleteFile dkmt_${funcFile}_wavelet_noise.nii.gz
 
     if [[ "$nuisance_regression" -eq 1 || "$bandpass_filter" -eq 1 ]]; then
-	deleteFile ns${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
+	deleteFile n${apre}s${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
     fi
 }
