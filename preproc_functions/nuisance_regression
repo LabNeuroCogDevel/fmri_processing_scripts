@@ -63,7 +63,9 @@ function remove_autocorr_and_br(){
       return 1      
   fi
 
-  rel "1dBport -nodata $nvol $tr $bandoption -quad -invert > .basis.1d"
+  #MH 30May2017: for reasons I don't know, 1dBport dies when TR is < 1s and is not prefixed by zero (e.g., .894).
+  local ztr="${tr/#./0.}"
+  rel "1dBport -nodata $nvol $ztr $bandoption -quad -invert > .basis.1d"
   # same as '-nodata $nvol $tr' is same as '-input $img'
 
   reml_in_file=$nuisance_file.rmautcorr
@@ -205,7 +207,7 @@ function compute_nuisance_regressors {
 	    
 	    #extract CSF time series. If a number follows the CSF specification, this is an aCompCor approach with the specified number of components
 	    if [[ "$r" =~ ^(csf[0-9]+|dcsf[0-9]+)$ ]]; then
-		rel "3dmaskSVD -vnorm -mask $csfmask -sval ${r/?(d)csf/} -polort 2 ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskSVD failed. Unable to extract CSF voxels. Check your mask! $csfmask" && exit 1 )
+		rel "3dmaskSVD -vnorm -mask $csfmask -sval $(( ${r/?(d)csf/} - 1 )) -polort 2 ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskSVD failed. Unable to extract CSF voxels. Check your mask! $csfmask" && exit 1 )
 	    else
 		rel "3dmaskave -mask $csfmask -q ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskave failed. Unable to extract CSF voxels. Check your mask! $csfmask" && exit 1 )
 	    fi
@@ -278,7 +280,7 @@ function compute_nuisance_regressors {
 
 	    #extract WM time series. If a number follows the WM specification, this is an aCompCor approach with the specified number of components
 	    if [[ "$r" =~ ^(wm[0-9]+|wm[0-9]+)$ ]]; then
-		rel "3dmaskSVD -vnorm -mask $wmmask -sval ${r/?(d)wm/} -polort 2 ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskSVD failed. Unable to extract WM voxels. Check your mask! $wmmask" && exit 1 )
+		rel "3dmaskSVD -vnorm -mask $wmmask -sval $(( ${r/?(d)wm/} - 1 )) -polort 2 ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskSVD failed. Unable to extract WM voxels. Check your mask! $wmmask" && exit 1 )
 	    else
 		rel "3dmaskave -mask $wmmask -q ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskave failed. Unable to extract WM voxels. Check your mask! $wmmask" && exit 1 )
 	    fi
@@ -424,7 +426,7 @@ function nuisance_regression {
     preNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
     
     local todo=
-    [ $autocorr_with_basis -eq 1 ] && todo="${todo}a"
+    [ $autocorr_with_basis -eq 1 ] && todo="${todo}A"
     [ $bandpass_filter     -eq 1 ] && todo="${todo}b"
     [ $nuisance_regression -eq 1 ] && todo="${todo}r"
 
