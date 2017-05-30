@@ -10,10 +10,11 @@ function warp_structmask_to_func {
 	[ ! -f "unwarp/struct_to_func_transform_and_distort${ext}" ] && rel "invwarp -w unwarp/T1_UD_warp_bbr -o unwarp/struct_to_func_transform_and_distort -r unwarp/EF_D_mc_target"
 	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --warp=unwarp/struct_to_func_transform_and_distort"
     else
-	rel "Using struct_to_func transform to warp csf mask into functional space" c
+	rel "Using struct_to_func transform to warp ${structvol} mask into functional space" c
 	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --premat=struct_to_func.mat"
     fi
 
+    rel "fslmaths ${outvol} -thr 0.5 -bin ${outvol} -odt char" #force to binary mask to remove tiny values due to interpolation
 }
 
 #compute motion parameter derivatives for nuisance regression
@@ -97,12 +98,14 @@ function compute_nuisance_regressors {
 
     declare -a nuisancecols #nuisance regressors to be concatenated
 
+    #if despiking was applied, use this file for extracting CSF, WM, GS time series. Otherwise, use the file after skull strip, motion, and slice timing
+    [ -n "${postDespike}" ] && local prewarp_func_ts="${postDespike}" || local prewarp_func_ts="${postSS}"
+	
     if [ $no_warp -eq 0 ]; then
 	#extracting time series from post-warp files to leverage tissue probability maps for templates
-	local func_ts="${postWarp}"
+	local func_ts="${postWarp}"	
     else
-	#if despiking was applied, use this file for extracting CSF, WM, GS time series. Otherwise, use the file after skull strip, motion, and slice timing
-	[ -n "${postDespike}" ] && local func_ts="${postDespike}" || local func_ts="${postSS}"
+	local func_ts="${prewarp_func_ts}" #no warped file to refer to
     fi
 
     #parse comma-delimited regressors of interest into array
@@ -117,8 +120,7 @@ function compute_nuisance_regressors {
     for r in $reg; do
 	if [[ "$r" =~ ^(6motion|rx|ry|rz|tx|ty|tz)$ && ! -f ".motion_demean" ]]; then 
 	    #compute de-meaned motion parameters for nuisance regression
-	    1d_tool.py -overwrite -infile motion.par -set_nruns 1 \
-		       -demean -write .motion_demean	    
+	    rel "1d_tool.py -overwrite -infile motion.par -set_nruns 1 -demean -write .motion_demean"
 	fi
 	
 	if [[ "$r" =~ ^(d6motion|drx|dry|drz|dtx|dty|dtz)$ && ! -f ".motion_deriv" ]]; then 
@@ -211,8 +213,9 @@ function compute_nuisance_regressors {
 	    else
 		rel "3dmaskave -mask $csfmask -q ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskave failed. Unable to extract CSF voxels. Check your mask! $csfmask" && exit 1 )
 	    fi
-	    
-	    rel "1d_tool.py -overwrite -infile .csf_ts -derivative -write .csf_ts_deriv"
+
+	    rel "1d_tool.py -overwrite -infile .csf_ts -demean -write .csf_ts" #demean	    
+	    rel "1d_tool.py -overwrite -infile .csf_ts -derivative -demean -write .csf_ts_deriv" #derivative
 	fi
 
 	if [[ "$r" =~ ^(wm|dwm|wm[0-9]+|dwm[0-9]+)$ && ! -f ".wm_ts" ]]; then
@@ -284,23 +287,62 @@ function compute_nuisance_regressors {
 	    else
 		rel "3dmaskave -mask $wmmask -q ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskave failed. Unable to extract WM voxels. Check your mask! $wmmask" && exit 1 )
 	    fi
-	    
-	    rel "1d_tool.py -overwrite -infile .wm_ts -derivative -write .wm_ts_deriv"
+
+	    rel "1d_tool.py -overwrite -infile .wm_ts -demean -write .wm_ts" #demean	    
+	    rel "1d_tool.py -overwrite -infile .wm_ts -derivative -demean -write .wm_ts_deriv" #compute derivative
+
 	fi
 
+	# NOTE: for now, I believe these will blow up if specified before the basic regressor (e.g., wm)
+	# quadratic of csf (qcsf*)
+	if [[ "$r" =~ ^(qcsf|qcsf[0-9]+)$ && ! -f ".csf_ts_quad" ]]; then
+	    rel "Rscript -e \"x <- read.table('.csf_ts')$V1; x2 <- x^2; cat(x2 - mean(x2), sep='\n', file='.csf_ts_quad')\""
+	fi
+
+	# quadratic of dcsf (qdcsf*)
+	if [[ "$r" =~ ^(qdcsf|qdcsf[0-9]+)$ && ! -f ".csf_ts_deriv_quad" ]]; then
+	    rel "Rscript -e \"x <- read.table('.csf_ts_deriv')$V1; x2 <- x^2; cat(x2 - mean(x2), sep='\n', file='.csf_ts_deriv_quad')\""
+	fi
+	
+	# quadratic of wm (qwm*)
+	if [[ "$r" =~ ^(qwm|qwm[0-9]+)$ && ! -f ".wm_ts_quad" ]]; then
+	    rel "Rscript -e \"x <- read.table('.wm_ts')$V1; x2 <- x^2; cat(x2 - mean(x2), sep='\n', file='.wm_ts_quad')\""
+	fi
+
+	# quadratic of dwm (qdwm*)
+	if [[ "$r" =~ ^(qdwm|qdwm[0-9]+)$ && ! -f ".wm_ts_deriv_quad" ]]; then
+	    rel "Rscript -e \"x <- read.table('.wm_ts_deriv')$V1; x2 <- x^2; cat(x2 - mean(x2), sep='\n', file='.wm_ts_deriv_quad')\""
+	fi
+	    
 	#global signal
 	if [[ "$r" =~ ^(gs|dgs)$ && ! -f ".gs_ts" ]]; then
 	    #erode the tight skull-stripped brain mask from the structural scan to identify brain voxels
-	    rel "fslmaths ${mprageBet_base} -bin -eroF -eroF .brainmask_ero2x_anat -odt char" #eroding the binarized mprage_bet
+	    #rel "fslmaths ${mprageBet_base} -bin -eroF -eroF .brainmask_ero2x_anat -odt char" #eroding the binarized mprage_bet
 
-	    warp_structmask_to_func .brainmask_ero2x_anat .brainmask_ero2x
+	    #warp_structmask_to_func .brainmask_ero2x_anat .brainmask_ero2x
 
-	    rel "fslmaths .brainmask_ero2x -mas ${postSS}_tmean_mask .brainmask_ero2x -odt char" #mask by functional brain mask
+	    #rel "fslmaths .brainmask_ero2x -mas ${postSS}_tmean_mask .brainmask_ero2x -odt char" #mask by functional brain mask
 
-	    rel "3dmaskave -mask .brainmask_ero2x${ext} -q ${func_ts}${ext} > .gs_ts"
-	    rel "1d_tool.py -overwrite -infile .gs_ts -derivative -write .gs_ts_deriv"
+	    #MH May2017: On further consideration, it's probably best to simply erode the mask from betting the functionals since
+	    #this does not depend on the quality of the functional -> structural coregistration (esp. concerning in high distortion areas)
+	    rel "fslmaths ${postSS}_tmean_mask -eroF -eroF .brainmask_ero2x -odt char"
+	    
+	    #GS uses pre-warp data since we are using a brain mask in functional space
+	    rel "3dmaskave -mask .brainmask_ero2x${ext} -q ${prewarp_func_ts}${ext} > .gs_ts"
+	    rel "1d_tool.py -overwrite -infile .gs_ts -demean -write .gs_ts" #demean	    
+	    rel "1d_tool.py -overwrite -infile .gs_ts -derivative -demean -write .gs_ts_deriv"
 	fi
 
+	# quadratic of gs
+	if [[ "$r" == "qgs" && ! -f ".gs_ts_quad" ]]; then
+	    rel "Rscript -e \"x <- read.table('.gs_ts')$V1; x2 <- x^2; cat(x2 - mean(x2), sep='\n', file='.gs_ts_quad')\""
+	fi
+
+	# quadratic of dgs
+	if [[ "$r" == "qdgs" && ! -f ".gs_ts_deriv_quad" ]]; then
+	    rel "Rscript -e \"x <- read.table('.gs_ts_deriv')$V1; x2 <- x^2; cat(x2 - mean(x2), sep='\n', file='.gs_ts_deriv_quad')\""
+	fi
+	
 	case "$r" in 
 	    6motion)
 		nuisancecols+=(".motion_demean[0]")
@@ -384,16 +426,28 @@ function compute_nuisance_regressors {
 		nuisancecols+=(".motion_deriv[5]");;
 	    wm*)
 		nuisancecols+=(".wm_ts");;
+	    qwm*)
+		nuisancecols+=(".wm_ts_quad");;
 	    dwm*)
 		nuisancecols+=(".wm_ts_deriv");;
+	    qdwm*)
+		nuisancecols+=(".wm_ts_deriv_quad");;
 	    csf*)
 		nuisancecols+=(".csf_ts");;
+	    qcsf*)
+		nuisancecols+=(".csf_ts_quad");;
 	    dcsf*)
 		nuisancecols+=(".csf_ts_deriv");;
+	    qdcsf*)
+		nuisancecols+=(".csf_ts_deriv_quad");;		    
 	    gs)
 		nuisancecols+=(".gs_ts");;
+	    qgs)
+		nuisancecols+=(".gs_ts_quad");;
 	    dgs)
-		nuisancecols+=(".gs_ts_deriv");;	    
+		nuisancecols+=(".gs_ts_deriv");;
+	    qdgs)
+		nuisancecols+=(".gs_ts_deriv_quad");;
 	esac
 
     done
