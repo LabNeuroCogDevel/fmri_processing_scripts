@@ -56,7 +56,7 @@ function ica_aroma {
 	fi
 
 	#create symbolic link to the aroma output
-	rel "ln -sfn ica_aroma/denoised_func_data_nonaggr${ext} ${postAroma}"
+	rel "ln -sfn ica_aroma/denoised_func_data_nonaggr${ext} ${postAroma}${ext}"
 	rel "date > .ica_aroma_complete"
     fi
 

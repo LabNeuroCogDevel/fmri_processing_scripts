@@ -247,13 +247,13 @@ function compute_nuisance_regressors {
 		nuisancecols+=(".motion_deriv[4]");;
 	    dtz)
 		nuisancecols+=(".motion_deriv[5]");;
-	    wm)
+	    wm*)
 		nuisancecols+=(".wm_ts");;
-	    dwm)
+	    dwm*)
 		nuisancecols+=(".wm_ts_deriv");;
-	    csf)
+	    csf*)
 		nuisancecols+=(".csf_ts");;
-	    dcsf)
+	    dcsf*)
 		nuisancecols+=(".csf_ts_deriv");;
 	    gs)
 		nuisancecols+=(".gs_ts");;
