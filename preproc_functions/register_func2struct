@@ -1,5 +1,7 @@
 #!/bin/bash
+REGISTER_FUNC2STRUCT_GLOBALS=(mprageBet fm_phase unwarpdir bbr_pedir funcRefimg funcStructFlirtDOF bbrCapable createBBRFmapWarp)
 function register_func2struct {
+    print_vars_in REGISTER_FUNC2STRUCT_GLOBALS
     #Obtain a transformation matrix that co-registers the subject's
     #structural T1 scan with the functional T2* image used as the motion coregistration target (mc_target).
 
@@ -30,7 +32,7 @@ function register_func2struct {
 	    -y|y-) bbr_pedir=-2 ;; 
 	    z)     bbr_pedir=3  ;;
 	    -z|z-) bbr_pedir=-3 ;;
-	    *)     echo "Unable to determine unwarping direction"
+	    *)     echo "Unable to determine unwarping direction from '$unwarpdir'"
 		exit 1 ;;
 	esac
 
@@ -41,10 +43,13 @@ function register_func2struct {
 	local target="epiref_brain_restore"
 	local oname="epiref"
 
-	#calculate ref -> func coregistration to concatenate with ref -> struct
-	rel "Using intermediate T2* reference file (epiref) as coregistration target" c
-	rel "flirt -in mc_target_brain_restore -ref epiref_brain_restore -out func_to_epiref -omat func_to_epiref.mat -dof 6 -interp spline"
-	rel "convert_xfm -omat epiref_to_func.mat -inverse func_to_epiref.mat"
+        if [[ ! -f epiref_to_func.mat  || ! -f .t2star_coreg_complete ]]; then
+            #calculate ref -> func coregistration to concatenate with ref -> struct
+            rel "Using intermediate T2* reference file (epiref) as coregistration target" c
+            rel "flirt -in mc_target_brain_restore -ref epiref_brain_restore -out func_to_epiref -omat func_to_epiref.mat -dof 6 -interp spline"
+            rel "convert_xfm -omat epiref_to_func.mat -inverse func_to_epiref.mat"
+            rel "date > .t2star_coreg_complete"
+        fi
     else
 	local target="mc_target_brain_restore"
 	local oname="func"
@@ -113,3 +118,5 @@ function register_func2struct {
 	touch .func2struct_complete
     fi
 }
+
+# vi: set shiftwidth=4 tabstop=8 expandtab:

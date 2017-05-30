@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+#######
+# overwrite some FSL tools with wrappper for 3dNotes
+
+# a better imtest
+# returns failure if dne
+# returns success and echos filename if it does
+imfind(){
+ [ -z "$1" ] && return 1
+ fnoext=$(remove_ext $1)
+ for suffix in .{nii,hdr}{,.gz}  {+orig,+tlrc,}.HEAD;  do
+   f=$fnoext$suffix
+   [ -r $f ] && echo $f && return 0
+ done
+ return 1
+}
+
+findfslout(){
+ outfile=""
+ while [ -n $1 ]; do
+   if [ "$1" == "-o" -o "$1" == "-out" ]; then
+      outfile=$2
+      break
+   elif [[ "$1" =~  ^- ]]; then
+      shift 1
+      continue
+   elif [ $# -eq 1 ]; then
+      outfile=$1
+      break
+   fi
+   shift 1
+ done
+ # echo the file we found if it exists
+ imfind $outfile
+}
+fslmkfunc(){
+cat <<EOF
+function $1 {
+   # run fsl command
+   $1  \\\$@
+   # try to make a note but dont die if we cant
+   out=\\\$\(findfslout \\\$@\) || return 0
+   if [ -n \"\\\$out\" -a -r \"\\\$out\" ]; then
+      3dNotes -h \"$1 \\\$@\" \\\$out
+   else 
+      return 0
+   fi
+ }
+EOF
+}
+
+#FLS_OVERLOAD=(fslmaths mcflirt fslreorient2std slicetimer flirt fast bet immv applywarp convertwarp )
+FLS_OVERLOAD=(fslmaths mcflirt fslreorient2std slicetimer flirt fast bet immv ) # untested on ^^
+
+for fslfunctooverload in $FSL_OVERLOAD; do
+ eval "$(fslmkfunc $fslfunctooverload)"
+done
+
+# vim: set tabstop=7:

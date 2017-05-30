@@ -56,6 +56,7 @@ function fieldmap_make_rads_per_sec() {
 }
 
 
+PREPARE_FIELDMAP_GLOBALS=(bbrCapable funcStructFlirtDOF fm_cfg mcMats fm_phase fm_magnitude ext logFile mprageBet)
 ### Worker function for preparation of fieldmap.
 # Steps:
 # 1)  Source fm_cfg file to define relevant fieldmap details (e.g., TEdiff)
@@ -72,6 +73,8 @@ function fieldmap_make_rads_per_sec() {
 # 12) Undistort target functional (mc_target) based on EPI-aligned fieldmap, and generate voxel shift map
 # 13) Generate image of shift map overlaid on fieldmap magnitude image
 function prepare_fieldmap {
+  
+    print_vars_in PREPARE_FIELDMAP_GLOBALS
     # FM = space of fieldmap
     # EF = space of mc_target
     # UD = undistorted (in any space)
@@ -95,18 +98,12 @@ function prepare_fieldmap {
 	rel "immv mc_target_brain_mask mc_target_mask"	
     fi
     
-    [ -z "$fm_phase" ] && return 0 #skip fieldmap 
+    [ -z "$fm_phase" ] && rel "no 'fm_phase' (skipping prepare_fieldmap)" c  && return 0 #skip fieldmap 
 
-    # Allow --config to be a shorthand lookup, defined here, rather than a config file
-    case $fm_cfg in
-	cogemo|multimodal|wpc5640 ) fm_cfg=$(dirname $0)/cfg_files/cogemo.fmcfg;;
-	clock|specc|wpc6290|p5 )    fm_cfg=$(dirname $0)/cfg_files/MB5_TR1.0_TE30_60slc.fmcfg;;
-	trust )                     fm_cfg=$(dirname $0)/cfg_files/trust.fmcfg;;
-	bandit )                    fm_cfg=$(dirname $0)/cfg_files/bandit.fmcfg;;
-    esac
-    
-    # source config file or warn
-    [ -n "$fm_cfg" -a -r "$fm_cfg" ] && source $fm_cfg || ( echo "ERROR: readable config file not provided or understood ($fm_cfg)" && exit 1 )
+    # we need to do this before testing if complete
+    # because we use the warpdir sourced from the file
+    # later (one-step warp)
+    find_and_source_config "$fm_cfg" || return 1
 
     if [[ -n "${fm_phase}" && -f ".prepare_fieldmap_complete" ]]; then
 	return 0 #preparefieldmap already completed
@@ -144,6 +141,12 @@ function prepare_fieldmap {
     local fm_phasebase=$( basename "$fm_phase" ) 
     local fm_magnitudedir=$( dirname "$fm_magnitude" )
     local fm_magnitudebase=$( basename "$fm_magnitude" )
+
+    # 20170426WF -- fieldmap paths must be absolute
+    # abspath is a funciton in helper_functions
+    fm_phasedir=$(abspath $fm_phasedir)
+    fm_magnitudedir=$(abspath $fm_magnitudedir)
+    # TODO: consolidate this code with fileVar for loop below
 
     #randomly sleep 0-2 seconds to avoid lock file collisision
     #Apr2014: I'm not really sure if this is necessary... problems may have emerged from running fslreorient2std simultaneously on originals...
@@ -384,6 +387,9 @@ function prepare_fieldmap {
     if [ $( imtest "${fm_phasedir}/FM_UD_fmap" ) -eq 0 ]; then
 	#conversion to rads/sec not complete
 	fieldmap_make_rads_per_sec # creates master FM_UD_fmap in $fm_phasedir
+    else
+
+       rel "already have ${fm_phasedir}/FM_UD_fmap " c
     fi
 
     rel "fslmaths \"${fm_phasedir}/FM_UD_fmap\" FM_UD_fmap" #copy fieldmap in rads/sec to unwarp/
@@ -702,3 +708,47 @@ function prepare_fieldmap {
     rel "date > .prepare_fieldmap_complete"
 
 }
+
+
+find_and_source_config(){
+    local fm_cfg="$1"
+    [ -z "$fm_cfg" ] && echo "Want to correct with fieldmaps but dont have a config file!" >&2 && return 1
+
+    ## need to find fmcfgdir
+    # expect it to be in $0
+    local fmcfgdir=""
+    for pdirs in $0 $(dirname ${BASH_SOURCE[0]}){,/..}/preprocessFunctional; do
+       [ ! -r "$pdirs" ] && continue
+       pdir=$(cd $(dirname $pdirs); pwd)
+       _fmcfgdir=$pdir/fmcfg
+       [ -d $_fmcfgdir ] && fmcfgdir=$_fmcfgdir &&  break
+    done
+
+    [ -z "$fmcfgdir" -a ! -r "$fm_cfig" ] && echo "cannot find script directory root to find config file for '$fm_cfg'!" >&2 && return 1
+
+    # Allow --config to be a shorthand lookup, defined here, rather than a config file
+    local fm_cfg_file=$fmcfgdir/$fm_cfg.fmcfg
+    if [ -r $fm_cfg_file ]; then
+      fm_cfg=$fm_cfg_file
+    else
+      case $fm_cfg in
+         cogemo|multimodal|wpc5640 ) fm_cfg=$fmcfgdir/cogemo.fmcfg;;
+         clock|specc|wpc6290|p5 )    fm_cfg=$fmcfgdir/MB5_TR1.0_TE30_60slc.fmcfg;;
+         # dead code -- 20170224
+         trust )                     fm_cfg=$fmcfgdir/trust.fmcfg;;
+         bandit )                    fm_cfg=$fmcfgdir/bandit.fmcfg;;
+         pet    )                    fm_cfg=$fmcfgdir/pet.fmcfg;;
+      esac
+    fi
+    
+    # source config file or warn
+    if [ -n "$fm_cfg" -a -r "$fm_cfg" ]; then
+      rel "using '$fm_cfg' for fieldmap config" c
+      source $fm_cfg 
+    else
+      echo "ERROR: readable config file not provided or understood ($fm_cfg)" >&2
+      return 1
+    fi
+}
+
+# vim: set tabstop=7:

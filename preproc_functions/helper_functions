@@ -1,12 +1,33 @@
 #!/bin/bash
 
+## where to look for finding the standard space template directory
+# expect files like:
+#   talairach_fsl_mni152/TalFSL_MNI152_T1_3mm_brain
+#   fsl_mni152/MNI152_T1_3mm_brain
+#   mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm
+#   mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2.3mm
+#   spm8_mni/T1_brain
+#   mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm
+
 #prefer env variable, then ACI installation when looking for templates
 if [ -n "$MRI_STDDIR" ]; then
     stddir="$MRI_STDDIR"
-elif [ -d /gpfs/group/mnh5174/default/lab_resources/standard ]; then
-    stddir=/gpfs/group/mnh5174/default/lab_resources/standard
 else
-    stddir=$HOME/standard
+    local standard_spaces=(\
+       /gpfs/group/mnh5174/default/lab_resources/standard \
+       /opt/ni_tools/standard_templates \
+       $HOME/standard \
+     )
+
+    stddir=
+    for stddir in ${standard_spaces[@]}; do
+       [ -d "$stddir" ] && break
+    done
+
+    if [ ! -d "$stddir" ]; then
+	echo "cannot find standard space templates '$stddir'! looked in ${standard_spaces[@]}" >&2
+	exit 1
+    fi
 fi
 
 #function for taking sequential processing pictures (used in FM unwarping for now)
@@ -92,6 +113,16 @@ function fix_negatives() {
     fi
 }
 
+
+# give absolute path from a potentionally relative path
+# 20170426WF -- added for prepare_fieldmap
+# path given doesn't have to exist, but the directory (dirname) does
+abspath() { 
+ [ -z "$1" ] && return 1
+ dir=$(dirname $1)
+ [ ! -d "$dir" ] && return 1
+ echo $(cd $dir;pwd)/$(basename $1)
+}
 
 function deleteFile() {
     #echo "to del: $1"
@@ -182,6 +213,69 @@ function cleanup_preprocessMprage {
 }
 
 
+# remove flag files indicating a step was completed
+# keeps .functional, .detect_tr, .preprocessfunctional_complete
+# optionally keeps .motion_correction_complete (if KEEP_MOTION_FILES)
+function rm_dotsteps {
+    deleteFile ".median_intensity"
+    deleteFile ".pct2"
+    deleteFile ".csf_ts"
+    deleteFile ".csf_ts_deriv"
+    deleteFile ".wm_ts"
+    deleteFile ".wm_ts_deriv"
+    deleteFile ".gs_ts"
+    deleteFile ".gs_ts_deriv"
+    deleteFile ".motion_demean"
+    deleteFile ".motion_deriv"
+    deleteFile ".nuisance_regressors"
+    deleteFile ".wm_ero2x${ext}"
+    deleteFile ".csf_ero2x${ext}"
+    deleteFile ".brainmask_ero2x_anat${ext}"
+    deleteFile ".brainmask_ero2x${ext}"
+    deleteFile ".template_csf_prob${ext}"
+    deleteFile ".template_wm_prob${ext}"
+    deleteFile ".fieldmap_magnitude"
+    deleteFile ".fieldmap_phase"
+    deleteFile ".reorient2std_complete"
+    deleteFile ".epiref_bet_complete"
+    deleteFile ".motion_censor_complete"
+    deleteFile ".motion_plots_complete"
+    #deleteFile ".slice_timing_complete"
+    #deleteFile ".motion_correction_complete"
+    deleteFile ".skull_strip_complete"
+    deleteFile ".func2struct_complete"
+    deleteFile ".topup_complete"
+    deleteFile ".warp_complete"
+    deleteFile ".compute_warp_complete"
+    deleteFile ".smoothing_complete"
+    deleteFile ".ica_aroma_complete"
+    deleteFile ".temporal_filtering_complete"
+    deleteFile ".rescaling_complete"
+    deleteFile ".thresholding_complete"
+    deleteFile ".despike_complete"
+    deleteFile ".fmunwarp_complete"
+    deleteFile ".prepare_fieldmap_complete"
+    deleteFile ".nuisance_regression_complete"
+    deleteFile ".bandpass_filter_complete"
+
+    # we want to keep motion bits around
+    if [ -z "$KEEP_MOTION_FILES" ]; then
+      deleteFile ".motion_correction_complete"
+      deleteFile ".slice_timing_complete"
+    fi
+}
+function rm_completefiles {
+    rel "\nStarting over...\n\nRe-running all preprocessing steps\n" c
+    deleteFile ".functional"
+    deleteFile ".detect_tr"
+    deleteFile ".detect_sliceorder"
+    deleteFile ".detect_series"
+    deleteFile ".detect_protocolname"
+    deleteFile ".detect_epiref"
+    rm_dotsteps
+    deleteFile ".preprocessfunctional_complete"
+}
+
 function cleanup_preprocessFunctional {
 
     if [ ${despike} -eq 1 ]; then
@@ -208,16 +302,19 @@ function cleanup_preprocessFunctional {
 	upre=""
     fi
 
+    [ -z "$funcFile" ] && echo "ERROR: $FUNC_NAME does not have funcfile!" && exit 1
+    #echo "func: $funcFile"
     #echo "dspre: $dspre"
+    #echo "wpre: $wpre"
     #echo "upre: $upre"
     #echo "smoothing_suffix: $smoothing_suffix"
     #echo "ext: $ext"
 
     #interleaved stream
     deleteFile t_${funcFile}${ext}
-    deleteFile mt_${funcFile}${ext}
-    deleteFile ${upre}mt_${funcFile}${ext}
-    deleteFile ${upre}mt_${funcFile}_mean_reg${ext}
+    #deleteFile mt_${funcFile}${ext}
+    #deleteFile ${upre}mt_${funcFile}${ext}
+    #deleteFile ${upre}mt_${funcFile}_mean_reg${ext}
     deleteFile k${upre}mt_${funcFile}${ext}
     deleteFile k${upre}mt_tmean_mask${ext}
     deleteFile ${wpre}${dspre}k${upre}mt_${funcFile}${ext}
@@ -228,7 +325,7 @@ function cleanup_preprocessFunctional {
 
     deleteFile k${upre}mt_${funcFile}_Tmin${ext}
     deleteFile k${upre}mt_${funcFile}_Tmin_10pctThr${ext}
-    deleteFile ${upre}mt_tmean${ext}
+    #deleteFile ${upre}mt_tmean${ext}
     deleteFile ${dspre}k${upre}mt_tmean${ext}
     deleteFile ${wpre}${dspre}k${upre}mt_${funcFile}_tmean${ext}
     deleteFile f${apre}s${wpre}${dspre}kmt_mean_float${ext}
@@ -238,8 +335,8 @@ function cleanup_preprocessFunctional {
     deleteFile s${wpre}${dspre}k${upre}mt_${funcFile}${smoothing_suffix}_usan_size${ext}
 
     #with one-step warp, often get files such as wuktmd where FM unwarping and MNI warp are adjacent
-    deleteFile mt_${funcFile}${ext}
-    deleteFile mt_${funcFile}_mean_reg${ext}
+    #deleteFile mt_${funcFile}${ext}
+    #deleteFile mt_${funcFile}_mean_reg${ext}
     deleteFile ${dspre}kmt_${funcFile}${ext}
     deleteFile ${dspre}kmt_tmean_mask${ext}
     deleteFile ${wpre}${upre}${dspre}kmt_${funcFile}${ext}
@@ -250,7 +347,7 @@ function cleanup_preprocessFunctional {
 
     deleteFile ${dspre}kmt_${funcFile}_Tmin${ext}
     deleteFile ${dspre}kmt_${funcFile}_Tmin_10pctThr${ext}
-    deleteFile mt_tmean${ext}
+    #deleteFile mt_tmean${ext}
     deleteFile kmt_tmean${ext}
     deleteFile ${wpre}${upre}${dspre}kmt_${funcFile}_tmean${ext}
     deleteFile f${apre}s${wpre}${upre}${dspre}kmt_mean_float${ext}
@@ -260,11 +357,11 @@ function cleanup_preprocessFunctional {
     deleteFile s${wpre}${upre}${dspre}kmt_${funcFile}${smoothing_suffix}_usan_size${ext}
 
     #sequential stream
-    deleteFile m_${funcFile}${ext}
-    deleteFile m_${funcFile}_mean_reg${ext}
-    deleteFile ${upre}m_${funcFile}${ext}
-    deleteFile t${upre}m_${funcFile}${ext}
-    deleteFile tm_${funcFile}_tmean${ext}
+    #deleteFile m_${funcFile}${ext}
+    #deleteFile m_${funcFile}_mean_reg${ext}
+    #deleteFile ${upre}m_${funcFile}${ext}
+    #deleteFile t${upre}m_${funcFile}${ext}
+    #deleteFile tm_${funcFile}_tmean${ext}
     deleteFile ${dspre}kt${upre}m_${funcFile}${ext}
     deleteFile ${dspre}kt${upre}m_tmean_mask${ext}
     deleteFile ${wpre}${dspre}kt${upre}m_${funcFile}${ext}
@@ -287,7 +384,7 @@ function cleanup_preprocessFunctional {
 
     #with one-step warp, often get files such as wuktmd where FM unwarping and MNI warp are adjacent
     deleteFile m_${funcFile}${ext}
-    deleteFile tm_${funcFile}${ext}
+    #deleteFile tm_${funcFile}${ext}
     deleteFile ktm_${funcFile}${ext}
     deleteFile ${dspre}ktm_${funcFile}${ext}
     deleteFile ktm_tmean_mask${ext}
@@ -300,7 +397,7 @@ function cleanup_preprocessFunctional {
 
     deleteFile ktm_${funcFile}_Tmin${ext}
     deleteFile ktm_${funcFile}_Tmin_10pctThr${ext}
-    deleteFile tm_tmean${ext}
+    #deleteFile tm_tmean${ext}
     deleteFile ktm_${funcFile}_tmean${ext}
     deleteFile ${wpre}${upre}${dspre}ktm_${funcFile}_tmean${ext}
     deleteFile f${apre}s${wpre}${upre}${dspre}ktm_mean_float${ext}
@@ -315,8 +412,8 @@ function cleanup_preprocessFunctional {
     deleteFile ${preSmooth}_mask_edgecorrection${ext}
 
     #general files
-    deleteFile mc_mean_vol_target${ext}
-    deleteFile premc_mean_vol${ext}
+    #deleteFile mc_mean_vol_target${ext}
+    #deleteFile premc_mean_vol${ext}
 
     deleteFile func_to_struct_init.mat #6 dof transform prior to BBR
     deleteFile fmap2epi_bbr.mat
@@ -340,12 +437,13 @@ function cleanup_preprocessFunctional {
 
     rm -rf mcOrig
     rm -rf unwarptemps #intermediate fieldmap files
-    [ -d mc_mats ] && rm -rf mc_mats #original motion transformation matrices
+    #[ -d mc_mats ] && rm -rf mc_mats #original motion transformation matrices
 
     deleteFile example_func${ext}
-    deleteFile premc_mean_vol${ext}
-    deleteFile mc_initial${ext} #initial motion correction to mean functional
-    deleteFile mc_target_mask${ext} #brain mask for mc_target used for rmsdiff in motion_plots
+    deleteFile premc_stat_vol${ext}
+    deleteFile premc_mean_vol${ext} # old name
+    #deleteFile mc_initial${ext} #initial motion correction to mean functional
+    #deleteFile mc_target_mask${ext} #brain mask for mc_target used for rmsdiff in motion_plots
 
     deleteFile "*${funcFile}*_rel_mean.rms" #shouldn't be necessary anymore since we compute rms ourselves
     deleteFile "*${funcFile}*_abs_mean.rms"
@@ -364,8 +462,8 @@ function cleanup_preprocessFunctional {
     deleteFile epiref_brain_bias${ext}
     deleteFile epiref_brain_restore${ext}
     deleteFile func_to_epiref${ext}
-    deleteFile mc_target_brain_bias${ext}
-    deleteFile mc_target_brain_restore${ext}
+    #deleteFile mc_target_brain_bias${ext}
+    #deleteFile mc_target_brain_restore${ext}
 
     deleteFile dktm_${funcFile}_wavelet_noise.nii.gz
     deleteFile dkmt_${funcFile}_wavelet_noise.nii.gz
@@ -373,4 +471,112 @@ function cleanup_preprocessFunctional {
     if [[ "$nuisance_regression" -eq 1 || "$bandpass_filter" -eq 1 ]]; then
 	deleteFile n${apre}s${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
     fi
+
+
+    ## Files left over from Finn's pipeline
+    #wktm_rest_1_98_2_mask_dil1x.nii.gz
+    #wktm_rest_1_98_2_mask_dil1x_templateTrim.nii.gz
+    deleteFile ${wpre}k${upre}tm_${funcFile}_98_2_mask_dil1x${ext}
+    deleteFile ${wpre}k${upre}tm_${funcFile}_98_2_mask_dil1x_templateTrim${ext}
+    ###
+
+    if [ -n "$upre" ]; then
+       deleteFile ${upre}mt_${funcFile}${ext}
+       deleteFile ${upre}mt_${funcFile}_mean_reg${ext}
+       deleteFile ${upre}mt_tmean${ext}
+       deleteFile ${upre}m_${funcFile}${ext}
+       deleteFile t${upre}m_${funcFile}${ext}
+    fi
+
+    # remove motion files if we aren't told to keep them
+    # this option implemented to keep time consuming 4d motion computation
+    if [[ -z "$KEEP_MOTION_FILES" ]]; then
+
+      deleteFile m_${funcFile}${ext}
+      deleteFile m_${funcFile}_mean_reg${ext}
+
+      deleteFile tm_tmean${ext}
+      deleteFile tm_${funcFile}_tmean${ext}
+      deleteFile tm_${funcFile}${ext}
+
+      deleteFile mt_${funcFile}${ext}
+      deleteFile mt_${funcFile}${ext}
+      deleteFile mt_${funcFile}_mean_reg${ext}
+      deleteFile mt_tmean${ext}
+
+      [ -d mc_mats ] && rm -rf mc_mats #original motion transformation matrices
+
+      deleteFile mc_initial${ext} #initial motion correction to mean functional
+      deleteFile mc_target_mask${ext} #brain mask for mc_target used for rmsdiff in motion_plots
+      
+
+      deleteFile mc_target_brain_bias${ext}
+      deleteFile mc_target_brain_restore${ext}
+
+      deleteFile mc_mean_vol_target${ext}
+      deleteFile premc_stat_vol${ext}
+      deleteFile premc_mean_vol${ext} # old name
+
+      # in case we missed the empty upre
+      deleteFile ${upre}mt_${funcFile}${ext}
+      deleteFile ${upre}mt_${funcFile}_mean_reg${ext}
+      deleteFile ${upre}mt_tmean${ext}
+      deleteFile ${upre}m_${funcFile}${ext}
+      deleteFile t${upre}m_${funcFile}${ext}
+
+    fi
+
+    # keeps .functional, .detect_tr, .preprocessfunctional_complete
+    # optionally keeps .motion_correction_complete (if KEEP_MOTION_FILES)
+    rm_dotsteps
 }
+
+# read_preproc_cmd does not work!
+# sets $@ for function instead of global
+function read_preproc_cmd {
+ if [ -f .preproc_cmd ]; then
+   read cmd < .preproc_cmd
+   # disable wildcard expansion so that -dicom patterns don't get expanded
+   set -f 
+   # change positional parameters to stored settings
+   set -- $cmd
+   # re-enable wildcard expansion as usual
+   set +f 
+ else
+   echo "no .preproc_cmd files, cannot read!"
+   exit 1
+ fi
+}
+
+
+# given the NAME of an array that contains the names of other variables 
+# (presumably global variable names used by a function)
+# print the variable name and value
+# e.g. GLOBALS=(template mask)
+#      printvariablesin GLOBALS
+# ouptut like:
+#      template=mni
+#      mask=subj_mask.nii.gz
+# saved to file '.$globalsarrayname.cfg'
+function print_vars_in {
+   # scary bash indirect reference of array index
+   # to build array globals from passed in variable name
+   local globalarrayname=$1
+   [ -z "$globalarrayname" ] && warn "$FUNC_NAME expects the name of a global array as only input" && return 1
+   #savefile=.${globalarrayname,,}.cfg
+   # above breaks on OSX, change use tr instead of ,, to lowercase  
+   savefile=".$(echo ${globalarrayname}|tr A-Z a-z).cfg"
+
+   local ref="$globalarrayname[@]"
+   local globals=(${!ref})
+
+   (
+   echo "# $(date +%F/%H:%M)"
+   for var in ${globals[@]};do
+      echo "$var='${!var}'"
+   done
+   echo
+   ) >> $savefile
+}
+
+# vim: set tabstop=7:

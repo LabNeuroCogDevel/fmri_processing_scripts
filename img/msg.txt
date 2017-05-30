@@ -1,0 +1,11 @@
+
+
+
+
+ ____________________
+/                    \
+|    Interactive     |
+| fMRI preprocessing |
+|  command generator |
+\                    /
+ -------------------- 

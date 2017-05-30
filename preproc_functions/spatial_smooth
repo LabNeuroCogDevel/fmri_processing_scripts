@@ -1,4 +1,7 @@
 #!/bin/bash
+
+SPATIALSMOOTH_GLOBALS=(prefix funcFile smoothing_suffix no_smooth smoothing_kernel smoother susan_thresh p_2 median_intensity sigma)
+
 function spatial_smooth {
 
     preSmooth="${prefix}${funcFile}"
@@ -6,6 +9,8 @@ function spatial_smooth {
     postSmooth="${prefix}${funcFile}${smoothing_suffix}" #in case of -no_smooth, will be same as preSmooth
 
     if [[ ! -f ".smoothing_complete" && $no_smooth -eq 0 ]]; then
+
+       print_vars_in SPATIALSMOOTH_GLOBALS
 
 	#Create an extents mask pre-smoothing that ensures that all unsmoothed voxels are sampled at all timepoints. 
 	#Then apply mask after smoothing to ensure well-behaved voxels (i.e., not smoothing a mixture of zero and non-zero voxels).
@@ -17,6 +22,8 @@ function spatial_smooth {
 	if [ $smoother = "susan" ]; then
 	    dimensionality=3 #smooth in two or three dimensions
 	    susan_thresh=$( echo "scale=5; ($median_intensity - $p_2) * 0.75" | bc )
+           # curerntly in parse_args
+           #sigma=$( echo "scale=5; $smoothing_kernel/2.355" | bc )
 	    
             #recompute mean functional, which is used for susan
 	    rel "fslmaths \"${preSmooth}\" -Tmean \"${preSmooth}_tmean\""
@@ -91,3 +98,4 @@ function spatial_smooth {
     return 0
 
 }
+# vim: set tabstop=7:

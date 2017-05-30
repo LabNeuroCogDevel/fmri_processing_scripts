@@ -1,20 +1,25 @@
 #!/usr/bin/env Rscript
 
+# run like
+# ./ROI_TempCorr.R -ts /Volumes/Phillips/WorkingMemory/11155/20130418/SpatialWM_v1_run1_768x720.5/nfswkmtd_functional.nii.gz -brainmask  /Volumes/Phillips/gm_50mask.nii 
+
 printHelp <- function() {
   cat("ROI_TempCorr is a script that computes temporal correlations among ROIs defined by an integer-valued mask (e.g., a set of numbered spheres).",
       "",
       "Required inputs are:",
-      "  -ts  <4D file>: The file containing time series of interest. Usually preprocessed resting-state data. Can be NIfTI or AFNI BRIK/HEAD",
+      "  -ts       <4D file>: The file containing time series of interest. Usually preprocessed resting-state data. Can be NIfTI or AFNI BRIK/HEAD",
       "  -rois <3D file>: The integer-valued mask file defining the set of ROIs. Computed correlation matrices will be nROIs x nROIs in size based on this mask.",
       "  -out_file <filename for output>: The file to be output containing correlations among ROIs.",
       "",
       "Optional arguments are:",
-      "  -corr_method <pearson|spearman|robust|mcd|weighted|donostah|M|pairwiseQC|pairwiseGK>: Method to compute correlations among time series. Default: pearson",
+      "  -corr_type <full|semi|partial>: what type of correlation; using function cor,spcor, or pcor. default to full, otherwise forced njobs to 1",
+      "  -corr_method <pearson|spearman|robust|mcd|weighted|donostah|M|pairwiseQC|pairwiseGK|none>: Method to compute correlations among time series. Default: pearson",
       "      pearson is the standard Pearson correlation",
       "      spearman is Spearman correlation based on ranks",
       "      kendall is Kendall's tau correlation (also based on ranks, but with somewhat better statistical properties than Spearman)",
       "      robust uses the covRob function from the robust package with estim=\"auto\" to obtain robust estimate of correlation (reduce sensitivity to outliers)",
       "      mcd, weighted, donostah, M, pairwiseQC, pairwiseGK are different robust estimators of correlation. See ?covRob in the robust package for details.",
+      "      use 'none' to not compute the correlation matrix. See also AFNIs 3dmaskave. This can compute pca instead of mean over ROIs",
       "  -roi_reduce <pca|median|mean|huber>: Method to obtain a single time series for voxels within an ROI. Default: pca",
       "      pca takes the first eigenvector within the ROI, representing maximal shared variance",
       "      median uses the median within each ROI",
@@ -27,12 +32,13 @@ printHelp <- function() {
       "  -njobs <n>: Number of parallel jobs to run when computing correlations. Default: 4.",
       "  -na_string: Character string indicating how to represent missing correlations in output file. Default NA.",
       "  -ts_out_file <filename for time series output>: Output a file containing the average time series for each region before computing correlations.",
+      "  -ts_only: stop before running correlations. useful with -ts_out_file",
       "",
       "If the -ts file does not match the -rois file, the -ts file will be resampled to match the -rois file using 3dresample. This requires that the images be coregistered,",
       "  in the same stereotactic space, and have the same grid size.",
       "",
       "The script depends on the following R libraries: foreach, doSNOW, MASS, oro.nifti, robust, and pracma. These can be installed using:",
-      "  install.packages(c(\"foreach\", \"doSNOW\", \"MASS\", \"oro.nifti\", \"robust\", \"pracma\"))",
+      "  install.packages(c(\"foreach\", \"doSNOW\", \"MASS\", \"oro.nifti\", \"robust\", \"pracma\",\"ppcor\"))",
       sep="\n")
 }
 
@@ -60,11 +66,16 @@ out_file <- "corr_rois.txt"
 ts_out_file <- ""
 fname_censor1D <- NULL
 fname_brainmask <- NULL
+corr_type   <- "full"
 corr_method <- "pearson"
 roi_reduce <- "pca"
 fisherz <- FALSE
 dropvols <- 0
+
+ts_only <- FALSE # only do timeseries
+
 na_string <- "NA"
+clustersocketport <- 10290
 
 argpos <- 1
 while (argpos <= length(args)) {
@@ -98,12 +109,19 @@ while (argpos <= length(args)) {
     roi_reduce <- args[argpos + 1]
     argpos <- argpos + 2
     stopifnot(roi_reduce %in% c("pca", "mean", "median", "huber"))
+  } else if (args[argpos] == "-corr_type") {
+    corr_type <- args[argpos + 1]
+    argpos <- argpos + 2
+    stopifnot(corr_type %in% c("full","semi","partial"))    
   } else if (args[argpos] == "-corr_method") {
     corr_method <- args[argpos + 1]
     argpos <- argpos + 2
-    stopifnot(corr_method %in% c("pearson", "spearman", "robust", "kendall", "mcd", "weighted", "donostah", "M", "pairwiseQC", "pairwiseGK"))    
+    stopifnot(corr_method %in% c("pearson", "spearman", "robust", "kendall", "mcd", "weighted", "donostah", "M", "pairwiseQC", "pairwiseGK", "none"))    
   } else if (args[argpos] == "-fisherz") {
     fisherz <- TRUE
+    argpos <- argpos + 1
+  } else if (args[argpos] == "-ts_only") {
+    ts_only <- T
     argpos <- argpos + 1
   } else if (args[argpos] == "-na_string") {
     na_string <- args[argpos + 1]
@@ -111,12 +129,22 @@ while (argpos <= length(args)) {
   } else if (args[argpos] == "-dropvols") {
     dropvols <- as.numeric(args[argpos + 1]) #number of vols to drop
     argpos <- argpos + 2
+  } else if (args[argpos] == "-port") {
+    clustersocketport <- as.integer(args[argpos + 1])
+    argpos <- argpos + 2
+    if (is.na(njobs)) { stop("-port must be an integer") }
   } else {
     stop("Not sure what to do with argument: ", args[argpos])
   }
 }
 
-if (corr_method == "robust") { corr_method <- "auto" } #robust package uses "auto" to choose best robust estimator given problem complexity (matrix size)
+#robust package uses "auto" to choose best robust estimator given problem complexity (matrix size)
+if (corr_method == "robust") { corr_method <- "auto" }
+
+# check for input sanity before spending time loading things in
+if(corr_method == "none" && nchar(ts_out_file) == 0L) {
+  stop('corr_method = none and no ts_out_file! No point in running.')
+}
 
 suppressMessages(require(methods))
 suppressMessages(require(foreach))
@@ -124,6 +152,7 @@ suppressMessages(require(doSNOW))
 suppressMessages(require(MASS))
 suppressMessages(require(oro.nifti))
 suppressMessages(require(pracma))
+#suppressMessages(require(ppcor))
 
 if (!is.null(fname_censor1D)) {
   stopifnot(file.exists(fname_censor1D))
@@ -134,16 +163,41 @@ if (!is.null(fname_censor1D)) {
 }
 
 #generate (robust) correlation matrix given a set of time series.
-genCorrMat <- function(roits, method="auto", fisherz=FALSE) {
+genCorrMat <- function(roits, method="auto", fisherz=FALSE,type="full") {
   #roits should be an time x roi data.frame
   
   suppressMessages(require(robust))
-  
+
+  # load ppcor if it's needed (not needed for 'full')
+  #if(type!='full') suppressMessages(require(ppcor))
+
+  # use generic corfun for correlation
+  # but what cor function should that use? determine based on type
+  corfun <- function(x,...) {
+    switch(type,
+           full    = cor(x,...),
+           semi    = ppcor::spcor(x,...)$estimate,
+           partial = ppcor::pcor(x,...)$estimate
+           )
+  }
+
   #assume that parallel has been setup upstream
   njobs <- getDoParWorkers()
+
+  # for semi and partial, we cannot chunk the data!
+  if(njobs > 1 && type %in% c('semi','partial')){
+    warning('Cannot use multiple jobs for semi or partial cor! Setting njobs to 1: i.e. -n 1')
+    njobs <- 1
+  }
   
   #sapply only works for data.frame
   if (!inherits(roits, "data.frame")) stop("genCorrMat only works properly with data.frame objects.")
+
+  # we can only use fancy pants when doing full (e.g. mcd|weighted|donostah|M|pairwiseQC|pairwiseGK)
+  # shouldn't see 'none' method b/c we quit earlier
+  if (type != 'full' && ! method %in% c("pearson", "spearman", "kendall")){
+    stop(sprintf('cannot use method %s with type %s',method,type))
+  }
   
   #remove missing ROI columns for estimating correlation
   nacols <- which(sapply(roits, function(col) all(is.na(col))))
@@ -158,13 +212,35 @@ genCorrMat <- function(roits, method="auto", fisherz=FALSE) {
   #indices of lower triangle
   lo.tri <- which(lower.tri(rcorMat), arr.ind=TRUE)
   
+  # how many chucks per core
+  # for small datasets, need to make sure we didn't pick too high a number
   chunksPerProcessor <- 8
+
+  # if we only have one job, we want all the chunks together
+  # that is we want chunksize == nrow(lo.tri)
+  if(njobs == 1) { chunksPerProcessor <- 1 }
+
+  repeat {
+    chunksize <- floor(nrow(lo.tri)/njobs/chunksPerProcessor)
+    if(chunksize >= 1) break
+    # decrease chunk size and check we can still go lower
+    chunksPerProcessor <- chunksPerProcessor - 1
+    cat('WARNING: job is small, decreasing chunks to',chunksPerProcessor,'\n')
+    if(chunksPerProcessor<1) stop('too many jobs for too little work, lower -n')
+  }
+
+  # let us know when we are asking for a lot of work
+  # the threshold is less for non-full cor types
+  chunksizewarn <- 10^3
+  if(type !='full')  chunksizewarn <-  10^2 
+  if( chunksize > chunksizewarn) warning(sprintf('lots of datapoints (%d) going to each processor',chunksize))
+
   #do manual chunking: divide correlations across processors, where each processor handles 10 chunks in total (~350 corrs per chunk)
-  corrvec <- foreach(pair=iter(lo.tri, by="row", chunksize=floor(nrow(lo.tri)/njobs/chunksPerProcessor)), .inorder=TRUE, .combine=c, .multicombine=TRUE, .packages="robust") %dopar% {
+  corrvec <- foreach(pair=iter(lo.tri, by="row", chunksize=chunksize), .inorder=TRUE, .combine=c, .multicombine=TRUE, .packages="robust") %dopar% {
     #iter will pass entire chunk of lo.tri, use apply to compute row-wise corrs
     #basic cor for testing (much faster)
     if (method %in% c("pearson", "spearman", "kendall")) {
-      apply(pair, 1, function(x) cor(na.omit(cbind(nona[,x[1]], nona[,x[2]])), method=method)[1,2])  
+      apply(pair, 1, function(x) corfun(na.omit(cbind(nona[,x[1]], nona[,x[2]])), method=method)[1,2])  
     } else {
       apply(pair, 1, function(x) covRob(na.omit(cbind(nona[,x[1]], nona[,x[2]])), estim=method, corr=TRUE)$cov[1,2])
     }
@@ -289,7 +365,7 @@ if (length(maskvals) > 1000) {
   warning("More than 1000 putative ROIs identified in mask file: ", fname_roimask)
 }
 
-setDefaultClusterOptions(master="localhost")
+setDefaultClusterOptions(master="localhost", port=clustersocketport)
 clusterobj <- makeSOCKcluster(njobs)
 registerDoSNOW(clusterobj)
 
@@ -302,59 +378,59 @@ registerDoSNOW(clusterobj)
 
 #generate a 4d mat of indices
 roimats <- lapply(maskvals, function(v) {
-          mi <- which(roimask==v, arr.ind=TRUE)
-          nvol <- dim(rsproc)[4]
-          nvox <- nrow(mi)
-          mi4d <- cbind(pracma::repmat(mi, nvol, 1), rep(1:nvol, each=nvox))
-          mat <- matrix(rsproc[mi4d], nrow=nvox, ncol=nvol) #need to manually reshape into matrix from vector
-          attr(mat, "maskval") <- v #add mask value as attribute so that information about bad ROIs can be printed below
-          t(mat) #transpose matrix so that it is time x voxels
-        })
+  mi <- which(roimask==v, arr.ind=TRUE)
+  nvol <- dim(rsproc)[4]
+  nvox <- nrow(mi)
+  mi4d <- cbind(pracma::repmat(mi, nvol, 1), rep(1:nvol, each=nvox))
+  mat <- matrix(rsproc[mi4d], nrow=nvox, ncol=nvol) #need to manually reshape into matrix from vector
+  attr(mat, "maskval") <- v #add mask value as attribute so that information about bad ROIs can be printed below
+  t(mat) #transpose matrix so that it is time x voxels
+})
 
 rm(rsproc) #clear imaging file from memory now that we have obtained the roi time series 
 
 message("Obtaining a single time series within each ROI using: ", roi_reduce)
 roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, .noexport=c("rsproc")) %do% { #minimal time savings from dopar here, and it prevents message output
-    ##roivox is a time x voxels matrix
-    ##data cleaning steps: remove voxels that are 1) partially or completely missing; 2) all 0; 3) variance = 0 (constant)
-    ##leave out variance > mean check because bandpass-filtered data are demeaned
-    badvox <- apply(roivox, 2, function(voxts) {
-        if (any(is.na(voxts))) TRUE #any missing values
-        else if (all(voxts == 0.0)) TRUE #all zeros
-        else if (var(voxts) == 0.0) TRUE #constant time series
-        ##else if (var(voxts) > mean(voxts)) TRUE #variance exceeds mean (very unstable)
-        else FALSE #good voxel
-    })
+  ##roivox is a time x voxels matrix
+  ##data cleaning steps: remove voxels that are 1) partially or completely missing; 2) all 0; 3) variance = 0 (constant)
+  ##leave out variance > mean check because bandpass-filtered data are demeaned
+  badvox <- apply(roivox, 2, function(voxts) {
+    if (any(is.na(voxts))) TRUE #any missing values
+    else if (all(voxts == 0.0)) TRUE #all zeros
+    else if (var(voxts) == 0.0) TRUE #constant time series
+    ##else if (var(voxts) > mean(voxts)) TRUE #variance exceeds mean (very unstable)
+    else FALSE #good voxel
+  })
 
-    if (sum(!badvox) < 5) {
-        ##only reduce if there are at least 5 voxels to average over after reduction above
-        ##otherwise return NA time series
+  if (sum(!badvox) < 5) {
+    ##only reduce if there are at least 5 voxels to average over after reduction above
+    ##otherwise return NA time series
 
-        ##cat("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.\n", file=".roilog", append=TRUE)
-        message("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.")
-        ts <- rep(NA_real_, nrow(roivox))
-    } else {
-        if (sum(badvox) > 0) {
-            ##cat("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.\n", file=".roilog", append=TRUE)
-            message("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.")
-            roivox <- roivox[,!badvox] #remove bad voxels (columns)
-        }
-
-        if (roi_reduce == "pca") {
-            ts <- prcomp(roivox, scale.=TRUE)$x[,1] #first eigenvector
-            tsmean <- apply(roivox, 1, mean, na.rm=TRUE)
-            #flip sign of component to match observed data (positive correlation)
-            if (cor(ts, tsmean) < 0) { ts <- -1*ts }
-        } else if (roi_reduce == "mean") {
-            ts <- apply(roivox, 1, mean, na.rm=TRUE) #mean time series across voxels
-        } else if (roi_reduce == "median") {
-            ts <- apply(roivox, 1, median, na.rm=TRUE)
-        } else if (roi_reduce == "huber") {
-            ts <- apply(roivox, 1, getRobLocation)
-        }
+    ##cat("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.\n", file=".roilog", append=TRUE)
+    message("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.")
+    ts <- rep(NA_real_, nrow(roivox))
+  } else {
+    if (sum(badvox) > 0) {
+      ##cat("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.\n", file=".roilog", append=TRUE)
+      message("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.")
+      roivox <- roivox[,!badvox] #remove bad voxels (columns)
     }
 
-    return(ts)
+    if (roi_reduce == "pca") {
+      ts <- prcomp(roivox, scale.=TRUE)$x[,1] #first eigenvector
+      tsmean <- apply(roivox, 1, mean, na.rm=TRUE)
+      #flip sign of component to match observed data (positive correlation)
+      if (cor(ts, tsmean) < 0) { ts <- -1*ts }
+    } else if (roi_reduce == "mean") {
+      ts <- apply(roivox, 1, mean, na.rm=TRUE) #mean time series across voxels
+    } else if (roi_reduce == "median") {
+      ts <- apply(roivox, 1, median, na.rm=TRUE)
+    } else if (roi_reduce == "huber") {
+      ts <- apply(roivox, 1, getRobLocation)
+    }
+  }
+
+  return(ts)
 }
 
 #need to print roi problems outside of foreach since stdout is dumped
@@ -370,37 +446,51 @@ censorvec <- rep(0, nrow(roiavgmat))
 goodVols <- 1:nrow(roiavgmat)
 
 if (length(censorVols) > 0L) {
-    message("Censoring volumes ", paste0(censorVols, collapse=", "), " based on ", fname_censor1D)
-    goodVols <- goodVols[-censorVols]
-    censorvec[censorVols] <- 1
+  message("Censoring volumes ", paste0(censorVols, collapse=", "), " based on ", fname_censor1D)
+  goodVols <- goodVols[-censorVols]
+  censorvec[censorVols] <- 1
 }
 
 ##drop initial volumes if requested
 if (dropvols > 0) {
-    message("Dropping ", dropvols, " volumes from ROI time series prior to correlation.")
-    goodVols <- goodVols[-1*(1:dropvols)]
-    censorvec[1:dropvols] <- 1
+  message("Dropping ", dropvols, " volumes from ROI time series prior to correlation.")
+  goodVols <- goodVols[-1*(1:dropvols)]
+  censorvec[1:dropvols] <- 1
 }
 
 roiavgmat_censored <- roiavgmat[goodVols,]
 
 ##output ts file if requested
 if (nchar(ts_out_file) > 0L) {
+  message("Writing time series to: ", ts_out_file)
+  if(is.null(fname_censor1D)) {
+    df <- roiavgmat
+  } else {
     df <- cbind(censor=censorvec, roiavgmat)
-    write.table(df, file=ts_out_file, col.names=TRUE, row.names=TRUE)
+  }
+  write.table(df, file=ts_out_file, col.names=F, row.names=F)
+}
+
+# WF20160906 - we only want the timeseries. we have that so quit.
+if (ts_only) { quit(save="no", 0, FALSE) }
+
+# just want to print time series, not actually compute correlations: for DM 20160517
+if(corr_method == "none") {
+  stopCluster(clusterobj)
+  quit(save="no", 0, TRUE)
 }
 
 message("Computing correlations among ROI times series using method: ", ifelse(corr_method=="auto", "robust", corr_method))
-cormat <- genCorrMat(as.data.frame(roiavgmat_censored), method=corr_method, fisherz=fisherz)
+cormat <- genCorrMat(as.data.frame(roiavgmat_censored), method=corr_method, fisherz=fisherz,type=corr_type)
 
 stopCluster(clusterobj)
 
 message("Writing correlations to: ", out_file)
 if (grepl(".*\\.gz$", out_file, perl=TRUE)) {
-    #write compressed
-    gzf <- gzfile(out_file, "w")
-    write.table(cormat, file=gzf, col.names=FALSE, row.names=FALSE, na=na_string)
-    close(gzf)    
+  ##write compressed
+  gzf <- gzfile(out_file, "w")
+  write.table(cormat, file=gzf, col.names=FALSE, row.names=FALSE, na=na_string)
+  close(gzf)    
 } else {
-    write.table(cormat, file=out_file, col.names=FALSE, row.names=FALSE, na=na_string)
+  write.table(cormat, file=out_file, col.names=FALSE, row.names=FALSE, na=na_string)
 }

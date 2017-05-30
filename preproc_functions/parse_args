@@ -1,55 +1,8 @@
 #!/bin/bash
 
-function rm_completefiles {
-    rel "\nStarting over...\n\nRe-running all preprocessing steps\n" c
-    deleteFile ".functional"
-    deleteFile ".detect_tr"
-    deleteFile ".detect_sliceorder"
-    deleteFile ".median_intensity"
-    deleteFile ".pct2"
-    deleteFile ".csf_ts"
-    deleteFile ".csf_ts_deriv"
-    deleteFile ".wm_ts"
-    deleteFile ".wm_ts_deriv"
-    deleteFile ".gs_ts"
-    deleteFile ".gs_ts_deriv"
-    deleteFile ".motion_demean"
-    deleteFile ".motion_deriv"
-    deleteFile ".nuisance_regressors"
-    deleteFile ".wm_ero2x${ext}"
-    deleteFile ".csf_ero2x${ext}"
-    deleteFile ".brainmask_ero2x_anat${ext}"
-    deleteFile ".brainmask_ero2x${ext}"
-    deleteFile ".template_csf_prob${ext}"
-    deleteFile ".template_wm_prob${ext}"
-    deleteFile ".fieldmap_magnitude"
-    deleteFile ".fieldmap_phase"
-    deleteFile ".reorient2std_complete"
-    deleteFile ".motion_censor_complete"
-    deleteFile ".motion_plots_complete"
-    deleteFile ".slice_timing_complete"
-    deleteFile ".motion_correction_complete"
-    deleteFile ".skull_strip_complete"
-    deleteFile ".func2struct_complete"
-    deleteFile ".topup_complete"
-    deleteFile ".warp_complete"
-    deleteFile ".compute_warp_complete"
-    deleteFile ".smoothing_complete"
-    deleteFile ".ica_aroma_complete"
-    deleteFile ".temporal_filtering_complete"
-    deleteFile ".rescaling_complete"
-    deleteFile ".thresholding_complete"
-    deleteFile ".despike_complete"    
-    deleteFile ".fmunwarp_complete"
-    deleteFile ".prepare_fieldmap_complete"
-    deleteFile ".nuisance_regression_complete"
-    deleteFile ".bandpass_filter_complete"
-    deleteFile ".preprocessfunctional_complete"
-}
-
 function parse_args {
-    #parse input arguments, initialize default parameter settings
-    #when called from preprocessFunctional, must pass "$@", which is all input parameters to script
+    ## parse input arguments, initialize default parameter settings
+    ## when called from preprocessFunctional, must pass "$@", which is all input parameters to script
     
     #initialize defaults
     funcFile=
@@ -85,6 +38,7 @@ function parse_args {
     no_st=0
     no_smooth=0
     no_warp=0
+    autocorr_with_basis=0 # -rmautocorr, 20170420WF -- added in nuisance_regression, 3dREMLfit basis 
     nuisance_regression=0
     nuisance_compute=0
     nuisance_file=.nuisance_regressors
@@ -106,6 +60,8 @@ function parse_args {
     waveletM1000=0
     waveletThreshold=10
     verbose=
+    KEEP_MOTION_FILES=
+    n_rm_firstvols=0
 
     #figure out file extension for FSL programs
     if [ -z $FSLOUTPUTTYPE ]; then
@@ -140,9 +96,12 @@ function parse_args {
 	    echo ""
 
 	    if [ $resume = y ]; then
-		set -f #disable wildcard expansion so that -dicom patterns don't get expanded
-		set -- $cmd #change positional parameters to stored settings
-		set +f #re-enable wildcard expansion as usual
+              #disable wildcard expansion so that -dicom patterns don't get expanded
+		set -f 
+              # change positional parameters to stored settings
+		set -- $cmd
+              # re-enable wildcard expansion as usual
+		set +f
 	    else
 		echo -e "\n\nQuitting script."
 		exit 0
@@ -170,16 +129,43 @@ function parse_args {
 	if [ -f .preproc_cmd ]; then
 	    read cmd < .preproc_cmd
 	    cmd="${cmd/-startover/}"
-	    set -f #disable wildcard expansion so that -dicom patterns don't get expanded
-	    set -- $cmd #change positional parameters to stored settings
-	    set +f #re-enable wildcard expansion as usual
+           # disable wildcard expansion so that -dicom patterns don't get expanded
+           set -f 
+           # change positional parameters to stored settings
+	    set -- $cmd
+           # re-enable wildcard expansion as usual
+	    set +f 
 	else
 	    echo "-cleanup_only or -startover specified alone, but no known preprocessing call in .preproc_cmd."
 	    exit 1
 	fi
+
+    elif [ $# -eq 2 ] && 
+         [[ "$@" =~ -cleanup ]] && # cleanup or cleanup_only, doesn't matter
+         [[ "$@" =~ -keep_motion_files ]]; then
+	cleanup_only=1
+	cleanup=1
+       KEEP_MOTION_FILES=1
+	if [ -f .preproc_cmd ]; then
+	    read cmd < .preproc_cmd
+	    cmd="${cmd/-startover/}"
+           # disable wildcard expansion so that -dicom patterns don't get expanded
+           set -f 
+           # change positional parameters to stored settings
+	    set -- $cmd
+           # re-enable wildcard expansion as usual
+	    set +f 
+	else
+	    echo "doesn't look like we've run anything yet. dont know how to -cleanup_only and -keep_motion_files"
+	    exit 1
+	fi
+      
     else
+       # don't overwrite
+       [ -r .preproc_cmd ] && mv .preproc_cmd .preproc_cmd_mv$(date +%s)
 	#write the parameter settings to file
-	echo "$@" > .preproc_cmd #for resuming failed run.
+       # for resuming failed run.
+	echo "$@" > .preproc_cmd 
     fi
 
     #echo "about to process with cmd: $@"
@@ -335,6 +321,9 @@ function parse_args {
 	elif [ $1 = -ref_vol ] ; then
             ref_vol="${2}"
             shift 2
+       elif [ $1 = -rmautocorr ]; then
+           autocorr_with_basis=1
+           shift
 	elif [ $1 = -rescaling_method ]; then
 	    if [[ $2 = "10000_globalmedian" || $2 = "100_voxelmean" ]]; then
 		rescalingMethod="${2}"
@@ -398,9 +387,13 @@ function parse_args {
 	    #deprecated: -siemens preferred
 	    detectSiemens=1
 	    shift 1
+       elif [ $1 = -trunc   ]; then
+           n_rm_firstvols=$2
+           shift 2
+
 	elif [ $1 = -verbose ]; then
 	    verbose=1
-	    set -x
+	    set -xv
 	    shift 1
 	elif [ $1 = -warpcoef ]; then
 	    warpCoef="${2}"
@@ -423,6 +416,10 @@ function parse_args {
 	elif [ $1 = -wavelet_threshold ]; then
 	    waveletThreshold="${2}"
 	    shift 2
+	elif [ $1 = -keep_motion_files ]; then
+	    # probably dont see this, -cleanup_only skips this parsing
+	    KEEP_MOTION_FILES=1
+	    shift 1
 	else
 	    #printHelp
 	    echo -e "----------------\n\n"
@@ -473,6 +470,11 @@ function parse_args {
 
     if [[ $sliceMotion4D -eq 1 && $mc_first -eq 1 ]]; then
 	echo "Cannot request -mc_first with -4d_slice_motion"
+	exit 1
+    fi
+
+    if [[ $autocorr_with_basis -eq 1 && $bandpass_filter -eq 0 ]]; then
+	echo "Cannot request -rmautocorr without -bandpass_filter "
 	exit 1
     fi
 
@@ -599,3 +601,5 @@ function parse_mprage_args() {
 	fi
     done
 }
+
+# vim: set tabstop=7:

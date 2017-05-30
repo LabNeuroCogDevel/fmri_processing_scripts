@@ -1,6 +1,17 @@
 #!/bin/bash
 #Apply fieldmap to EPI data at the same time as motion correction (one-step interpolation)
 
+unable_warp_msg(){
+  echo "Unable to figure out what warp was intended." 
+  echo "  combination of" 
+  for var in warp_target no_warp sliceMotion4D fm_phase no_st st_first mc_first despike; do
+     echo "     $var: ${!var}"
+  done
+}
+
+# GLOBALS:
+ONESTEPWARP_GLOBALS=(templateBrain subjMask fm_phase mc_first prefix funcFile createBBRFmapWarp no_st st_first sliceMotion4D preMC despike postDespike postSS nowarp funcWarpInterp warpCoef)
+
 function onestep_warp {
 
     if [ $# -lt 1 ]; then
@@ -8,6 +19,11 @@ function onestep_warp {
 	exit 1
     fi
 
+    # record all the globals used by this function
+    print_vars_in ONESTEPWARP_GLOBALS
+
+
+    # figure out what to do based on the target
     local warp_target="$1"
 
     if [ $warp_target = standard ]; then
@@ -95,10 +111,10 @@ function onestep_warp {
 	    rel "Volume-wise motion correction + fieldmap unwarping to $warp_target in one interpolation" c
 	    cvcmd="convertwarp --ref=$ref --warp1=$fmap_unwarp_field --relout"
 
-	elif [[ -n "$fm_phase" && $no_warp -eq 1 && $sliceMotion4D -eq 1 ]]; then
+	elif [[ $no_warp -eq 1 && $sliceMotion4D -eq 1 ]]; then
 	    #Combination 3: fieldmap unwarp alone (not volume-wise)
 	    #  $warp_target = mc_target
-	    #  Conditions: a) fieldmap provided (-fm_phase)
+	    #  Conditions: a) OPTIONAL: fieldmap provided (-fm_phase)
 	    #              b) -no_warp
 	    #              c) data already motion-corrected by -4d_slice_motion
 
@@ -107,14 +123,47 @@ function onestep_warp {
 	    else
 		towarp="${postSS}" #warp functionals after skull strip + intensity: ktm_funcfile
 	    fi
-
 	    volwise=0
-	    rel "Apply fieldmap unwarping alone" c
-	    rel "convertwarp --ref=$ref --warp1=$fmap_unwarp_field  \
-		--relout --out=func_to_${warp_target}_warp_allv"
-	    
+
+
+	    if [[ -n "$fm_phase" ]]; then
+		rel "Apply fieldmap unwarping alone" c
+		rel "convertwarp --ref=$ref --warp1=$fmap_unwarp_field  \
+			--relout --out=func_to_${warp_target}_warp_allv"
+
+            # OHearn/Dhruv have "AutismFace" data without fieldmaps
+            # like Condition 6. but not warping to standard
+            else
+
+                rel "No warp. Staying in functional (not structural) space. " c
+                return 0
+                # bad warp (squished brain)! + want to stay in functional space
+                ## warp to functional
+                # w->W for warped to struct (instead of standard)
+	        #prefix="W${prefix}" 
+                #rel "warping to structural only (no FM, no standard) $ref and func_to_struct.mat" c
+                #rel "convertwarp --ref=$ref --premat=func_to_struct.mat \
+	    	#        --relout --out=func_to_${warp_target}_warp_allv"
+            fi 
+
+
+        elif [ $no_warp -eq 1 -a $st_first -eq 1 -a $despike -eq 0 ]; then
+          #WF20170216 -- here for MJ following gu 2015 pnas
+	  towarp="${postSS}" #warp functionals after skull strip + intensity: ktm0_funcfile
+
+          # if we were going to concat the motion correction mats we'd want to use 
+          # WF doesn't think this is what we want. 
+	  #towarp="${preMC}" # t0_funcfile
+          
+          # what does this do?!
+	  volwise=0
+
+          # motion correction already preformed and we dont want to warp
+          # so we are done
+          return 0
+
 	else 
-	    echo "Unable to figure out what warp was intended."
+            unable_warp_msg
 	    exit 1
 	fi
     elif [ $warp_target = standard ]; then #warp to standard space
@@ -196,7 +245,7 @@ function onestep_warp {
 		--warp2=${warpCoef} --relout"
 	    
 	else
-	    echo "Unable to figure out what warp was intended."
+            unable_warp_msg
 	    exit 1
 	fi
 
@@ -275,3 +324,4 @@ function onestep_warp {
     return 0
 
 }
+# vi: set shiftwidth=4 tabstop=8 expandtab:

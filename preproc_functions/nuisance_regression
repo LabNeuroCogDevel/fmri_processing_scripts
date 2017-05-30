@@ -16,7 +16,83 @@ function warp_structmask_to_func {
 
 }
 
+#compute motion parameter derivatives for nuisance regression
+# a function b/c we call it twice
+motionderiv() {
+  [ ! -f ".motion_deriv" ] && \
+  1d_tool.py -overwrite -infile motion.par -set_nruns 1 -derivative -demean -write .motion_deriv
+
+  return 0
+}
+
+COMPUTE_NUISANCE_REGRESSORS_GLOBALS=(nuisance_file nuisance_regressors no_warp postWarp postDespike postSS templateName mprageBet_base ext tr prefix bpLow bpHigh)
+
+# give
+# - a nifti get basis functions to remove autocorrelation
+# - output
+# - optional: mask
+# write file to $out with 3dREMLfit to bandpass, remove regressors, remove autocorralation
+# USAGE:
+# remove_autocorr_and_br dnswdktm_restepi_5.nii.gz Rdnswdktm_restepi_5.nii.gz wktm_restepi_98_2_mask_dil1x_templateTrim.nii.gz
+# GLOBAL $tr, $nuisance_file, $bpLow, $bpHigh
+# there is lots of boilerplate checks. at the heart this runs 2 commands
+# 1) 1dBport to generate bandpass sine/cosine and basis function (to remove autocorr)
+# 2) 3dREMLfit to remove these
+function remove_autocorr_and_br(){
+  img=$1
+  out=$2
+  mask=$3
+
+  [ -r .remove_autocorr_complete ] && return 0
+
+  [ ! -r $img ]  && echo "$FUNCNAME missing image ($img)" >&2 && return 1
+  nvol=$(3dinfo -nt $img)
+  [ -z "$nvol" -o $nvol -lt 1 ] && echo "$FUNC_NAME: bad number of timesteps ($nvol) in $img" >&2 && return 1
+
+  bandoption=""
+  if [ "$bandpass_filter" -eq 1 ]; then
+     if [ -z "$bpLow" -o -z "$bpHigh" ]; then
+       rel "ERROR! $FUNC_NAME has no bandpass low or high parameters, but we said bandpass!" c
+       return 1
+     fi
+     bandoption="-band $bpLow $bpHigh"
+  else
+     #rel "WARNING! AFNI gurus say you probably WANT bandpassing. You are NOT bandpassing (by setting no low pass and highpass above nyquist" c
+     #bandoption="-band 0 100000"
+      rel "ERROR! I think you need to bandpass to remove autocorrelation. Sorry." c
+      return 1      
+  fi
+
+  rel "1dBport -nodata $nvol $tr $bandoption -quad -invert > .basis.1d"
+  # same as '-nodata $nvol $tr' is same as '-input $img'
+
+  reml_in_file=$nuisance_file.rmautcorr
+  
+  if [ "$nuisance_regression" -eq 1 ]; then
+      rel "paste $nuisance_file .basis.1d > $reml_in_file"
+  else
+      rel "cp .basis.1d $reml_in_file"
+  fi
+  # could also try below, but get different results!
+  # regoption="-stimbase $nuisance_file"
+
+  # are we using a mask?
+  maskoption=""
+  [ -n "$mask" ] && imtest "$mask" && maskoption="-mask $mask"
+
+  rel "3dREMLfit -input $img $maskoption -matim $reml_in_file -Rerrts $out"
+  rel "date > .remove_autocorr_complete"
+  return 0
+}
+
 function compute_nuisance_regressors {
+
+    # 20170421WF: skipping might be a problem if we change what regressors we want
+    if [ -r .nuisance_compute_complete ]; then
+       rel "already computed nuisance regression" c
+       return 0
+    fi
+
     declare -a nuisancecols #nuisance regressors to be concatenated
 
     if [ $no_warp -eq 0 ]; then
@@ -35,19 +111,36 @@ function compute_nuisance_regressors {
     #switched to perl because it does not reorder regressors
     reg=$( printf "%s\n" "${reg[@]}" | perl -ne 'print if ! $a{$_}++' ) #eliminate any duplicate regressors
 
+
     for r in $reg; do
 	if [[ "$r" =~ ^(6motion|rx|ry|rz|tx|ty|tz)$ && ! -f ".motion_demean" ]]; then 
 	    #compute de-meaned motion parameters for nuisance regression
 	    1d_tool.py -overwrite -infile motion.par -set_nruns 1 \
-		-demean -write .motion_demean	    
+		       -demean -write .motion_demean	    
 	fi
-
+	
 	if [[ "$r" =~ ^(d6motion|drx|dry|drz|dtx|dty|dtz)$ && ! -f ".motion_deriv" ]]; then 
 	    #compute motion parameter derivatives for nuisance regression
-	    1d_tool.py -overwrite -infile motion.par -set_nruns 1 \
-		-derivative -demean -write .motion_deriv
+            motionderiv 
 	fi
-
+	
+	# quad (q6motion, qrx,qrt...)
+	if [[ "$r" =~ ^q(6m|r|t) && ! -f ".motion_quad" ]]; then 
+      	    [ ! -L .motion.1D ] && ln -s motion.par .motion.1D
+      	    3dcalc -a .motion.1D\' -expr 'a**2' -prefix - |
+		1d_tool.py -transpose -infile - -write .motion_quad
+	fi
+	
+	# quad of deriv (qd6motion, qdrx,qdrt...)
+	if [[ "$r" =~ ^qd(6m|r|t) && ! -f ".motion_deriv_quad" ]]; then 
+            # need motion deriv to do quad on it
+            motionderiv 
+	    
+      	    [ ! -L .motion_dev.1D ] && ln -s .motion_deriv .motion_dev.1D
+      	    3dcalc -a .motion_dev.1D\' -expr 'a**2' -prefix - |
+      		1d_tool.py -transpose -infile - -write .motion_deriv_quad 
+	fi
+	
 	if [[ "$r" =~ ^(csf|dcsf|csf[0-9]+|dcsf[0-9]+)$ && ! -f ".csf_ts" ]]; then
 	    #technically should probably change this to allow for use of templates for -warp_compute
 	    if [ $no_warp -eq 0 ]; then
@@ -227,6 +320,46 @@ function compute_nuisance_regressors {
 		nuisancecols+=(".motion_demean[4]");;
 	    tz)
 		nuisancecols+=(".motion_demean[5]");;
+	    q6motion)
+	      nuisancecols+=(".motion_quad[0]")
+	      nuisancecols+=(".motion_quad[1]")
+	      nuisancecols+=(".motion_quad[2]")
+	      nuisancecols+=(".motion_quad[3]")
+	      nuisancecols+=(".motion_quad[4]")
+	      nuisancecols+=(".motion_quad[5]")
+	      ;;
+	    qrx)
+	      nuisancecols+=(".motion_quad[0]");;
+	    qry)
+	      nuisancecols+=(".motion_quad[1]");;
+	    qrz)
+	      nuisancecols+=(".motion_quad[2]");;
+	    qtx)
+	      nuisancecols+=(".motion_quad[3]");;
+	    qty)
+	      nuisancecols+=(".motion_quad[4]");;
+	    qtz)
+	      nuisancecols+=(".motion_quad[5]");;
+	    qd6motion)
+		nuisancecols+=(".motion_deriv_quad[0]")
+		nuisancecols+=(".motion_deriv_quad[1]")
+		nuisancecols+=(".motion_deriv_quad[2]")
+		nuisancecols+=(".motion_deriv_quad[3]")
+		nuisancecols+=(".motion_deriv_quad[4]")
+		nuisancecols+=(".motion_deriv_quad[5]")
+		;;
+	    qdrx)
+		nuisancecols+=(".motion_deriv_quad[0]");;
+	    qdry)
+		nuisancecols+=(".motion_deriv_quad[1]");;
+	    qdrz)
+		nuisancecols+=(".motion_deriv_quad[2]");;
+	    qdtx)
+		nuisancecols+=(".motion_deriv_quad[3]");;
+	    qdty)
+		nuisancecols+=(".motion_deriv_quad[4]");;
+	    qdtz)
+		nuisancecols+=(".motion_deriv_quad[5]");;
 	    d6motion)
 		nuisancecols+=(".motion_deriv[0]")
 		nuisancecols+=(".motion_deriv[1]")
@@ -264,21 +397,42 @@ function compute_nuisance_regressors {
     done
 
     rel "Creating ${nuisance_file} containing regressors as columns: ${nuisancecols[*]}" c
-    rel "1dcat -overwrite ${nuisancecols[@]} > ${nuisance_file}"
+    #rel "1dcat -overwrite ${nuisancecols[@]} > ${nuisance_file}"
+    # 20151218 WF -- "star" instead of "at" so single shell-world (one argument) sent to rel
+    rel "1dcat ${nuisancecols[*]} > ${nuisance_file}"
     
+    # TODO: do multiple passes to build nuisancecols so we can check that would should be redoing?
+    rel "echo '${nuisancecols[*]}' > .regressors_in_use"
+
+    rel "date > .nuisance_compute_complete"
+
+    return 0
 }
 
 function nuisance_regression {
     #handle nuisance regression and/or bandpass filtering
-    [[ "$nuisance_compute" -eq 0 && "$nuisance_regression" -eq 0 && "$bandpass_filter" -eq 0 ]] && return 0 #no nuisance or bandpass, exit
+    if [[ \
+         "$nuisance_compute"    -eq 0 &&  \
+         "$nuisance_regression" -eq 0 &&  \
+         "$bandpass_filter"     -eq 0 &&  \
+         "$autocorr_with_basis" -eq 0     \
+    ]]; then
+      rel "(Not trying to deal with nuisance regressors, bandpassing, or autocorrelation)" c
+      return 0 #no nuisance, bandpass, or basis correct. exit
+    fi
 
     preNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
     
     local todo=
-    if [[ "$nuisance_regression" -eq 1 && "$bandpass_filter" -eq 1 ]]; then todo="br" #bandpass and regression
-    elif [ "$nuisance_regression" -eq 1 ]; then todo="r" #regression only
-    elif [ "$bandpass_filter" -eq 1 ]; then todo="b" #bandpass alone
-    fi
+    [ $autocorr_with_basis -eq 1 ] && todo="${todo}a"
+    [ $bandpass_filter     -eq 1 ] && todo="${todo}b"
+    [ $nuisance_regression -eq 1 ] && todo="${todo}r"
+
+    # todo is 
+    #  only: a b r 
+    #  combined: ab abr br
+    #  'a' alone is not allowed, will throw error -- checked by parseargs or preprocessFunctional
+    
 
     prefix="${todo}${prefix}"
     postNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
@@ -287,6 +441,9 @@ function nuisance_regression {
     [[ -f .nuisance_regression_complete && $todo=r ]] && return 0
     [[ -f .bandpass_filter_complete && $todo=b ]] && return 0
     [[ -f .nuisance_regression_complete && -f .bandpass_filter_complete && $todo=br ]] && return 0
+
+    # 20170420WF: if we completed todo=a* we might still hit compute_nuisance_regressors
+    #  compute_nuisance_regressors now checks if it's been run before
 
     if [[ ! -f "${nuisance_file}" && ( $nuisance_regression == 1 || $nuisance_compute == 1 ) ]]; then
 	compute_nuisance_regressors
@@ -298,12 +455,8 @@ function nuisance_regression {
 		-prefix \"$postNRBP\" $bpLow $bpHigh"
 
 	rel "date > .bandpass_filter_complete"
-    elif [ "$todo" = "br" ]; then
-        rel "3dBandpass -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
-		-prefix \"$postNRBP\" -ort ${nuisance_file} $bpLow $bpHigh"
 
-	rel "date > .bandpass_filter_complete"
-	rel "date > .nuisance_regression_complete"
+    # regress only
     elif [ "$todo" = "r" ]; then
         rel "3dDetrend -overwrite -verb -polort 2 -vector ${nuisance_file} \
 		-prefix \"$postNRBP\" \"$preNRBP\""
@@ -311,9 +464,31 @@ function nuisance_regression {
 	#need to mask detrend by brain mask as with 3dBandpass
 	rel "fslmaths \"$postNRBP\" -mas \"$subjMask\" \"$postNRBP\""
 	rel "date > .nuisance_regression_complete"
+
+    # bandpass and regress
+    elif [ "$todo" = "br" ]; then
+        rel "3dBandpass -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
+		-prefix \"$postNRBP\" -ort ${nuisance_file} $bpLow $bpHigh"
+
+	rel "date > .bandpass_filter_complete"
+	rel "date > .nuisance_regression_complete"
+
+    elif [[ "$todo" =~ ^a ]]; then
+	# 20170420WF -- added for MJ w/MH suggestions
+	# remove autocorrelation + bandpass and regress
+
+	# may or may not have computed regressors
+	# will use them if .nuisance_regressors exists
+	# will test for .remove_autocorr_complete
+	remove_autocorr_and_br $preNRBP $postNRBP ${subjMask}${ext}
+    else
+	# we were only computing things
+       rel "(Regressors computed but no bandpass or nuisance regression)" c
     fi
     
     #explicit return code needed to avoid implicit status of prior command
     return 0
-
+    
 }
+
+# vim: set tabstop=7:
