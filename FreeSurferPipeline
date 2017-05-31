@@ -200,8 +200,14 @@ rel "recon-all -i \"${T1wImageFile}_normalized.nii.gz\" -subjid $SubjectID -sd $
 
 # Generate brain mask
 rel "mri_convert \"${T1wImageBrainFile}.nii.gz\" \"$SubjectDIR\"/\"$SubjectID\"/mri/brainmask.mgz --conform"
-rel "mri_em_register -mask \"$SubjectDIR\"/\"$SubjectID\"/mri/brainmask.mgz \"$SubjectDIR\"/\"$SubjectID\"/mri/nu.mgz $FREESURFER_HOME/average/RB_all_2008-03-26.gca \"$SubjectDIR\"/\"$SubjectID\"/mri/transforms/talairach_with_skull.lta"
-rel "mri_watershed -T1 -brain_atlas $FREESURFER_HOME/average/RB_all_withskull_2008-03-26.gca \"$SubjectDIR\"/\"$SubjectID\"/mri/transforms/talairach_with_skull.lta \"$SubjectDIR\"/\"$SubjectID\"/mri/T1.mgz \"$SubjectDIR\"/\"$SubjectID\"/mri/brainmask.auto.mgz"
+if [[ $( cat  $FREESURFER_HOME/build-stamp.txt ) == freesurfer-Linux-centos6_x86_64-stable-pub-v6.0.0-2beb96c ]]; then
+    rel "mri_em_register -mask \"$SubjectDIR\"/\"$SubjectID\"/mri/brainmask.mgz \"$SubjectDIR\"/\"$SubjectID\"/mri/nu.mgz $FREESURFER_HOME/average/RB_all_2016-05-10.vc700.gca \"$SubjectDIR\"/\"$SubjectID\"/mri/transforms/talairach_with_skull.lta"
+    rel "mri_watershed -T1 -brain_atlas $FREESURFER_HOME/average/RB_all_withskull_2016-05-10.vc700.gca \"$SubjectDIR\"/\"$SubjectID\"/mri/transforms/talairach_with_skull.lta \"$SubjectDIR\"/\"$SubjectID\"/mri/T1.mgz \"$SubjectDIR\"/\"$SubjectID\"/mri/brainmask.auto.mgz"  
+else
+    #assume 5.x
+    rel "mri_em_register -mask \"$SubjectDIR\"/\"$SubjectID\"/mri/brainmask.mgz \"$SubjectDIR\"/\"$SubjectID\"/mri/nu.mgz $FREESURFER_HOME/average/RB_all_2008-03-26.gca \"$SubjectDIR\"/\"$SubjectID\"/mri/transforms/talairach_with_skull.lta"
+    rel "mri_watershed -T1 -brain_atlas $FREESURFER_HOME/average/RB_all_withskull_2008-03-26.gca \"$SubjectDIR\"/\"$SubjectID\"/mri/transforms/talairach_with_skull.lta \"$SubjectDIR\"/\"$SubjectID\"/mri/T1.mgz \"$SubjectDIR\"/\"$SubjectID\"/mri/brainmask.auto.mgz"
+fi
 rel "cp \"$SubjectDIR\"/\"$SubjectID\"/mri/brainmask.auto.mgz \"$SubjectDIR\"/\"$SubjectID\"/mri/brainmask.mgz"
 
 if [ $ncpus -gt 1 ]; then
