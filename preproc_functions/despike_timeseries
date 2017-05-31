@@ -79,7 +79,7 @@ function despike_timeseries {
 	    rel "mv postdespike_SP.txt \"${postDespike}_spike_percentage.txt\""
 	else
 	    #time despike
-	    rel "3dDespike -overwrite -cut $despikeThresh -prefix \"${postDespike}${ext}\" \"${preDespike}${ext}\""
+	    rel "3dDespike -overwrite -NEW -cut $despikeThresh -prefix \"${postDespike}${ext}\" \"${preDespike}${ext}\""
 	fi
 	rel "date > .despike_complete"
 

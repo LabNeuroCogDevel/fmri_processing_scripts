@@ -1,13 +1,15 @@
 #!/bin/bash
 
 set -e
-#setup master connection to meson
-ls $HOME/.ssh/controlmasters/*WPC-6290* 2>/dev/null 1>/dev/null || ./meson.expect
+[ -z "${remote_host}" ] && echo "Expect remote_host variable to be set in environment" && exit 1
+
+#setup master connection to remote
+ls $HOME/.ssh/controlmasters/*WPC-6290* 2>/dev/null 1>/dev/null || ./remote.expect
 
 timestamp=$(date +%Y%m%d_%H%M)
 
 if [[ $# -ne 2 ]]; then
-    echo "expect two parameters: <meson source dir> <local target dir>"
+    echo "expect two parameters: <remote source dir> <local target dir>"
     exit 1
 fi
 
@@ -21,6 +23,6 @@ rsync --recursive --verbose --perms --times \
     --filter="- /.Spotlight-V100/" \
     --filter="- /.Trashes/" \
     --filter="- /.TemporaryItems/" \
-    meson:${src} \
+    ${remote_host}:${src} \
     ${dest}
 set +x

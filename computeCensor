@@ -10,7 +10,7 @@ Script to compute motion censor for a given directory
    -mfile       : name of raw motion parameters files (default = mcplots.par
    -censor_norm : euclidean norm for censoring motion (default = 0.9)
    
-   Example: computeCensor -dir /Volumes/Serena/testdir -mfile mcplots.par -censor_norm 1.1
+   Example: computeCensor -dir /gpfs/group/mnh5174/default/testdir -mfile mcplots.par -censor_norm 1.1
 -----------------------------------
 EndOfHelp
 

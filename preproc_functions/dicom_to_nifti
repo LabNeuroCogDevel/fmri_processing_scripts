@@ -40,11 +40,15 @@ function dicom_to_nifti {
 	    detectTR=$( echo "${dicomHdr}" | grep "0018 0080.*ACQ Repetition Time" | perl -pe 's:.*ACQ Repetition Time//(\d+)\s*$:\1:' )
 	    detectTR=$( echo "scale=3; ${detectTR}/1000" | bc ) #convert to seconds from milliseconds
 	    detectSliceOrder=$( echo "${dicomHdr}" | grep "sSliceArray.ucMode" | perl -pe 's/sSliceArray.ucMode\s+=\s+\d?x?(\d)$/\1/' ) #Trio uses 0x4 style whereas Prisma is just 4
-
+	    detectSeries=$( echo "${dicomHdr}" | grep "REL Series Number//" | perl -pe 's|^.*REL Series Number//(\d+).*$|\1|' ) #series number
+	    detectProtocolName=$( echo "${dicomHdr}" | grep "ACQ Protocol Name//" | perl -pe 's|^.*ACQ Protocol Name//(\w+).*$|\1|' ) #protocol name
+	    
 	    if [ "${sliceTimesFile}" == "detect" ]; then
 		rel "Detecting Siemens slice times from dicom header" c
 		rel "dicom_hdr -slice_times \"${firstDicom}\" | perl -pe 's/-- Siemens timing \(\d+ entries\): //' > .sttmp"
-		rel "Rscript -e \"x <- scan('.sttmp'); x <- x/1000; cat(x, file='.dicom_stimes', sep=',')\"" #read in slice times from file, convert to seconds, and write .dicom_stimes file for downstream use
+		
+		#read in slice times from file, convert to seconds, and write .dicom_stimes file for downstream use
+		rel "Rscript -e \"x <- scan('.sttmp'); x <- x/1000; cat(x, file='.dicom_stimes', sep=',')\""
 		rm -f .sttmp
 	    fi
 
@@ -65,6 +69,8 @@ function dicom_to_nifti {
 	    rel "  Detected TR: ${detectTR}s" c
 	    rel "  Detected Slice Order: ${detectSliceOrder}" c
 	    rel "  Number of slices: ${detectSliceNum}" c
+	    rel "  Protocol name: ${detectProtocolName}" c
+	    rel "  Series number: ${detectSeries}" c
 	    rel "  If this is incorrect, please exit the script now by pressing Ctrl-C" c
 
 	    sleep 3
@@ -88,7 +94,9 @@ function dicom_to_nifti {
 	    #tr and sliceAcquisition parameters will be created downstream in check_requirements based on .detect_tr and .detect_sliceorder
 	    echo "${detectTR}" > .detect_tr
 	    echo "${detectSliceOrder}" > .detect_sliceorder
-	    
+	    echo "${detectSeries}" > .detect_series
+	    echo "${detectProtocolName}" > .detect_protocolname
+
 	    dimon "${dicomPattern}" "${output_basename}" #convert dicom to nifti using Dimon
 
 	    echo "${output_basename}${ext}" > .functional #save name of functional file created for resume when dicoms have been deleted/archived

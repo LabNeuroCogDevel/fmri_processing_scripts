@@ -26,6 +26,7 @@ printHelp <- function() {
       "      mean uses the mean within each ROI",
       "      huber uses the huber robust estimate of the center of the distribution (robust to outliers)",
       "  -brainmask <3D file>: A 0/1 mask file defining voxels in the brain. This will be applied to the ROI mask before computing correlations.",
+      "  -dropvols <integer=0>: The number of initial volumes to drop from all voxel time series prior to computing correlations (e.g., for steady state problems)",
       "  -censor <1D file>: An AFNI-style 1D censor file containing a single column of 0/1 values where 0 represents volumes to be censored (e.g., for motion scrubbing)",
       "  -fisherz: Apply Fisher's z transformation (arctanh) to normalize correlation coefficients. Not applied by default.",
       "  -njobs <n>: Number of parallel jobs to run when computing correlations. Default: 4.",
@@ -37,7 +38,7 @@ printHelp <- function() {
       "  in the same stereotactic space, and have the same grid size.",
       "",
       "The script depends on the following R libraries: foreach, doSNOW, MASS, oro.nifti, robust, and pracma. These can be installed using:",
-      "  install.packages(c(\"foreach\", \"doSNOW\", \"MASS\", \"oro.nifti\", \"robust\", \"pracma\",\"ppcor\":))",
+      "  install.packages(c(\"foreach\", \"doSNOW\", \"MASS\", \"oro.nifti\", \"robust\", \"pracma\",\"ppcor\"))",
       sep="\n")
 }
 
@@ -52,26 +53,26 @@ if (length(args) == 0L) {
 }
 
 #for testing
-##fname_rsproc <- "/Volumes/Serena/Raj/Preprocess_Rest/10638_20140507/brnswudktm_rest_5.nii.gz" #name of preprocessed fMRI data
-##fname_roimask <- "/Volumes/Serena/Raj/Preprocess_Rest/power264_mni2.3mm.nii.gz"
-##fname_roimask <- "/Volumes/Serena/bars_ica/scripts/Sci160+tlrc.nii.gz"
+##fname_rsproc <- "/gpfs/group/mnh5174/default/Raj/Preprocess_Rest/10638_20140507/brnswudktm_rest_5.nii.gz" #name of preprocessed fMRI data
+##fname_roimask <- "/gpfs/group/mnh5174/default/Raj/Preprocess_Rest/power264_mni2.3mm.nii.gz"
+##fname_roimask <- "/gpfs/group/mnh5174/default/bars_ica/scripts/Sci160+tlrc.nii.gz"
 ##fname_brainmask <- "/Users/michael/standard/fsl_mni152/MNI152_T1_2mm_brain_mask.nii" #optional brain mask to ensure that we don't sample time series from air, CSF, etc.
 ##fname_brainmask <- "/Users/michael/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2.3mm.nii"
-#fname_censor1D <- "/Volumes/Serena/MMClock/MR_Proc/10637_20140304/mni_5mm_wavelet/clock1/motion_info/censor_union.1D"
+#fname_censor1D <- "/gpfs/group/mnh5174/default/MMClock/MR_Proc/10637_20140304/mni_5mm_wavelet/clock1/motion_info/censor_union.1D"
 
 #defaults
 njobs <- 4
 out_file <- "corr_rois.txt"
 ts_out_file <- ""
 fname_censor1D <- NULL
+fname_brainmask <- NULL
 corr_type   <- "full"
 corr_method <- "pearson"
 roi_reduce <- "pca"
 fisherz <- FALSE
+dropvols <- 0
 
-# only do timeseries
-fname_brainmask  <- NULL 
-ts_only <- F
+ts_only <- FALSE # only do timeseries
 
 na_string <- "NA"
 clustersocketport <- 10290
@@ -125,6 +126,9 @@ while (argpos <= length(args)) {
   } else if (args[argpos] == "-na_string") {
     na_string <- args[argpos + 1]
     argpos <- argpos + 2
+  } else if (args[argpos] == "-dropvols") {
+    dropvols <- as.numeric(args[argpos + 1]) #number of vols to drop
+    argpos <- argpos + 2
   } else if (args[argpos] == "-port") {
     clustersocketport <- as.integer(args[argpos + 1])
     argpos <- argpos + 2
@@ -134,11 +138,12 @@ while (argpos <= length(args)) {
   }
 }
 
-if (corr_method == "robust") { corr_method <- "auto" } #robust package uses "auto" to choose best robust estimator given problem complexity (matrix size)
+#robust package uses "auto" to choose best robust estimator given problem complexity (matrix size)
+if (corr_method == "robust") { corr_method <- "auto" }
 
 # check for input sanity before spending time loading things in
 if(corr_method == "none" && nchar(ts_out_file) == 0L) {
- stop('corr_method = none and no ts_out_file! No point in running.')
+  stop('corr_method = none and no ts_out_file! No point in running.')
 }
 
 suppressMessages(require(methods))
@@ -166,21 +171,21 @@ genCorrMat <- function(roits, method="auto", fisherz=FALSE,type="full") {
   # load ppcor if it's needed (not needed for 'full')
   #if(type!='full') suppressMessages(require(ppcor))
 
-  # use generic corfun for correltaion
+  # use generic corfun for correlation
   # but what cor function should that use? determine based on type
   corfun <- function(x,...) {
-   switch(type,
-      full    = cor(x,...),
-      semi    = ppcor::spcor(x,...)$estimate,
-      partial = ppcor::pcor(x,...)$estimate
-   )
+    switch(type,
+           full    = cor(x,...),
+           semi    = ppcor::spcor(x,...)$estimate,
+           partial = ppcor::pcor(x,...)$estimate
+           )
   }
 
   #assume that parallel has been setup upstream
   njobs <- getDoParWorkers()
 
   # for semi and partial, we cannot chunk the data!
-  if(njobs>1 && type %in% c('semi','partial')){
+  if(njobs > 1 && type %in% c('semi','partial')){
     warning('Cannot use multiple jobs for semi or partial cor! Setting njobs to 1: i.e. -n 1')
     njobs <- 1
   }
@@ -191,7 +196,7 @@ genCorrMat <- function(roits, method="auto", fisherz=FALSE,type="full") {
   # we can only use fancy pants when doing full (e.g. mcd|weighted|donostah|M|pairwiseQC|pairwiseGK)
   # shouldn't see 'none' method b/c we quit earlier
   if (type != 'full' && ! method %in% c("pearson", "spearman", "kendall")){
-   stop(sprintf('cannot use method %s with type %s',method,type))
+    stop(sprintf('cannot use method %s with type %s',method,type))
   }
   
   #remove missing ROI columns for estimating correlation
@@ -364,16 +369,6 @@ setDefaultClusterOptions(master="localhost", port=clustersocketport)
 clusterobj <- makeSOCKcluster(njobs)
 registerDoSNOW(clusterobj)
 
-
-#### removed 20160429WF -- merged with ts version of script
-# #should really apply censor here to entire 4d volume
-# if (length(censorVols) > 0L) {
-#   message("Censoring volumes ", paste0(censorVols, collapse=", "), " based on ", fname_censor1D)
-#   goodVols <- 1:dim(rsproc)[4]
-#   goodVols <- goodVols[-censorVols]
-#   rsproc <- rsproc[,,,goodVols] #keep orig in memory? 
-# }
-# 
 #to reduce RAM overhead of having to copy rsproc_censor to each worker, obtain list of vox x time mats for rois
 
 #even though this seems more elegant, it is much slower (400x!) than the use of 4d lookup and reshape below
@@ -383,59 +378,59 @@ registerDoSNOW(clusterobj)
 
 #generate a 4d mat of indices
 roimats <- lapply(maskvals, function(v) {
-          mi <- which(roimask==v, arr.ind=TRUE)
-          nvol <- dim(rsproc)[4]
-          nvox <- nrow(mi)
-          mi4d <- cbind(pracma::repmat(mi, nvol, 1), rep(1:nvol, each=nvox))
-          mat <- matrix(rsproc[mi4d], nrow=nvox, ncol=nvol) #need to manually reshape into matrix from vector
-          attr(mat, "maskval") <- v #add mask value as attribute so that information about bad ROIs can be printed below
-          t(mat) #transpose matrix so that it is time x voxels
-        })
+  mi <- which(roimask==v, arr.ind=TRUE)
+  nvol <- dim(rsproc)[4]
+  nvox <- nrow(mi)
+  mi4d <- cbind(pracma::repmat(mi, nvol, 1), rep(1:nvol, each=nvox))
+  mat <- matrix(rsproc[mi4d], nrow=nvox, ncol=nvol) #need to manually reshape into matrix from vector
+  attr(mat, "maskval") <- v #add mask value as attribute so that information about bad ROIs can be printed below
+  t(mat) #transpose matrix so that it is time x voxels
+})
 
 rm(rsproc) #clear imaging file from memory now that we have obtained the roi time series 
 
 message("Obtaining a single time series within each ROI using: ", roi_reduce)
 roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, .noexport=c("rsproc")) %do% { #minimal time savings from dopar here, and it prevents message output
-    ##roivox is a time x voxels matrix
-    ##data cleaning steps: remove voxels that are 1) partially or completely missing; 2) all 0; 3) variance = 0 (constant)
-    ##leave out variance > mean check because bandpass-filtered data are demeaned
-    badvox <- apply(roivox, 2, function(voxts) {
-        if (any(is.na(voxts))) TRUE #any missing values
-        else if (all(voxts == 0.0)) TRUE #all zeros
-        else if (var(voxts) == 0.0) TRUE #constant time series
-        ##else if (var(voxts) > mean(voxts)) TRUE #variance exceeds mean (very unstable)
-        else FALSE #good voxel
-    })
+  ##roivox is a time x voxels matrix
+  ##data cleaning steps: remove voxels that are 1) partially or completely missing; 2) all 0; 3) variance = 0 (constant)
+  ##leave out variance > mean check because bandpass-filtered data are demeaned
+  badvox <- apply(roivox, 2, function(voxts) {
+    if (any(is.na(voxts))) TRUE #any missing values
+    else if (all(voxts == 0.0)) TRUE #all zeros
+    else if (var(voxts) == 0.0) TRUE #constant time series
+    ##else if (var(voxts) > mean(voxts)) TRUE #variance exceeds mean (very unstable)
+    else FALSE #good voxel
+  })
 
-    if (sum(!badvox) < 5) {
-        ##only reduce if there are at least 5 voxels to average over after reduction above
-        ##otherwise return NA time series
+  if (sum(!badvox) < 5) {
+    ##only reduce if there are at least 5 voxels to average over after reduction above
+    ##otherwise return NA time series
 
-        ##cat("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.\n", file=".roilog", append=TRUE)
-        message("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.")
-        ts <- rep(NA_real_, nrow(roivox))
-    } else {
-        if (sum(badvox) > 0) {
-            ##cat("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.\n", file=".roilog", append=TRUE)
-            message("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.")
-            roivox <- roivox[,!badvox] #remove bad voxels (columns)
-        }
-
-        if (roi_reduce == "pca") {
-            ts <- prcomp(roivox, scale.=TRUE)$x[,1] #first eigenvector
-            tsmean <- apply(roivox, 1, mean, na.rm=TRUE)
-            #flip sign of component to match observed data (positive correlation)
-            if (cor(ts, tsmean) < 0) { ts <- -1*ts }
-        } else if (roi_reduce == "mean") {
-            ts <- apply(roivox, 1, mean, na.rm=TRUE) #mean time series across voxels
-        } else if (roi_reduce == "median") {
-            ts <- apply(roivox, 1, median, na.rm=TRUE)
-        } else if (roi_reduce == "huber") {
-            ts <- apply(roivox, 1, getRobLocation)
-        }
+    ##cat("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.\n", file=".roilog", append=TRUE)
+    message("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.")
+    ts <- rep(NA_real_, nrow(roivox))
+  } else {
+    if (sum(badvox) > 0) {
+      ##cat("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.\n", file=".roilog", append=TRUE)
+      message("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.")
+      roivox <- roivox[,!badvox] #remove bad voxels (columns)
     }
 
-    return(ts)
+    if (roi_reduce == "pca") {
+      ts <- prcomp(roivox, scale.=TRUE)$x[,1] #first eigenvector
+      tsmean <- apply(roivox, 1, mean, na.rm=TRUE)
+      #flip sign of component to match observed data (positive correlation)
+      if (cor(ts, tsmean) < 0) { ts <- -1*ts }
+    } else if (roi_reduce == "mean") {
+      ts <- apply(roivox, 1, mean, na.rm=TRUE) #mean time series across voxels
+    } else if (roi_reduce == "median") {
+      ts <- apply(roivox, 1, median, na.rm=TRUE)
+    } else if (roi_reduce == "huber") {
+      ts <- apply(roivox, 1, getRobLocation)
+    }
+  }
+
+  return(ts)
 }
 
 #need to print roi problems outside of foreach since stdout is dumped
@@ -448,33 +443,39 @@ rownames(roiavgmat) <- paste0("vol", 1:nrow(roiavgmat))
 
 ##apply censoring to resulting time series
 censorvec <- rep(0, nrow(roiavgmat))
+goodVols <- 1:nrow(roiavgmat)
+
 if (length(censorVols) > 0L) {
-    message("Censoring volumes ", paste0(censorVols, collapse=", "), " based on ", fname_censor1D)
-    goodVols <- 1:nrow(roiavgmat)
-    goodVols <- goodVols[-censorVols]
-    censorvec[censorVols] <- 1
-    roiavgmat_censored <- roiavgmat[goodVols,]
-} else {
-    roiavgmat_censored <- roiavgmat
+  message("Censoring volumes ", paste0(censorVols, collapse=", "), " based on ", fname_censor1D)
+  goodVols <- goodVols[-censorVols]
+  censorvec[censorVols] <- 1
 }
 
-#output ts file if requested
+##drop initial volumes if requested
+if (dropvols > 0) {
+  message("Dropping ", dropvols, " volumes from ROI time series prior to correlation.")
+  goodVols <- goodVols[-1*(1:dropvols)]
+  censorvec[1:dropvols] <- 1
+}
+
+roiavgmat_censored <- roiavgmat[goodVols,]
+
+##output ts file if requested
 if (nchar(ts_out_file) > 0L) {
-    message("Writing time series to: ", ts_out_file)
-    if(is.null(fname_censor1D)) {
-      df <- roiavgmat
-    }else{
-      df <- cbind(censor=censorvec, roiavgmat)
-    }
-    write.table(df, file=ts_out_file, col.names=F, row.names=F)
+  message("Writing time series to: ", ts_out_file)
+  if(is.null(fname_censor1D)) {
+    df <- roiavgmat
+  } else {
+    df <- cbind(censor=censorvec, roiavgmat)
+  }
+  write.table(df, file=ts_out_file, col.names=F, row.names=F)
 }
 
 # WF20160906 - we only want the timeseries. we have that so quit.
-if(ts_only) { quit(save="no", 0, FALSE) }
+if (ts_only) { quit(save="no", 0, FALSE) }
 
-# just want to print time series, not actually compute corrleations
-# for DM 20160517
-if(corr_method == "none") { 
+# just want to print time series, not actually compute correlations: for DM 20160517
+if(corr_method == "none") {
   stopCluster(clusterobj)
   quit(save="no", 0, TRUE)
 }
@@ -486,10 +487,10 @@ stopCluster(clusterobj)
 
 message("Writing correlations to: ", out_file)
 if (grepl(".*\\.gz$", out_file, perl=TRUE)) {
-    #write compressed
-    gzf <- gzfile(out_file, "w")
-    write.table(cormat, file=gzf, col.names=FALSE, row.names=FALSE, na=na_string)
-    close(gzf)    
+  ##write compressed
+  gzf <- gzfile(out_file, "w")
+  write.table(cormat, file=gzf, col.names=FALSE, row.names=FALSE, na=na_string)
+  close(gzf)    
 } else {
-    write.table(cormat, file=out_file, col.names=FALSE, row.names=FALSE, na=na_string)
+  write.table(cormat, file=out_file, col.names=FALSE, row.names=FALSE, na=na_string)
 }

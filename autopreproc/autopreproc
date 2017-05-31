@@ -7,12 +7,9 @@ fi
 
 env
 
-if command -v module >/dev/null; then
-    module load fsl/5.0.8 >/dev/null 2>&1
-    module load afni/16.0.00 >/dev/null 2>&1
-    module load R/3.2.0 >/dev/null 2>&1
-    module load matlab/R2014b >/dev/null 2>&1
-    module load python/2.7.5 >/dev/null 2>&1
+if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then
+    #setup DEPENd lab environment and programs
+    source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash
 
     PATH="$HOME/fmri_processing_scripts:$HOME/fmri_processing_scripts/autopreproc:${PATH}"
     #export FSLDIR
@@ -43,22 +40,31 @@ export PATH
 
 function resetcfg {
     protocol=
-    meson_mr_root=
-    meson_mb_root=
+    remote_host=
+    remote_mrraw_root=
+    remote_mb_root=
+    remote_subid_regex=
+    remote_folder_filter=
     loc_root=
     loc_mrraw_root=
     loc_mrproc_root=
     loc_mb_root=
-    meson_subid_regex=
+    sync_mb_data=0
+    sync_raw_data=0
+    postrsync_exec=
     mprage_dirpattern=
+    mprage_dicompattern=
     preprocessed_dirname=
     paradigm_name=
     n_expected_funcruns=
-    sync_mb_data=
-    sync_raw_data=
     preproc_call=
     gre_fieldmap_dirpattern=
     fieldmap_cfg=
+    proc_freesurfer=0
+    proc_functional=0
+    functional_dirpattern=
+    functional_dicompattern=
+    detect_refimg=0
 }
 
 njobs=8 #default to 8 parallel jobs
@@ -87,8 +93,8 @@ while [ _$1 != _ ] ; do
 
 	if [ ${sync_mb_data} -eq 1 ]; then
 	    #1) rsync reconstructed multiband directory
-	    echo "./syncMRCTR_Multiband \"${meson_mb_root}\" \"${loc_mb_root}\""
-	    ./syncMRCTR_Multiband "${meson_mb_root}" "${loc_mb_root}"
+	    echo "./syncMRCTR_Multiband \"${remote_mb_root}\" \"${loc_mb_root}\""
+	    ./syncMRCTR_Multiband "${remote_mb_root}" "${loc_mb_root}"
 
 	    if [ "$protocol" == "WPC-5640" ]; then
 		#for 5640 (multimodal), multiband recon directory naming is slightly different from dicoms
@@ -99,8 +105,8 @@ while [ _$1 != _ ] ; do
 
 	if [ ${sync_raw_data} -eq 1 ]; then
             #2) sync MR_Raw directory (Dicoms)
-	    echo "./syncMRCTR_MRRAW \"${meson_mr_root}\" \"${loc_mrraw_root}\" \"${meson_subid_regex}\""
-	    ./syncMRCTR_MRRAW "${meson_mr_root}" "${loc_mrraw_root}" "${meson_subid_regex}"	    
+	    echo "./syncMRCTR_MRRAW"
+	    ./syncMRCTR_MRRAW #reads necessary variables from environment
 	fi
 
 	#3) preprocess all data in mr directory: R script relies on environment variables sourced above for configuration

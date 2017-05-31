@@ -1,44 +1,8 @@
 #!/bin/bash
 
-## where to look for finding the standard space template directory
-# expect files like:
-#   talairach_fsl_mni152/TalFSL_MNI152_T1_3mm_brain
-#   fsl_mni152/MNI152_T1_3mm_brain
-#   mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm
-#   mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2.3mm
-#   spm8_mni/T1_brain
-#   mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm
-function find_standard_template_dir(){
-
-    # where can we find standard space brain templates
-    # prefer ACI installation
-    local standard_spaces=(\
-       /storage/group/mnh5174_collab/standard \
-       /opt/ni_tools/standard_templates \
-       $HOME/standard \
-     )
-
-    local stddir=
-    for stddir in ${standard_spaces[@]}; do
-       [ -d "$stddir" ] && break
-    done
-
-    if [ ! -d "$stddir" ]; then
-      echo "cannot find standard space templates '$stddir'! looked in ${standard_spaces[@]}" >&2
-      return 1
-    fi
-
-    echo $stddir
-    return 0
-
-}
-
-## parse input arguments, initialize default parameter settings
-## when called from preprocessFunctional, must pass "$@", which is all input parameters to script
-# rm_completefiles -- in helper_functions 
 function parse_args {
-    stddir=$(find_standard_template_dir)
-    [ -z $stddir ] && return 1
+    ## parse input arguments, initialize default parameter settings
+    ## when called from preprocessFunctional, must pass "$@", which is all input parameters to script
     
     #initialize defaults
     funcFile=
@@ -63,6 +27,7 @@ function parse_args {
     funcStructFlirtDOF="bbr" #boundary-based registration in FSL 5.0+
     funcWarpInterp="spline"
     hpFilter=80 #default to 80 TR high-pass filter
+    ica_aroma=0 #whether to run smoothed data through ICA-AROMA
     logFile="preprocessFunctional.log"
     mc_first= #default to empty and choose at stage of motion + slice timing depending on user specification and slice acquisition order
     mc_movie=0
@@ -292,6 +257,9 @@ function parse_args {
 	elif [ $1 = -hp_filter ]; then
 	    hpFilter="${2}"
 	    shift 2
+	elif [ $1 = -ica_aroma ]; then
+	    ica_aroma=1
+	    shift 1
 	elif [ $1 = -log ]; then
 	    logFile="${2}"
 	    shift 2
@@ -448,10 +416,10 @@ function parse_args {
 	elif [ $1 = -wavelet_threshold ]; then
 	    waveletThreshold="${2}"
 	    shift 2
-   # probably dont see this, -cleanup_only skips this parseing
-   elif [ $1 = -keep_motion_files ] ;then
-       KEEP_MOTION_FILES=1
-       shift 1
+	elif [ $1 = -keep_motion_files ]; then
+	    # probably dont see this, -cleanup_only skips this parsing
+	    KEEP_MOTION_FILES=1
+	    shift 1
 	else
 	    #printHelp
 	    echo -e "----------------\n\n"
@@ -554,6 +522,84 @@ function parse_args {
 	MATLAB_single_thread="-singleCompThread"
     fi
 
+}
+
+#process command line parameters for preprocessMprage
+function parse_mprage_args() {
+
+    while [ _$1 != _ ] ; do
+	if [[ $1 = -b || $1 = -bet_opts ]] ; then
+	    betOpts="${2}"
+	    shift 2
+	elif [[ $1 = -cleanup ]]; then
+	    cleanup=1
+	    shift 1
+	elif [[ $1 = -cleanup_only ]]; then
+	    cleanup_only=1
+	    shift 1
+	elif [[ $1 = -custom_brainmask ]]; then
+	    brainmask="${2}"
+	    shift 2
+	elif [[ $1 = -d || $1 = -delete_dicom ]]; then
+	    low=$( echo "${2}" | awk '{print tolower($0)}' ) 	#force lower case input
+	    if [[ $2 = "delete" || $2 = "yes" || $2 = "no" || $2 = "archive" ]]; then
+		delDicom="${low}"
+		shift 2
+	    elif [[ $2 = "y" || $2 = "n" || $2 = "a" ]]; then
+		echo "Use of single character deprecated. Please change to yes, no, archive."
+		delDicom="${low}"
+		shift 2
+	    else
+		echo -e "Unrecognized ${1}: ${2}.\n  Options are: ${1} delete yes no archive."
+		exit 1
+	    fi
+	elif [[ $1 = -p || $1 = -dicom ]]; then
+	    dicomPattern="${2}"
+	    shift 2
+	elif [[ $1 = -grad_unwarp ]]; then
+	    gcoeffs="${2}"
+	    shift 2
+	elif [[ $1 = -h || $1 = -help ]]; then
+	    printHelp
+	    exit 0
+	elif [ $1 = -log ]; then
+	    logFile="${2}"
+	    shift 2
+	elif [[ $1 = -no_bias ]]; then
+	    biasCorrect=0
+	    shift 1
+	elif [[ $1 = -n || $1 = -nifti ]]; then
+	    nifti="${2}"
+	    shift 2
+	elif [[ $1 = -no_robustfov ]]; then
+	    robustfov=0
+	    shift 1
+	elif [[ $1 = -o || $1 = -output ]]; then
+	    outputFile="${2}"
+	    shift 2
+	elif [[ $1 = -r || $1 = -template_brain ]]; then
+	    reference="${2}"
+	    shift 2
+	elif [[ $1 = -ss_method ]]; then
+	    ssmethod="${2}"
+	    shift 2
+	elif [[ $1 = -warpres || $1 = -w ]]; then
+	    wr="${2}"
+	    if [[ ! ${wr} =~ ^[0-9]+$ ]]; then
+		echo "-warpres must be an integer (e.g., 10)."
+		exit 1
+	    fi
+	    shift 2
+	elif [[ $1 = -weakbias ]]; then
+	    strongBias=0
+	    shift 1
+	else
+            printHelp
+            echo -e "----------------\n\n"
+            echo "Unrecognized command line parameter: ${1}"
+            exit 1
+	fi
+    done
 }
 
 # vim: set tabstop=7:
