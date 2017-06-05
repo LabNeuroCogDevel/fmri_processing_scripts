@@ -1,0 +1,222 @@
+#!/usr/bin/env Rscript
+
+#This script applies temporal filtering to a matrix using fslmaths -bptf, which uses a nonlinear highpass and
+#Gaussian running line lowpass. This is important if you are applying fslmaths -bptf temporal filtering of imaging data
+#and regression of other signals outside of FEAT. In Feat, checking the "Apply temporal filtering" checkbox will
+#apply the same filtering to regressors as the imaging data, which is important to avoid leakage of nuisance frequencies
+#into the imaging data.
+
+#There is no straightforward way to hack into -bptf on a text file without specifying a full .fsf file.
+#Filtering is applied using the feat_model command, which calls on the same bandpass and temporal filter
+#function as fslmaths. Thus, to hack around it, we use an R script here to fake a NIfTI file, apply filtering
+#then re-extract.
+
+printHelp <- function() {
+  cat("1dbptf applies bandpass temporal filtering using fslmaths to mimic filtering inside of FSL GUI tools.",
+      "  This is especially important if high-pass filtering is applied to imaging data, but not regressors",
+      "  and analyses with those regressors are used outside of FEAT (which typically applies temporal filtering internally)",
+      "",
+      "Required inputs are:",
+      "  -matrix       <2D file>: A text file matrix containing regressors (rows) x time (columns) to be temporally filtered.",
+      "  -tr           <secs>   : The repetition time of the fMRI sequence (used to compute filtering parameters).",
+      "",
+      "At least one of the following filtering specifications:",
+      "  -hp_seconds   <secs>   : The high-pass filter cutoff in seconds (i.e., signals slower than this are filtered)",
+      "  -hp_hz        <Hz>     : The high-pass filter cutoff in Hz (e.g., .01)",
+      "  -lp_seconds   <secs>   : The low-pass filter cutoff in seconds (i.e., signals faster than this are filtered)",
+      "  -lp_hz        <Hz>     : The low-pass filter cutoff in Hz (e.g., .25)",
+      "",
+      "If an -hp specification is not provided    -> only low-pass filter",
+      "If an -lp specification is not provided    -> only high-pass filter",
+      "If -hp and -lp specifications are provided -> bandpass filter",
+      "",
+      "Optional arguments are:",
+      "  -comment_char: Character for any comment lines in -matrix input (default: #)",
+      "  -demean: remove the time series mean after filtering (off by default)",
+      "  -fwhm_sigma_factor: The FWHM -> sigma conversion factor. Typically sqrt(8*log(2)), but FSL high-pass uses 2.0",
+      "  -fsl_dir: The location of FSL on this computer (default is to assume fslmaths is in the system path)",
+      "  -out_file: the name of the output file of filtered regressors (default: filtered_regressors.txt)",
+      "  -sep: The field separator for the input file (default: white space)",
+      "  -time_along_rows: matrix is stored with time along rows, regressors along columns (default is time along columns)",
+      "",
+      "The script depends on the oro.nifti R library and an FSL installation in the path (for fslmaths).",
+      "",
+      "Example usage: 1dbptf -matrix nuisance.txt -hp_hz .009 -tr 1.5 -out_file nuisance_filtered.txt",
+      sep="\n")
+}
+
+#read in command line arguments.
+args <- commandArgs(trailingOnly = TRUE)
+
+if (length(args) == 0L) {
+  message("1dbptf expects at least -matrix <regressors x time> -lp_seconds <low pass seconds> OR -hp_seconds <high pass seconds>.\n")
+  printHelp()
+  quit(save="no", 1, FALSE)
+}
+
+hp_seconds <- -1 #do not apply high-pass
+lp_seconds <- -1 #do not apply low-pass
+hp_hz <- NA #Hz-based specification
+lp_hz <- NA 
+mat <- NULL
+out_file <- "filtered_regressors.txt"
+comment.char <- "#"
+sep <- "" #whitespace default
+tr <- NULL #repetition time in seconds
+demean <- FALSE #whether to remove mean after filtering (this is what -bptf does by default since FSL 5.0.7, I think)
+fwhm_to_sigma <- sqrt(8*log(2)) #Details here: https://www.mail-archive.com/hcp-users@humanconnectome.org/msg01393.html
+transpose <- FALSE #TRUE if matrix is time x regressors
+
+if (any(grepl("-hp_seconds", args, fixed=TRUE)) && any(grepl("-hp_hz", args, fixed=TRUE))) {
+  stop("You must specify either -hp_seconds OR -hp_hz, not both!")
+}
+
+if (any(grepl("-lp_seconds", args, fixed=TRUE)) && any(grepl("-lp_hz", args, fixed=TRUE))) {
+  stop("You must specify either -lp_seconds OR -lp_hz, not both!")
+}
+
+print(args)
+argpos <- 1
+while (argpos <= length(args)) {
+  if (args[argpos] == "-demean") {
+    demean <- TRUE
+    argpost <- argpos + 1
+  } else if (args[argpos] == "-matrix") {
+    mat <- args[argpos + 1] #name of matrix containing regressors x time
+    stopifnot(file.exists(mat))
+    argpos <- argpos + 2
+  } else if (args[argpos] == "-lp_seconds") {
+    lp_seconds <- as.numeric(args[argpos + 1]) #low-pass cutoff in seconds
+    if (is.na(lp_seconds)) { stop("Could not convert -lp_seconds: ", as.character(args[argpos+1]), " to number") }
+    argpos <- argpos + 2
+  } else if (args[argpos] == "-hp_seconds") {
+    hp_seconds <- as.numeric(args[argpos + 1]) #high-pass cutoff in seconds
+    if (is.na(hp_seconds)) { stop("Could not convert -hp_seconds: ", as.character(args[argpos+1]), " to number") }
+    argpos <- argpos + 2
+  } else if (args[argpos] == "-lp_hz") { 
+    lp_hz <- as.numeric(args[argpos + 1]) #low-pass cutoff in Hz
+    if (is.na(lp_hz)) { stop("Could not convert -lp_hz: ", as.character(args[argpos+1]), " to number") }
+    argpos <- argpos + 2
+  } else if (args[argpos] == "-hp_hz") { 
+    hp_hz <- as.numeric(args[argpos + 1]) #high-pass cutoff in Hz
+    if (is.na(hp_hz)) { stop("Could not convert -hp_hz: ", as.character(args[argpos+1]), " to number") }
+    argpos <- argpos + 2
+  } else if (args[argpos] == "-out_file") {
+    out_file <- args[argpos + 1] #name of file to be written
+    argpos <- argpos + 2
+  } else if (args[argpos] == "-fwhm_sigma_factor") {
+    fwhm_to_sigma <- as.numeric(args[argpos + 1])
+    argpos <- argpos + 2
+  } else if (args[argpos] == "-tr") {
+    tr <- as.numeric(args[argpos + 1])
+    if (is.na(tr)) { stop("Could not convert -tr: ", as.character(args[argpos+1]), " to number") }
+    argpos <- argpos + 2
+  } else if (args[argpos] == "-time_along_rows") {
+    transpose <- TRUE
+    argpos <- argpos + 1
+  } else if (args[argpos] == "-sep") {
+    sep <- args[argpos + 1] #name of file separator to read.table
+    argpos <- argpos + 2
+  } else if (args[argpos] == "-comment_char") {
+    comment.char <- args[argpos + 1] #character for comment fields in input file
+    argpos <- argpos + 2
+  } else {
+    stop("Not sure what to do with argument: ", args[argpos])
+  }
+}
+
+suppressMessages(require(oro.nifti))
+if (is.null(mat)) { stop("-matrix input is required (regressors x time)") }
+if (is.null(tr)) { stop("-tr (in seconds) is required") }
+
+#compute cutoffs in terms of volumes
+#note that for high-pass, FSL defaults to 2 * TR as denominator, though this is technically incorrect. FWHM -> Sigma is sqrt(8*log(2))
+if (!is.na(hp_hz)) {
+  message(paste0("Converting to high-pass sigma (volumes): sigma[vol] = 1/(hp_hz * ", round(fwhm_to_sigma, 3), " * tr)"))
+  hp_volumes <- 1/(hp_hz * fwhm_to_sigma * tr)
+} else if (hp_seconds == -1) {
+  message("No high-pass filtering")
+  hp_volumes <- -1 #do not apply high-pass
+} else {
+  message(paste0("Converting to high-pass sigma (volumes): sigma[vol] = hp_seconds/(", round(fwhm_to_sigma, 3), " * tr)"))
+  hp_volumes <- hp_seconds/(fwhm_to_sigma * tr)
+}
+
+if (!is.na(lp_hz)) {
+  message(paste0("Converting to low-pass sigma (volumes): sigma[vol] = 1/(lp_hz * ", round(fwhm_to_sigma, 3), " * tr)"))
+  lp_volumes <- 1/(lp_hz * fwhm_to_sigma * tr)
+} else if (lp_seconds == -1) {
+  message("No low-pass filtering")
+  lp_volumes <- -1 #do not apply low-pass
+} else {
+  message(paste0("Converting to low-pass sigma (volumes): sigma[vol] = lp_seconds/(", round(fwhm_to_sigma, 3), " * tr)"))
+  lp_volumes <- lp_seconds/(fwhm_to_sigma * tr)
+}
+
+if (lp_volumes == -1 && hp_volumes == -1) { stop("One of -lp_seconds, -lp_hz, -hp_seconds, or -hp_hz must be passed in for filtering.") }
+
+m <- as.matrix(read.table(file=mat, sep=sep, comment.char=comment.char))
+
+if (transpose) {
+    message("Assuming that rows are time and columns are regressors.")
+    m <- t(m)
+} else {
+    message("Assuming that rows are regressors and columns are time.")
+}
+
+#for testing only
+#m <- matrix(rnorm(100*20), nrow=20, ncol=100)
+
+odir <- tempdir()
+print(odir)
+
+system(paste0("fslcreatehd ",
+              nrow(m),  # voxels in x
+              " 1 1 ",  # voxels in y and z (always put regressors along x)
+              ncol(m),  # number of timepoints
+              " 1 1 1", # voxel size in x y z (arbitrary)
+              " 1 0 0 0 ", #tr, xorigin, yorigin, zorigin (I don't think bptf cares about TR since expects wrt volumes)
+              " 64 ", file.path(odir, "regressors"))) #64 is double number (higher precision)
+
+#read empty NIfTI into R
+nif <- readNIfTI(file.path(odir, "regressors"), reorient=FALSE)
+
+#populate nifti
+nif@.Data <- array(m, dim=c(nrow(m), 1, 1, ncol(m))) #add singleton dimensions for y and z
+
+#write NIfTI with regressors back to file
+writeNIfTI(nif, filename=file.path(odir, "regressors"))
+
+#validation that this has been populated as expected
+#xx <- readNIfTI(file.path(odir, "regressors"), reorient=FALSE)
+#identical(xx@.Data, array(m, dim=c(nrow(m), 1, 1, ncol(m))))
+
+if (demean) {
+  system(paste0("fslmaths ", file.path(odir, "regressors"), " -bptf ", hp_volumes, " ", lp_volumes, " ", file.path(odir, "filtered")))
+} else {
+  system(paste0("fslmaths ", file.path(odir, "regressors"), " -Tmean ", file.path(odir, "tempMean")))
+  system(paste0("fslmaths ", file.path(odir, "regressors"), " -bptf ", hp_volumes, " ", lp_volumes, " -add ", file.path(odir, "tempMean"),  " ", file.path(odir, "filtered")))
+}
+
+nif.filtered <- readNIfTI(file.path(odir, "filtered"), reorient=FALSE)
+
+#sanity checks on data manipulation
+#df <- drop(nif.filtered@.Data)
+#df2 <- drop(nif@.Data)
+
+#cor(df[1,], df2[1,])
+#mean(df[1,])
+#mean(df2[1,])
+
+outmat <- drop(nif.filtered@.Data)
+if (transpose) { outmat <- t(outmat) }
+
+##write matrix to file
+if (sep != "") {
+    write.table(x=outmat, file=out_file, sep=sep, row.names=FALSE, col.names=FALSE)
+} else {
+    write.table(x=outmat, file=out_file, row.names=FALSE, col.names=FALSE)
+}
+
+#cleanup
+system(paste("imrm", file.path(odir, "regressors"), file.path(odir, "tempMean"), file.path(odir, "filtered")))
