@@ -55,6 +55,75 @@ function fieldmap_make_rads_per_sec() {
 
 }
 
+#function to reset a fieldmap phase directory to its original state (DICOMs only)
+#useful to fix/startover on fieldmap preparation
+function reset_phasedir {
+    local phasedir="${1}"
+    cwd=$(pwd)
+    rel "Resetting field map phase directory: $phasedir" c
+    [ ! -d "$phasedir" ] && rel "Cannot find phase directory to reset: $phasedir" c && return 0
+    cd "$phasedir"
+
+    flist=".fieldmap_phase .fmphase_inprogress fm_phase.nii.gz fm_phase_radians.nii.gz fm_phase_radians_unwrapped.nii.gz fm_phase_rps.nii.gz FM_UD_fmap.nii.gz"
+    if [ -f fm_phase_dicom.tar.gz ]; then	
+	rel "tar xvzf fm_phase_dicom.tar.gz && rm -f fm_phase_dicom.tar.gz"
+	rel "rm -f $flist"
+    else
+	rel "Could not locate dicom archive. In an abundance of caution, moving phase files to phase_archive folder" c
+	local tomove=
+	for fname in $flist; do
+	    [ -f $fname ] && tomove="$tomove $fname"
+	done
+
+	if [ -n "$tomove" ]; then
+     	    [ ! -d "phase_archive" ] && rel "mkdir phase_archive"
+	    rel "mv $tomove phase_archive"
+	fi
+    fi
+
+    cd "$cwd" #return to original directory
+}
+
+function reset_magdir {
+    local magdir="$(abspath ${1})"
+    
+    cwd=$(pwd)
+    rel "Resetting fieldmap magnitude directory: $magdir" c
+    [ ! -d "$magdir" ] && rel "Cannot find magnitude directory to reset: $magdir" c && return 0
+    cd "$magdir"
+
+    rel "rm -f .fieldmap_magnitude .fmmagnitude_inprogress"
+    
+    if [ -d "echo1" ]; then
+	cd echo1
+	rel "rm -f fm_magnitude_echo1.nii.gz"
+	if [ -f fm_magnitude_echo1_dicom.tar.gz ]; then
+	    rel "mkdir dicom_temp"
+	    rel "tar xvzf fm_magnitude_echo1_dicom.tar.gz -C dicom_temp"
+	    rel "mv dicom_temp/* $magdir"
+	    rel "rmdir dicom_temp"
+	    rel "rm -f fm_magnitude_echo1_dicom.tar.gz"
+	fi
+
+	cd ../
+	rel "rmdir echo1"
+    fi
+    
+    if [ -d "echo2" ]; then
+	cd echo2
+	rel "rm -f fm_magnitude_echo2.nii.gz"
+	if [ -f fm_magnitude_echo2_dicom.tar.gz ]; then
+	    rel "mkdir dicom_temp"
+	    rel "tar xvzf fm_magnitude_echo2_dicom.tar.gz -C dicom_temp "
+	    rel "mv dicom_temp/* $magdir"
+	    rel "rmdir dicom_temp"
+	    rel "rm -f fm_magnitude_echo2_dicom.tar.gz"
+	fi
+	
+	cd ../
+	rel "rmdir echo2"
+    fi
+}
 
 PREPARE_FIELDMAP_GLOBALS=(bbrCapable funcStructFlirtDOF fm_cfg mcMats fm_phase fm_magnitude ext logFile mprageBet)
 ### Worker function for preparation of fieldmap.
@@ -143,7 +212,7 @@ function prepare_fieldmap {
     local fm_magnitudebase=$( basename "$fm_magnitude" )
 
     # 20170426WF -- fieldmap paths must be absolute
-    # abspath is a funciton in helper_functions
+    # abspath is a function in helper_functions
     fm_phasedir=$(abspath $fm_phasedir)
     fm_magnitudedir=$(abspath $fm_magnitudedir)
     # TODO: consolidate this code with fileVar for loop below
@@ -152,7 +221,6 @@ function prepare_fieldmap {
     #Apr2014: I'm not really sure if this is necessary... problems may have emerged from running fslreorient2std simultaneously on originals...
     #Still, for 2 seconds, I'll keep it.
     sleep $(echo "scale=9; $RANDOM/32767*2"|bc)s
-
 
     #Collision occurs among multiple preprocessFunctional calls trying to perform the fieldmap preparation simultaneously
     #because the fieldmap files are shared. Use a lock file with a wait command to get around this problem (I hope).
@@ -168,9 +236,9 @@ function prepare_fieldmap {
 
       local now=$(date +%s)
       local ctime=$(cat $lockfile)
-      [[ ! $ctime =~ [0-9]? ]] && echo "Warning: malformed lock file $lockfile"
+      [[ ! $ctime =~ [0-9]? ]] && rel "Warning: malformed lock file $lockfile" c
 
-      [ "$((( $now-$ctime )))" -gt "$(((1*60*60)))" ] && echo "it's been over 1 hour, you should remove $lockfile" && exit 1
+      [ "$((( $now-$ctime )))" -gt "$(((1*60*60)))" ] && rel "Waiting on $lockfile for over 1 hour. Assuming this is in error and unlocking the pipeline." c && rm -f "$lockfile"
 
       echo "waiting for another preprocessFunctional to finish (lock: $lockfile)"
       while [ -f "$lockfile" ]; do
@@ -180,6 +248,16 @@ function prepare_fieldmap {
       return 0
     }
 
+    #check for existence of phase file specified in .fieldmap_phase
+    #remove this file before proceeding to reset check
+    if [ -r ".fieldmap_phase" ]; then
+	read fm_phase_check < ".fieldmap_phase"
+	if [ ! -r "${fm_phase_check}${ext}" ]; then
+	    rel "File $fm_phase_check specified in .fieldmap_phase does not exist. Removing .fieldmap_phase" c
+	    rel "rm -f \".fieldmap_phase\""
+	fi
+    fi
+    
     if [[ "$fm_phasebase" =~ .*\*.* && ! -f ".fieldmap_phase" ]]; then
       #if the lock file is present, sleep until complete
       waitforlock "${fm_phasedir}/.fmphase_inprogress"
@@ -193,52 +271,61 @@ function prepare_fieldmap {
 	      rel "Cannot find file: ${fm_phase_check}${ext}. Attempting to correct pathname." c
 	      if [ -f "${fm_phasedir}/$( basename ${fm_phase_check} )${ext}" ]; then
 		  rel "Found phase by using directory ${fm_phasedir}" c
-		  echo "${fm_phasedir}/$( basename ${fm_phase_check} )${ext}" > "${fm_phasedir}/.fieldmap_phase"
-		  cp "${fm_phasedir}/.fieldmap_phase" "${funcdir}/.fieldmap_phase"
+		  echo "${fm_phasedir}/$( basename ${fm_phase_check} )" > "${fm_phasedir}/.fieldmap_phase"
+		  rel "cp \"${fm_phasedir}/.fieldmap_phase\" \"${funcdir}/.fieldmap_phase\""
 	      else
-		  rel "Removing invalid file: ${fm_phasedir}/.fieldmap_phase" c
-		  rm -f "${fm_phasedir}/.fieldmap_phase"
+		  reset_phasedir "${fm_phasedir}"
 		  date +%s > "${fm_phasedir}/.fmphase_inprogress" #lock for re-processing
 	      fi
 	  else
               cp "${fm_phasedir}/.fieldmap_phase" "${funcdir}/.fieldmap_phase"
 	  fi
       else
+	  reset_phasedir "${fm_phasedir}"
           date +%s > "${fm_phasedir}/.fmphase_inprogress" #lock for processing
       fi
     fi
-
+    
+    #check for existence of magnitude file specified in .fieldmap_magnitude
+    #remove this file before proceeding to reset check
+    if [ -r ".fieldmap_magnitude" ]; then
+	read fm_magnitude_check < ".fieldmap_magnitude"
+	if [ ! -r "${fm_magnitude_check}${ext}" ]; then
+	    rel "File $fm_magnitude_check specified in .fieldmap_magnitude does not exist. Removing .fieldmap_magnitude" c
+	    rel "rm -f \".fieldmap_magnitude\""
+	fi
+    fi
+    
     if [[ "$fm_magnitudebase" =~ .*\*.* && ! -f ".fieldmap_magnitude" ]]; then	
-      #if the lock file is present, sleep until complete
+	#if the lock file is present, sleep until complete
 	waitforlock "${fm_magnitudedir}/.fmmagnitude_inprogress" 
 	
 	if [ -f "${fm_magnitudedir}/.fieldmap_magnitude" ]; then
-          #Processing of fieldmap magnitude already completed elsewhere
-	  #Check that the file specified exists. If so, copy to local directory.
-	  #If not, see whether file can be corrected by fixing path
-          #TODO: If the problem can't be fixed by a path change and the fieldmaps have been processed already from DICOM,
-          #we need to undo this processing (see resetFieldmaps.bash script).
-
+            #Processing of fieldmap magnitude already completed elsewhere
+	    #Check that the file specified exists. If so, copy to local directory.
+	    #If not, see whether file can be corrected by fixing path.
+	    #If this fails, attempt to revert to original DICOMs and reprocess
+	    
 	    read fm_magnitude_check < "${fm_magnitudedir}/.fieldmap_magnitude"
 	    if [ ! -f "${fm_magnitude_check}${ext}" ]; then
 		rel "Cannot find file: ${fm_magnitude_check}${ext}. Attempting to correct pathname." c
 		if [ -f "${fm_magnitudedir}/echo1/$( basename ${fm_magnitude_check} )${ext}" ]; then
-		    rel "Found magnitude by using directory ${fm_magnitudedir}" c
-		    echo "${fm_magnitudedir}/echo1/$( basename ${fm_magnitude_check} )${ext}" > "${fm_magnitudedir}/.fieldmap_magnitude"
-		    cp "${fm_magnitudedir}/.fieldmap_magnitude" "${funcdir}/.fieldmap_magnitude"
+		    rel "Found magnitude by in directory ${fm_magnitudedir}" c
+		    echo "${fm_magnitudedir}/echo1/$( basename ${fm_magnitude_check} )" > "${fm_magnitudedir}/.fieldmap_magnitude"
+		    rel "cp \"${fm_magnitudedir}/.fieldmap_magnitude\" \"${funcdir}/.fieldmap_magnitude\""
 		else
-		    rel "Removing invalid file: ${fm_magnitudedir}/.fieldmap_magnitude" c
-		    rm -f "${fm_magnitudedir}/.fieldmap_magnitude" #NB. The dicoms may need to be unzipped if the dir fix above doesn't work.
+		    reset_magdir "${fm_magnitudedir}"
 		    date +%s > "${fm_magnitudedir}/.fmmagnitude_inprogress" #lock for re-processing
 		fi
 	    else
 		cp "${fm_magnitudedir}/.fieldmap_magnitude" "${funcdir}/.fieldmap_magnitude"
 	    fi	    
 	else
+	    reset_magdir "${fm_magnitudedir}"
             date +%s > "${fm_magnitudedir}/.fmmagnitude_inprogress" #lock for processing
 	fi
     fi
-
+    
     #check whether the number of dicoms in the magnitude directory is 2x the phase directory.
     #if not, switch phase and magnitude.
     if [[ "$fm_phasebase" =~ .*\*.* && "$fm_magnitudebase" =~ .*\*.* && 
@@ -268,8 +355,6 @@ function prepare_fieldmap {
 	fi
     fi
 
-    #TODO: If local .fieldmap_phase exists, but points to invalid file, this will blow up.
-    #We handle invalid .fieldmap_phase in fieldmap directories above, but this needs to be handled, too (probably before above)
     if [ -f ".fieldmap_phase" ]; then
 	read fm_phase < .fieldmap_phase
 	rel "Using fieldmap phase $fm_phase from file $fm_phasedir/.fieldmap_phase" c

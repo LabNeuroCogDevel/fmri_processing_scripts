@@ -43,6 +43,8 @@ MB_src = Sys.getenv("loc_mb_root") #Name of directory containing offline-reconst
 mb_filepattern = Sys.getenv("mb_filepattern") #Wildcard pattern of MB reconstructed data within MB_src
 useOfflineMB = ifelse(nchar(MB_src) > 0, TRUE, FALSE) #whether to use offline-reconstructed hdr/img files as preprocessing starting point
 proc_freesurfer = as.numeric(Sys.getenv("proc_freesurfer")) #whether to run the structural scan through FreeSurferPipeline after preprocessMprage
+preproc_resume = as.numeric(Sys.getenv("preproc_resume"))
+if (is.na(preproc_resume)) { preproc_resume <- FALSE } else if (preproc_resume==0) { preproc_resume <- FALSE } else if (preproc_resume==1) { preproc_resume <- TRUE }
 
 fs_subjects_dir = NULL
 if (is.na(proc_freesurfer)) {
@@ -111,6 +113,8 @@ cat("  Process functional data: ", as.character(proc_functional), "\n")
 cat("  Destination root directory for processed MRI files:", loc_mrproc_root, "\n")
 cat("  Destination subdirectory for each subject:", preprocessed_dirname, "\n")
 cat("  Name of paradigm folder:", paradigm_name, ", expected runs:", n_expected_funcruns, "\n")
+cat("  Prefer preprocessFunctional -resume for directories in process: ", as.character(preproc_resume), "\n")
+
 if (useOfflineMB) {
     cat("  Using offline-reconstructed multiband data (Tae Kim Pittsburgh sequence)\n")
     cat("  Expected name of offline-reconstructed multiband files:", mb_filepattern, "\n")
@@ -509,23 +513,26 @@ registerDoMC(njobs) #setup number of jobs to fork
 f <- foreach(cd=iter(all_funcrun_dirs, by="row"), .inorder=FALSE) %dopar% {
     setwd(cd$funcdir)
 
-    if (useOfflineMB) {
-        funcpart <- paste("-4d", Sys.glob(paste0(paradigm_name, "*.nii.gz")))
+    resumepart <- funcpart <- mpragepart <- fmpart <- refimgpart <- ""
+    if (file.exists(".preprocessfunctional_incomplete") && preproc_resume) {
+        resumepart <- "-resume"
+        preproc_call <- "" #clear other settings
     } else {
-        funcpart <- paste0("-dicom \"", functional_dicompattern, "\" -delete_dicom archive -output_basename ", basename(cd$funcdir)) #assuming archive here
-    }
+        if (useOfflineMB) {
+            funcpart <- paste("-4d", Sys.glob(paste0(paradigm_name, "*.nii.gz")))
+        } else {
+            funcpart <- paste0("-dicom \"", functional_dicompattern, "\" -delete_dicom archive -output_basename ", basename(cd$funcdir)) #assuming archive here
+        }
     
-    mpragepart <- paste("-mprage_bet", file.path(cd$mpragedir, "mprage_bet.nii.gz"), "-warpcoef", file.path(cd$mpragedir, paste0("mprage_warpcoef", gradunwarpsuffix, ".nii.gz")))
-    if (!is.na(cd$magdir)) {
-        fmpart <- paste0("-fm_phase \"", cd$phasedir, "\" -fm_magnitude \"", cd$magdir, "\" -fm_cfg ", fieldmap_cfg)
-    } else { fmpart <- "" }
+        mpragepart <- paste("-mprage_bet", file.path(cd$mpragedir, "mprage_bet.nii.gz"), "-warpcoef", file.path(cd$mpragedir, paste0("mprage_warpcoef", gradunwarpsuffix, ".nii.gz")))
 
-    if (!is.na(cd$refimgs)) {
-        refimgpart <- paste0("-func_refimg \"", cd$refimgs, "\" ")
-    } else { refimgpart <- "" }
-    
+        if (!is.na(cd$magdir)) { fmpart <- paste0("-fm_phase \"", cd$phasedir, "\" -fm_magnitude \"", cd$magdir, "\" -fm_cfg ", fieldmap_cfg) }
+
+        if (!is.na(cd$refimgs)) { refimgpart <- paste0("-func_refimg \"", cd$refimgs, "\" ") }
+    }
+
     ##run preprocessFunctional
-    args <- paste(funcpart, mpragepart, fmpart, refimgpart, preproc_call)
+    args <- paste(resumepart, funcpart, mpragepart, fmpart, refimgpart, preproc_call)
     
     ret_code <- system2("preprocessFunctional", args, stderr="preprocessFunctional_stderr", stdout="preprocessFunctional_stdout")
     if (ret_code != 0) { stop("preprocessFunctional failed in directory: ", cd$funcdir) }

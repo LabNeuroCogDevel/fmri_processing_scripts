@@ -182,6 +182,9 @@ EndOfHelp
 #Last defaults change: before 2016/05/10
 #
 #Changelog:
+#6/5/2017 (MH)
+# - More robust corrections for flawed fieldmap cache (reset to DICOMs if needed)
+# - Fix -bptf to be nvol/2 to achieve FWHM (prior filter was 2x too slow)
 #5/27/2017 (MH)
 # - Support -func_refimg <directory> to have script look for DICOM with the same protocol name, but single-band reference (CMRR), within subject's raw dir
 # - Support -ica_aroma to execute ICA-based Automatic Removal of Motion Artifact algorithm (Pruim 2015).

@@ -8,11 +8,18 @@ function highpass_filter {
 	#####
 	#High-pass filtering for slow-frequency scanner drift
 	#-bptf 80 -1: pass any signal faster than 80 TRs, don't low-pass filter (-1)
+	#NB. The -bptf specification is in terms of sigma (width of Gaussian). As a result, this is the HWHM, not FWHM.
+	#Details: https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1109&L=fsl&D=0&P=202555
+	#To achieve the desired cutoff, we need to compute the number of volumes as follows:
+	#  sigma[vol] = cutoff[sec]/(2*TR[sec])
 
 	#allow for seconds to be passed in, then converted to volumes
 	if [ "${hpFilter: -1}" == "s" ]; then
-	    rel "High pass filter specified in seconds: $hpFilter. Dividing by TR $tr for fslmaths -bptf" c
-	    hpFilter=$( echo "scale=4; ${hpFilter%?}/${tr}" | bc )
+	    rel "High pass filter specified in seconds: $hpFilter. Dividing by 2*TR $tr for fslmaths -bptf" c
+	    hpFilter=$( echo "scale=4; ${hpFilter%?}/(2*${tr})" | bc )
+	else
+	    rel "Dividing -hp_filter argument $hpFilter (in volumes) by 2 for FWHM argument to fslmaths -bptf." c	    
+	    hpFilter=$( echo "scale=4; ${hpFilter}/2" | bc )
 	fi
 
 	rel "High-pass filtering functional data to remove signals slower than $hpFilter volumes" c

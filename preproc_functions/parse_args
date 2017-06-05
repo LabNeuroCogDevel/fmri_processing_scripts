@@ -496,7 +496,6 @@ function parse_args {
     #we divide the FWHM value provided by $smoothing_kernel by 2.355 (approximately 8*log(2).
 
     sigma=$( echo "scale=5; $smoothing_kernel/2.355" | bc )
-    #echo "sigma is: $sigma"
 
     #smoothed files include the FHWM as a sufix
     [ $no_smooth -eq 0 ] && smoothing_suffix="_${smoothing_kernel}" || smoothing_suffix=
