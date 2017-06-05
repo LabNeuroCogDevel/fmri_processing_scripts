@@ -13,7 +13,7 @@
 if [ -n "$MRI_STDDIR" ]; then
     stddir="$MRI_STDDIR"
 else
-    local standard_spaces=(\
+    standard_spaces=(\
        /gpfs/group/mnh5174/default/lab_resources/standard \
        /opt/ni_tools/standard_templates \
        $HOME/standard \
