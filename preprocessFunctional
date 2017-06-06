@@ -68,8 +68,9 @@ Command line options:
         -func_struc_dof 12. Rotation x, y, z; Translation x, y, z; Scaling x, y, z; Skewing x, y, z.
   -keep_motion_files: when doing -cleanup or -cleanup_only, keep mt_*,tm_*, some mc_*, and mc_mats/ files
   -help: Print command help.
-  -hp_filter: high-pass filtering frequency (in volumes). Anything faster than this value will be passed. Default is 80. 
-        Can also be specified in seconds using suffix "s", such as -hp_filter 100s.
+  -hp_filter: high-pass filtering frequency (FWHM of filter in volumes). Anything faster than this value will be passed. Default is 40.
+        It is preferable to specify this in seconds using suffix "s", such as -hp_filter 100s.
+        This allows the script to compute the FWHM of the filter, which = filter_cutoff[seconds]/(sqrt(8*log(2))*TR[seconds]).
   -ica_aroma: automatically remove motion artifacts using ICA-AROMA method of Pruim 2015 NeuroImage. Applied after smoothing
   -log: Name for log file that documents each command that is run. Default: preprocessFunctional.log
   -mc_first: run motion correction before slice timing correction, regardless of slice acquisition order.
@@ -178,13 +179,14 @@ EndOfHelp
 }
 
 #Written: 2010/5/18
-#Last updated: 2017/5/27
-#Last defaults change: before 2016/05/10
+#Last updated: 2017/6/5
+#Last defaults change: 2017/6/5
 #
 #Changelog:
 #6/5/2017 (MH)
 # - More robust corrections for flawed fieldmap cache (reset to DICOMs if needed)
-# - Fix -bptf to be nvol/2 to achieve FWHM (prior filter was 2x too slow)
+# - Fix -bptf to be nvol/2.355*TR to achieve FWHM (prior filter was 2x too slow)
+# - Always filter nuisance regressors to match imaging data (even just for compute or regress only)
 #5/27/2017 (MH)
 # - Support -func_refimg <directory> to have script look for DICOM with the same protocol name, but single-band reference (CMRR), within subject's raw dir
 # - Support -ica_aroma to execute ICA-based Automatic Removal of Motion Artifact algorithm (Pruim 2015).
