@@ -241,8 +241,6 @@ function rm_dotsteps {
     deleteFile ".epiref_bet_complete"
     deleteFile ".motion_censor_complete"
     deleteFile ".motion_plots_complete"
-    #deleteFile ".slice_timing_complete"
-    #deleteFile ".motion_correction_complete"
     deleteFile ".skull_strip_complete"
     deleteFile ".func2struct_complete"
     deleteFile ".topup_complete"
@@ -476,6 +474,9 @@ function cleanup_preprocessFunctional {
 	deleteFile nf${apre}s${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
     fi
 
+    if [[ "$nuisance_regression" -eq 1 || "$nuisance_compute" -eq 1 ]]; then
+	deleteFile "unfiltered_${nuisance_file}" #remove unfiltered nuisance regressors
+    fi
 
     ## Files left over from Finn's pipeline
     #wktm_rest_1_98_2_mask_dil1x.nii.gz
