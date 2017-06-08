@@ -435,8 +435,8 @@ for (d in subj_dirs) {
         if (length(funcdirs) == 0L) {
             message("Cannot find any functional runs directories in ", d, " for pattern ", functional_dirpattern)
             message("Skipping participant for now")
-            next            
-        if (length(funcdirs) != n_expected_funcruns) {
+            next
+        } else if (length(funcdirs) != n_expected_funcruns) {
             message("Cannot find the expected number of functional run directories in ", d, " for pattern ", functional_dirpattern)
             message("Skipping participant for now")
             next
