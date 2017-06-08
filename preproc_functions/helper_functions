@@ -237,6 +237,7 @@ function rm_dotsteps {
     deleteFile ".fieldmap_magnitude"
     deleteFile ".fieldmap_phase"
     deleteFile ".reorient2std_complete"
+    deleteFile ".t2star_coreg_complete"
     deleteFile ".epiref_bet_complete"
     deleteFile ".motion_censor_complete"
     deleteFile ".motion_plots_complete"
@@ -256,7 +257,9 @@ function rm_dotsteps {
     deleteFile ".fmunwarp_complete"
     deleteFile ".prepare_fieldmap_complete"
     deleteFile ".nuisance_regression_complete"
+    deleteFile ".nuisance_compute_complete"
     deleteFile ".bandpass_filter_complete"
+    deleteFile ".mean_final_func_complete"
 
     # we want to keep motion bits around
     if [ -z "$KEEP_MOTION_FILES" ]; then
@@ -470,6 +473,7 @@ function cleanup_preprocessFunctional {
 
     if [[ "$nuisance_regression" -eq 1 || "$bandpass_filter" -eq 1 ]]; then
 	deleteFile n${apre}s${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
+	deleteFile nf${apre}s${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
     fi
 
 

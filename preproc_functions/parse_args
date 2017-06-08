@@ -26,7 +26,7 @@ function parse_args {
     funcRefimg=
     funcStructFlirtDOF="bbr" #boundary-based registration in FSL 5.0+
     funcWarpInterp="spline"
-    hpFilter=40 #default to 40 TR high-pass filter (~188s at TR = 2)
+    hpFilter=120s #default to 120s hp filter
     ica_aroma=0 #whether to run smoothed data through ICA-AROMA
     logFile="preprocessFunctional.log"
     mc_first= #default to empty and choose at stage of motion + slice timing depending on user specification and slice acquisition order

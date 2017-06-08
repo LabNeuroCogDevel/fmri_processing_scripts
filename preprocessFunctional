@@ -128,7 +128,7 @@ Command line options:
         -threshold 98_2 (FSL's default, 2nd %ile + (98th %ile - 2nd %ile)/10
         -threshold 10 (mask any voxels below the 10th percentile)
   -tr: TR duration in seconds.
-  -trunc: remove a given number of volumes (time steps) from the begining. old protocols did not discard these automaticly. ( n_rm_firstvols )
+  -trunc: remove the specified number of volumes (time steps) from the beginning. Some protocols do not discard enough automatically. ( n_rm_firstvols )
   -siemens: only relevant for -4d input. If set, slice timing correction will check for interleaved
         order and odd vs. even number of slices. If even, will create and use --ocustom file 2,4,6...1,3,5...
         This is necessary because of different slice acquisition on Siemens for even versus odd total slices.
@@ -185,8 +185,9 @@ EndOfHelp
 #Changelog:
 #6/5/2017 (MH)
 # - More robust corrections for flawed fieldmap cache (reset to DICOMs if needed)
-# - Fix -bptf to be nvol/2.355*TR to achieve FWHM (prior filter was 2x too slow)
+# - Fix -bptf to be nvol/2.355*TR to achieve FWHM (prior filter was ~2x too slow)
 # - Always filter nuisance regressors to match imaging data (even just for compute or regress only)
+# - Default to 120s hp filter if not specified (rather than volume-based default, which is TR-dependent)
 #5/27/2017 (MH)
 # - Support -func_refimg <directory> to have script look for DICOM with the same protocol name, but single-band reference (CMRR), within subject's raw dir
 # - Support -ica_aroma to execute ICA-based Automatic Removal of Motion Artifact algorithm (Pruim 2015).
