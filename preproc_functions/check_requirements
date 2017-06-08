@@ -20,6 +20,21 @@ function check_requirements {
 	read tr < .detect_tr
     fi
 
+    #use the saved series number and protocol name for epiref detection
+    if [ -f .detect_series ]; then
+	read series < .detect_series
+    fi
+
+    if [ -f .detect_protocolname ]; then
+	read protocolname < .detect_protocolname
+    fi
+
+    #use detected epiref image to override directory, if specified
+    if [ -f .detect_epiref ]; then
+	read funcRefimg  < .detect_epiref
+    fi
+    
+    
     #check that slice acquisition order and TR was specified or detected in case of 4d input
     if [ -n "$funcFile" ]; then
 	if [[ -z $sliceAcquisition && $no_st -eq 0 && -z $sliceTimesFile ]]; then #only enforce provision of slice acquisition order if slice timing in pipeline.
@@ -39,6 +54,51 @@ function check_requirements {
     fi
 
     if [ -n "$funcRefimg" ]; then
+	if [[ -d "$funcRefimg" && ! -r .epiref_bet_complete ]]; then
+	    #if -funcRefImg is a directory, assume that this is the raw directory for the subject and we should detect the reference	    
+	    #look for dicom in previous and following series
+	    if [ -z "$series" ]; then
+		echo "series variable not set, but -func_refimg detect specified. Cannot determine how to search for SBref"
+		exit 1
+	    fi
+
+	    if [ -z "$protocolname" ]; then
+		echo "protocolname variable not set, but -func_refimg detect specified. Cannot determine how to search for SBref"
+		exit 1
+	    fi
+	    
+	    #find first file matching the dicom pattern in subfolders of the directory
+	    local rawdir=$funcRefimg
+	    local sbrefFound=0
+	    while IFS= read -r -d '' dir; do
+		#echo "find '$dir' -iname '$dicomPattern' -type f -print -quit"
+		firstDicom=$( find "$dir" -iname "$dicomPattern" -type f -print -quit )
+		#echo "dcm: $firstDicom"
+		
+		if [ -n "${firstDicom}" ]; then #check the number of characters in the string
+		    local cDicom=$( dicom_hdr -sexinfo "${firstDicom}" )
+		    local cProtocol=$( echo "${cDicom}" | grep -i "ACQ Protocol Name" | perl -pe "s:.*ACQ Protocol Name//(\w+).*$:\1:" )
+		    local cSeries=$( echo "${cDicom}" | grep "REL Series Number//" | perl -pe 's|^.*REL Series Number//(\d+).*$|\1|' ) #series number
+
+		    echo "${cDicom}" | grep -q "REL Image Comments//Single-band reference" && local cSbref=1 || local cSbref=0
+		    
+		    #echo "cprotocol: $cProtocol, cSeries: $cSeries, issbref: $cSbref, series to match: $series, proto to match: $protocolname"
+		    if [[ "$cProtocol" == "$protocolname" && ( $cSeries == $(( series - 1)) || $cSeries == $(( series + 1)) ) && $cSbref == 1 ]]; then
+			sbrefFound=1
+			funcRefimg="${firstDicom}"
+			echo "${firstDicom}" > .detect_epiref
+			rel "  Detected SBref image -func_refimg: ${funcRefimg}" c
+			break
+		    fi
+		fi
+	    done < <(find $rawdir -mindepth 1 -maxdepth 1 -type d -print0)
+
+	    if [ $sbrefFound -eq 0 ]; then
+		rel "Unable to detect -func_refimg in $rawdir. Cannot continue." c
+		exit 1
+	    fi
+	fi
+	
 	if [[ ! -f "$funcRefimg" ]] && [[ ! -h "${funcRefimg}" ]]; then
 	    echo -e "Functional reference scan (-func_refimg) specified but not found: ${funcRefimg}.\nExiting.\n"
 	    exit 1
@@ -49,26 +109,32 @@ function check_requirements {
 	    ref_vol=
 	fi
 
-	#copy reference image to local directory to make directory more portable
 	if [ ! -r .epiref_bet_complete ]; then
-              #if funcRegImg is a single DICOM file, change to NIfTI
-              dicom_hdr "$funcRefImg" 2>&1 | grep -q "ERROR: can't open.*as a DICOM file" #A 0 exit status from grep indicates a match
-              if [ $? -ne 0 ]; then
-                  rel "Converting -func_refimg to NIfTI" c
-                  rel "to3d -prefix epiref.nii.gz -ushort2float \"$funcRefimg\""
-              else
-                   #copy reference image to local directory to make directory more portable
-                  rel "fslmaths \"$funcRefimg\" epiref"
-              fi
-		
-		#skull strip reference image to improve coregistration
-		rel "bet epiref epiref_brain -f 0.3 -n -R" #include bias field correction given heavy bias for 32-channel data
-		rel "fast -o epiref_brain -l 20 -b -B -t 2 --iter=12 --nopve --fixed=0 epiref_brain"
-		rel "imrm epiref_brain_seg" #not needed for anything
-		#use epiref_brain_restore for coregistration
-      
-		rel "date > .epiref_bet_complete"
+    	    #copy reference image to local directory to make directory more portable
+	    #if funcRefimg is a single DICOM file, change to NIfTI
+	    dicom_hdr "$funcRefimg" 2>&1 | grep -q "ERROR: can't open.*as a DICOM file" && isdicom=0 || isdicom=1 # 0 exit status from grep indicates a match
+	    
+	    if [ $isdicom -eq 1 ]; then
+		rel "Converting -func_refimg to NIfTI" c
+		rel "to3d -prefix epiref.nii.gz -ushort2float \"$funcRefimg\""
+	    else
+		#copy reference image to local directory to make directory more portable
+		rel "fslmaths \"$funcRefimg\" epiref"
+	    fi
+	    
+	    #skull strip reference image to improve coregistration
+	    rel "bet epiref epiref_brain -f 0.3 -n -R" #include bias field correction given heavy bias for 32-channel data
+	    rel "fast -o epiref_brain -l 20 -b -B -t 2 --iter=12 --nopve --fixed=0 epiref_brain"
+	    rel "imrm epiref_brain_seg" #not needed for anything
+	    #use epiref_brain_restore for coregistration
+	    
+	    rel "date > .epiref_bet_complete"
 	fi
+    fi
+    
+    #if no warp and ICA-AROMA are both requested, we must compute the warp to MNI to have the script work properly
+    if [[ $no_warp -eq 1 && $ica_aroma -eq 1 ]]; then
+	compute_warp=1
     fi
     
     #check for existence of required files
@@ -100,6 +166,5 @@ function check_requirements {
 	    exit 1
 	fi
     fi
-
 }
 # vim: set tabstop=7:

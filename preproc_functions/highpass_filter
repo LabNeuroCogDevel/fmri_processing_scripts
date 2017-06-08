@@ -10,7 +10,7 @@ function highpass_filter {
 	#-bptf 80 -1: pass any signal faster than 80 TRs, don't low-pass filter (-1)
 
 	#allow for seconds to be passed in, then converted to volumes
-	if [ "${hpFilter: -1}" = "s" ]; then
+	if [ "${hpFilter: -1}" == "s" ]; then
 	    rel "High pass filter specified in seconds: $hpFilter. Dividing by TR $tr for fslmaths -bptf" c
 	    hpFilter=$( echo "scale=4; ${hpFilter%?}/${tr}" | bc )
 	fi

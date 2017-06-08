@@ -1,0 +1,64 @@
+#!/bin/bash
+
+function ica_aroma {
+    
+    #Run ICA-AROMA on data after spatial smoothing is complete
+    if [ $ica_aroma -eq 1 ]; then
+	preAroma="${postSmooth}" #should always fall after this step
+	prefix="a${prefix}"
+	postAroma="${prefix}${funcFile}${smoothing_suffix}"
+
+	if [ -f ".ica_aroma_complete" ]; then
+	    return 0
+	fi
+
+	#need absolute paths to ICA_AROMA.py script. (should eventually move this to the main script and make global)
+	local funcdir=$(pwd) #define working directory for functional processing
+	
+	#need to handle case when data are in native space. In conventional pipeline, data are already in MNI space
+	#if data are in native space, then we need to have computed the warp for this to work
+	
+	if [[ $templateName = MNI_2mm || $templateName = MNI_2.3mm || $templateName = MNI_3mm ]]; then
+	    #if data are in Fonov MNI152, then we need to provide warp coefficients for Fonov -> MNI152. Otherwise, we end up needing to
+	    #warp to FSL152, run the script, then warp back to Fonov, which doubles down on interpolation artifacts. ICA_AROMA.py
+	    #does not apply any spatial transformations to the output dataset, it just uses it to check components against mask files distributed
+	    #with the package that are in FSL MNI152 2mm space.
+	   
+	    if [ ! -r "$stddir/mni_icbm152_nlin_asym_09c/fonov_mni152_to_fsl_mni152_warpcoef.nii.gz" ]; then
+		echo "Cannot find fonov_mni152_to_fsl_mni152_warpcoef.nii.gz needed to warp Fonov MNI into FSL MNI for ICA-AROMA"
+		exit 1
+	    fi
+
+	    #handle no_warp situation
+	    if [ $no_warp -eq 1 ]; then
+		rel "convertwarp --ref=${stddir}/fsl_mni152/MNI152_T1_2mm --premat=func_to_struct.mat --warp1=$warpCoef \
+		    		 --warp2=$stddir/mni_icbm152_nlin_asym_09c/fonov_mni152_to_fsl_mni152_warpcoef.nii.gz --relout --out=func_to_fsl_warpfield"
+		local warptoFSL="func_to_fsl_warpfield"
+	    else
+		local warptoFSL="$stddir/mni_icbm152_nlin_asym_09c/fonov_mni152_to_fsl_mni152_warpcoef.nii.gz"
+	    fi
+
+	    rel "python \"${scriptDir}/ica_aroma/ICA_AROMA.py\" -tr ${tr} -in \"${funcdir}/${preAroma}${ext}\" -out \"${funcdir}/ica_aroma\" -mc \"${funcdir}/motion.par\" -warp \"$warptoFSL\""
+
+	    [ $no_warp -eq 1 ] && rel "imrm func_to_fsl_warpfield"
+
+	elif [[ $templateName = MNI_FSL_3mm ]]; then
+	    #if data are in FSL MNI152 already, then the warp should be complete at this point
+	    #in this case, ICA_AROMA.py does not need -affmat or -warp. Data will be resampled by the python script to 2mm to match template
+
+	    local warpsuffix=
+	    [ $no_warp -eq 1 ] && local warpsuffix="-warp func_to_${templateName}_warpfield"
+	    rel "python \"${scriptDir}/ICA_AROMA.py\" -in \"${preAroma}\" -out ica_aroma -mc motion.par $warpsuffix"
+	else
+	    rel "ICA-AROMA support only provided for FSL and Fonov MNI templates at the moment." c
+	    rel "Must use -template_brain <MNI_2mm|MNI_2.3mm|MNI_3mm|MNI_FSL_3mm>" c
+	    exit 1
+	fi
+
+	#create symbolic link to the aroma output
+	rel "ln -sfn ica_aroma/denoised_func_data_nonaggr${ext} ${postAroma}${ext}"
+	rel "date > .ica_aroma_complete"
+    fi
+
+    
+}

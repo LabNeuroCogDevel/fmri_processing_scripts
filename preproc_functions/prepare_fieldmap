@@ -100,7 +100,6 @@ function prepare_fieldmap {
     
     [ -z "$fm_phase" ] && rel "no 'fm_phase' (skipping prepare_fieldmap)" c  && return 0 #skip fieldmap 
 
-
     # we need to do this before testing if complete
     # because we use the warpdir sourced from the file
     # later (one-step warp)
@@ -109,7 +108,6 @@ function prepare_fieldmap {
     if [[ -n "${fm_phase}" && -f ".prepare_fieldmap_complete" ]]; then
 	return 0 #preparefieldmap already completed
     fi
-
 
     local funcdir=$(pwd) #define working directory for functional processing
 

@@ -1,0 +1,411 @@
+#!/bin/bash
+set -e
+
+[ -z $ext ] && ext=.nii.gz #will be set upstream after incorporating in pipeline
+
+#shameless adaptation of HCP script: https://github.com/Washington-University/Pipelines
+scriptDir=$( dirname "$0" )
+source "${scriptDir}/helper_functions" #for rel
+logFile="topuplog.txt"
+
+
+# Requirements for this script
+#  installed versions of: FSL (version 5.0.6), HCP-gradunwarp (version 1.0.3)
+#  environment: as in SetUpHCPPipeline.sh  (or individually: FSLDIR, HCPPIPEDIR_Global, HCPPIPEDIR_Bin and PATH for gradient_unwarp.py)
+
+
+Usage() {
+  echo "`basename $0`: Script for using topup to do distortion correction for EPI (scout)"
+  echo " "
+  echo "Usage: `basename $0` [-workingdir <working directory>]"
+  echo "            -phaseneg <NIfTI containing negative phase encode spin-echo EPI images: PE direction L>>R or A>>P>"
+  echo "            -phasepos <NIfTI containing positive phase encode spin-echo EPI images: PE direction R>>L or P>>A>"
+  echo "            -epiref <single-band scout EPI image to undistort. Should already be corrected for gradient non-linear distortions>"
+  echo "            -epiref_pedir <phase encode direction of epiref image: x/y/z/-x/-y/-z>"
+  echo "            -echospacing <effective echo spacing of EPI in seconds. See SIEMENS Sequence > Echo spacing. Beward partial Fourier and iPAT/GRAPPA.>"
+  echo "            -grad_unwarp <gradient non-linearity distortion coefficients (Siemens format)>"
+  echo "            [-topupconfig <topup config file>] Defaults to b02b0.cnf from FSL."
+  echo "            -usejacobian <\"true\" or \"false\">"
+  echo "            [-owarp <output warpfield image: scout to distortion corrected SE EPI>]"
+  echo "            [-ofmapmag <output 'Magnitude' image: scout to distortion corrected SE EPI>]" 
+  echo "            [-ofmapmagbrain <output 'Magnitude' brain image: scout to distortion corrected SE EPI>]"   
+  echo "            [-ofmap <output scaled topup field map image>]"
+  echo "            [-ojacobian <output Jacobian image>]"
+  echo " "
+  echo "   Note: the input SE EPI images should not be distortion corrected (for gradient non-linearities)"
+}
+
+################################################### OUTPUT FILES #####################################################
+
+# Output images (in $WD): 
+#          BothPhases      (input to topup - combines both pe direction data, plus masking)
+#          SBRef2PhaseNeg_gdc.mat SBRef2PhaseNeg_gdc   (linear registration result)
+#          PhaseNeg_gdc  PhasePos_gdc
+#          PhaseNeg_gdc_dc  PhaseNeg_gdc_dc_jac  PhasePos_gdc_dc  PhasePos_gdc_dc_jac
+#          SBRef_dc   SBRef_dc_jac
+#          WarpField  Jacobian
+# Output images (not in $WD): 
+#          ${DistortionCorrectionWarpFieldOutput}  ${JacobianOutput}
+
+################################################## OPTION PARSING #####################################################
+
+# Just give usage if no arguments specified
+if [ $# -eq 0 ] ; then Usage; exit 0; fi
+# check for correct options
+if [ $# -lt 7 ] ; then Usage; exit 1; fi
+
+#defaults
+WD=topup_undistort
+TopupConfig=${FSLDIR}/etc/flirtsch/b02b0.cnf #default
+UseJacobian=false
+GradientDistortionCoeffs=
+
+#process command line inputs
+while [ _$1 != _ ] ; do
+    if [[ $1 = -workingdir ]] ; then
+	WD="${2}"
+	shift 2
+    elif [ $1 = -phaseneg ]; then
+	PhaseEncodeNeg="${2}"
+	shift 2
+    elif [ $1 = -phasepos ]; then
+	PhaseEncodePos="${2}"
+	shift 2
+    elif [ $1 = -epiref ]; then
+	EpirefInputName="${2}"
+	shift 2
+    elif [ $1 = -echospacing ]; then
+	DwellTime="${2}"
+	shift 2
+    elif [ $1 = -epiref_pedir ]; then
+	EpirefUnwarpDirection="${2}"
+	shift 2
+    elif [ $1 = -owarp ]; then
+	DistortionCorrectionWarpFieldOutput="${2}"
+	shift 2
+    elif [ $1 = -ofmapmag ]; then
+	DistortionCorrectionMagnitudeOutput="${2}"
+	shift 2
+    elif [ $1 = -ofmapmagbrain ]; then
+	DistortionCorrectionMagnitudeBrainOutput="${2}"
+	shift 2
+    elif [ $1 = -ofmap ]; then
+	DistortionCorrectionFieldOutput="${2}"
+	shift 2
+    elif [ $1 = -ojacobian ]; then
+	JacobianOutput="${2}"
+	shift 2
+    elif [ $1 = -grad_unwarp ]; then
+	GradientDistortionCoeffs="${2}"
+	shift 2
+    elif [ $1 = -topupconfig ]; then
+	TopupConfig="${2}"
+	shift 2
+    elif [ $1 = -usejacobian ]; then
+	UseJacobian="${2}"
+	shift 2
+    else 
+	Usage
+	echo -e "----------------\n\n"
+	echo "Unrecognized command line parameter: ${1}"
+	exit 1
+    fi
+done
+
+#sanity check the jacobian option
+if [[ "$UseJacobian" != "true" && "$UseJacobian" != "false" ]]
+then
+    rel "the -usejacobian option must be 'true' or 'false'" c
+    exit 1
+fi
+
+rel "START: Topup Field Map Generation and Gradient Unwarping" c
+
+mkdir -p $WD
+
+# Record the input options in a log file
+rel "$0 $@" c
+rel "PWD = $PWD" c
+rel "date: $(date)" c
+
+########################################## DO WORK ########################################## 
+
+#check dimensions of phase versus sbref images
+#should we also check spacing info? could be off by tiny fractions, so probably not
+if [[ $( fslhd $PhaseEncodeNeg | grep '^dim[123]' ) != $( fslhd $EpirefInputName | grep '^dim[123]' ) ]]; then
+    rel "Error: Spin echo fieldmap has different dimensions than scout image. This requires a manual fix." c
+    exit 1
+fi
+
+#check that spin echo fieldmap dimensions match
+if [[ $( fslhd $PhaseEncodeNeg | grep '^dim[123]' ) != $( fslhd $PhaseEncodePos | grep '^dim[123]' ) ]]; then
+    rel "Error: Spin echo fieldmap images have different dimensions!" c
+    exit 1
+fi
+
+# PhaseNeg and PhasePos are sets of SE EPI images with opposite phase encodes
+# Copy these into directory for further processing
+rel "imcp $PhaseEncodeNeg ${WD}/PhaseNeg"
+rel "imcp $PhaseEncodePos ${WD}/PhasePos"
+rel "imcp $EpirefInputName ${WD}/SBRef"
+
+function gradunwarp() {
+    d=$( dirname "$img" )
+    img=$( remove_ext "${1}" )
+    baseimg=$( basename $img )
+
+    #check that command exists
+    command -v gradient_unwarp.py >/dev/null 2>&1 || { echo "Cannot find gradient_unwarp.py. Aborting." >&2; exit 1; }
+
+    cwd="$PWD"
+    cd "$d"
+
+    echo "Currently in $PWD"
+    #pull off first volume because gradient undistortion applies equally to each (correction wrt scanner coordinates)
+    #v1="$WD/${img}_vol1"
+    v1="${baseimg}_vol1"
+    rel "fslroi \"${img}\" \"$v1\" 0 1"
+
+    rel "gradient_unwarp.py \"${v1}${ext}\" \"${v1}_gdc_orig${ext}\" siemens -g \"$GradientDistortionCoeffs\" -n"
+
+    # Now create an appropriate warpfield output (relative convention) and apply it to all timepoints
+    #convertwarp's jacobian output has 8 frames, each combination of one-sided differences, so average them
+    rel "convertwarp --abs --ref=\"${v1}\" --warp1=fullWarp_abs --relout --out=${img}_gdc_warpfield --jacobian=${img}_gdc_jacobian"
+    rel "fslmaths ${img}_gdc_jacobian -Tmean ${img}_gdc_jacobian"
+    rel "applywarp --rel --interp=spline -i \"${img}\" -r \"${img}\" -w \"${img}_gdc_warpfield\" -o \"${img}_gdc\""
+
+    rel "imrm ${v1} ${v1}_gdc_orig fullWarp_abs"
+    cd "$cwd"
+}
+
+# Step 1: Apply gradient non-linearity distortion correction to input images (SE pair)
+if [ ! $GradientDistortionCoeffs = "NONE" ] ; then
+
+    gradunwarp ${WD}/PhaseNeg
+    gradunwarp ${WD}/PhasePos
+
+  # ${GlobalScripts}/GradientDistortionUnwarp.sh \
+  #     --workingdir=${WD} \
+  #     --coeffs=${GradientDistortionCoeffs} \
+  #     --in=${WD}/PhaseNeg \
+  #     --out=${WD}/PhaseNeg_gdc \
+  #     --owarp=${WD}/PhaseNeg_gdc_warp
+
+  # ${GlobalScripts}/GradientDistortionUnwarp.sh \
+  #     --workingdir=${WD} \
+  #     --coeffs=${GradientDistortionCoeffs} \
+  #     --in=${WD}/PhasePos \
+  #     --out=${WD}/PhasePos_gdc \
+  #     --owarp=${WD}/PhasePos_gdc_warp
+
+    #Apply jacobian intensity correction from gradient undistortion
+    if [[ $UseJacobian == "true" ]]; then
+	rel "Applying Jacobian intensity correction from gradient undistortion." c
+	rel "fslmaths ${WD}/PhaseNeg_gdc -mul ${WD}/PhaseNeg_gdc_jacobian ${WD}/PhaseNeg_gdc"
+	rel "fslmaths ${WD}/PhasePos_gdc -mul ${WD}/PhasePos_gdc_jacobian ${WD}/PhasePos_gdc"
+    fi
+
+    #in the below stuff, the jacobians for both phases and sbref are applied unconditionally to a separate _jac image
+    #NOTE: "SBref" is actually the input scout, which is actually the _gdc scout, with gdc jacobian applied if applicable
+
+    # Make a dilated mask in the distortion corrected space
+    rel "fslmaths ${WD}/PhaseNeg -abs -bin -dilD ${WD}/PhaseNeg_mask"
+    rel "applywarp --rel --interp=nn -i ${WD}/PhaseNeg_mask -r ${WD}/PhaseNeg_mask -w ${WD}/PhaseNeg_gdc_warpfield -o ${WD}/PhaseNeg_mask_gdc"
+    rel "fslmaths ${WD}/PhasePos -abs -bin -dilD ${WD}/PhasePos_mask"
+    rel "applywarp --rel --interp=nn -i ${WD}/PhasePos_mask -r ${WD}/PhasePos_mask -w ${WD}/PhasePos_gdc_warpfield -o ${WD}/PhasePos_mask_gdc"
+    
+    # Make a conservative (eroded) intersection of the two masks
+    rel "fslmaths ${WD}/PhaseNeg_mask_gdc -mas ${WD}/PhasePos_mask_gdc -ero -bin ${WD}/Mask"
+    # Merge both sets of images
+    rel "fslmerge -t ${WD}/BothPhases ${WD}/PhaseNeg_gdc ${WD}/PhasePos_gdc"
+else
+    #No gradient undistortion. Just concatenate images
+    rel "imcp ${WD}/PhaseNeg ${WD}/PhaseNeg_gdc"
+    rel "imcp ${WD}/PhasePos ${WD}/PhasePos_gdc"
+    rel "fslmerge -t ${WD}/BothPhases ${WD}/PhaseNeg_gdc ${WD}/PhasePos_gdc"
+    rel "fslmaths ${WD}/PhaseNeg_gdc -mul 0 -add 1 ${WD}/Mask"
+fi
+
+
+
+# Step 2: Set up text files with all necessary parameters for topup
+txtfname=${WD}/acqparams.txt
+if [ -e $txtfname ] ; then
+    rm $txtfname #remove old acqparams.txt file
+fi
+
+dimtNeg=$( fslval ${WD}/PhaseNeg dim4 )
+dimtPos=$( fslval ${WD}/PhasePos dim4 )
+
+# Calculate the readout time and populate the parameter file appropriately
+if [[ $EpirefUnwarpDirection = "x" || $EpirefUnwarpDirection = "x-" || $EpirefUnwarpDirection = "-x" ]] ; then
+    # X direction phase encode
+    dimx=$( fslval ${WD}/PhaseNeg dim1 )
+    nPEsteps=$(($dimx - 1))
+    #Total_readout=Echo_spacing*(#of_PE_steps-1)
+    #Note: the above calculation implies full k-space acquisition for SE EPI.
+    #In case of partial Fourier/k-space acquisition (though not recommended), $dimx-1 does not equal to nPEsteps.
+    
+    ro_time=`echo "scale=6; ${DwellTime} * ${nPEsteps}" | bc -l` #Compute Total_readout in secs with up to 6 decimal places
+    rel "Total calculated readout time is $ro_time secs. Does this match your expectation?" c
+
+    #add a line for each negative phase image in X dimension (PhaseNeg)
+    i=1
+    while [ $i -le $dimtNeg ] ; do
+	echo "-1 0 0 $ro_time" >> $txtfname
+	ShiftNeg="x-"
+	i=`echo "$i + 1" | bc`
+    done
+    
+    #add a line for each positive phase image in X dimension (PhasePos)
+    i=1
+    while [ $i -le $dimtPos ] ; do
+	echo "1 0 0 $ro_time" >> $txtfname
+	ShiftPos="x"
+	i=`echo "$i + 1" | bc`
+    done
+elif [[ $EpirefUnwarpDirection = "y" || $EpirefUnwarpDirection = "y-" || $EpirefUnwarpDirection = "-y" ]] ; then
+    # Y direction phase encode
+    dimy=$( fslval ${WD}/PhaseNeg dim2 )
+    nPEsteps=$(($dimy - 1))
+    #Total_readout=Echo_spacing*(#of_PE_steps-1)
+    ro_time=`echo "scale=6; ${DwellTime} * ${nPEsteps}" | bc -l` #Compute Total_readout in secs with up to 6 decimal places
+    rel "Total calculated readout time is $ro_time secs. Does this match your expectation?" c
+
+    #add a line for each negative phase image in Y dimension (PhaseNeg)
+    i=1
+    while [ $i -le $dimtNeg ] ; do
+	echo "0 -1 0 $ro_time" >> $txtfname
+	ShiftNeg="y-"
+	i=`echo "$i + 1" | bc`
+    done
+
+    #add a line for each positive phase image in Y dimension (PhasePos)
+    i=1
+    while [ $i -le $dimtPos ] ; do
+	echo "0 1 0 $ro_time" >> $txtfname
+	ShiftPos="y"
+	i=`echo "$i + 1" | bc`
+    done
+fi
+
+#Pad in Z by one slice if odd so that topup does not complain (slice consists of zeros that will be dilated by following step)
+numslice=$( fslval ${WD}/BothPhases dim3 )
+if [ ! $(($numslice % 2)) -eq "0" ] ; then
+    rel "Padding Z by one slice so that topup does not complain. Extra slice removed later." c
+    for Image in ${WD}/BothPhases ${WD}/Mask ; do
+	rel "fslroi ${Image} ${WD}/slice.nii.gz 0 -1 0 -1 0 1 0 -1"
+	rel "fslmaths ${WD}/slice -mul 0 ${WD}/slice"
+	rel "fslmerge -z ${Image} ${Image} ${WD}/slice"
+	rel "imrm ${WD}/slice"
+    done
+fi
+
+rel "Extrapolate the existing values beyond the mask (adding 1 just to avoid smoothing inside the mask)" c
+rel "fslmaths ${WD}/BothPhases -abs -add 1 -mas ${WD}/Mask -dilM -dilM -dilM -dilM -dilM ${WD}/BothPhases"
+
+# RUN TOPUP
+# Needs FSL (version 5.0.6 or higher)
+rel "topup --imain=${WD}/BothPhases --datain=$txtfname --config=${TopupConfig} --out=${WD}/Coefficents --iout=${WD}/Magnitudes \
+--fout=${WD}/TopupField --dfout=${WD}/WarpField --rbmout=${WD}/MotionMatrix --jacout=${WD}/Jacobian -v"
+
+#Remove Z slice padding if needed
+if [ ! $(($numslice % 2)) -eq "0" ] ; then
+  rel "Removing Z slice padding" c
+  for Image in ${WD}/BothPhases ${WD}/Mask ${WD}/Coefficents_fieldcoef ${WD}/Magnitudes ${WD}/TopupField* ${WD}/WarpField* ${WD}/Jacobian* ; do
+    rel "fslroi ${Image} ${Image} 0 -1 0 -1 0 ${numslice} 0 -1"
+  done
+fi
+
+
+#register the SBRef to the the spin-echo sequence of the same phase
+rel "Registering the SBRef image to the SE image with the same phase encoding direction" c
+if [[ $EpirefUnwarpDirection = "x" || $EpirefUnwarpDirection = "y" ]] ; then
+    # Direction of SBRef phase encoding is positive. --epiref_pedir = x,y
+    # select the first volume from PhasePos
+    VolumeNumber=$(($dimtNeg + 1))
+    vnum=$( zeropad $VolumeNumber 2 )
+    
+    # register scout to SE input (PhasePos) + combine motion and distortion correction
+    rel "flirt -dof 6 -interp spline -in ${WD}/SBRef -ref ${WD}/PhasePos_gdc -omat ${WD}/SBRef2PhasePos_gdc.mat -out ${WD}/SBRef2PhasePos_gdc"
+    rel "convert_xfm -omat ${WD}/SBRef2WarpField.mat -concat ${WD}/MotionMatrix_${vnum}.mat ${WD}/SBRef2PhasePos_gdc.mat"
+    rel "convertwarp --relout --rel -r ${WD}/PhasePos_gdc --premat=${WD}/SBRef2WarpField.mat --warp1=${WD}/WarpField_${vnum} --out=${WD}/WarpField"
+    rel "imcp ${WD}/Jacobian_${vnum} ${WD}/Jacobian"
+    SBRefPhase=Pos
+
+elif [[ $EpirefUnwarpDirection = "x-" || $EpirefUnwarpDirection = "-x" || $EpirefUnwarpDirection = "y-" || $EpirefUnwarpDirection = "-y" ]] ; then
+    # Direction of SBRef phase encoding is negative. --epiref_pedir = -x,-y
+    # select the first volume from PhaseNeg
+    VolumeNumber=$((0 + 1))
+    vnum=$( zeropad $VolumeNumber 2 )
+    # register scout to SE input (PhaseNeg) + combine motion and distortion correction
+    rel "flirt -dof 6 -interp spline -in ${WD}/SBRef.nii.gz -ref ${WD}/PhaseNeg_gdc -omat ${WD}/SBRef2PhaseNeg_gdc.mat -out ${WD}/SBRef2PhaseNeg_gdc"
+    rel "convert_xfm -omat ${WD}/SBRef2WarpField.mat -concat ${WD}/MotionMatrix_${vnum}.mat ${WD}/SBRef2PhaseNeg_gdc.mat"
+    rel "convertwarp --relout --rel -r ${WD}/PhaseNeg_gdc --premat=${WD}/SBRef2WarpField.mat --warp1=${WD}/WarpField_${vnum} --out=${WD}/WarpField"
+    rel "imcp ${WD}/Jacobian_${vnum} ${WD}/Jacobian"
+    SBRefPhase=Neg
+fi
+
+
+# PhasePos (first vol) - warp and Jacobian modulate to get distortion corrected output
+VolumeNumber=$(($dimtNeg + 1))
+vnum=$( zeropad $VolumeNumber 2 )
+rel "applywarp --rel --interp=spline -i ${WD}/PhasePos_gdc -r ${WD}/PhasePos_gdc --premat=${WD}/MotionMatrix_${vnum}.mat -w ${WD}/WarpField_${vnum} -o ${WD}/PhasePos_gdc_dc"
+rel "fslmaths ${WD}/PhasePos_gdc_dc -mul ${WD}/Jacobian_${vnum} ${WD}/PhasePos_gdc_dc_jac"
+
+# PhaseNeg (first vol) - warp and Jacobian modulate to get distortion corrected output
+VolumeNumber=$((0 + 1))
+vnum=$( zeropad $VolumeNumber 2 )
+rel "applywarp --rel --interp=spline -i ${WD}/PhaseNeg_gdc -r ${WD}/PhaseNeg_gdc --premat=${WD}/MotionMatrix_${vnum}.mat -w ${WD}/WarpField_${vnum} -o ${WD}/PhaseNeg_gdc_dc"
+rel "fslmaths ${WD}/PhaseNeg_gdc_dc -mul ${WD}/Jacobian_${vnum} ${WD}/PhaseNeg_gdc_dc_jac"
+
+# Scout - warp and Jacobian modulate to get distortion corrected output
+rel "applywarp --rel --interp=spline -i ${WD}/SBRef -r ${WD}/SBRef -w ${WD}/WarpField -o ${WD}/SBRef_dc"
+rel "fslmaths ${WD}/SBRef_dc -mul ${WD}/Jacobian.nii.gz ${WD}/SBRef_dc_jac"
+
+# Calculate Equivalent Field Map
+rel "Calculate equivalent fieldmap" c
+rel "fslmaths ${WD}/TopupField -mul 6.283 ${WD}/TopupField"
+rel "fslmaths ${WD}/Magnitudes.nii.gz -Tmean ${WD}/Magnitude.nii.gz"
+rel "bet ${WD}/Magnitude ${WD}/Magnitude_brain -f 0.35 -m" #Brain extract the magnitude image
+
+# copy images to specified outputs (not used at the moment -- from original HCP script)
+# if [ ! -z ${DistortionCorrectionWarpFieldOutput} ] ; then
+#     imcp ${WD}/WarpField.nii.gz ${DistortionCorrectionWarpFieldOutput}.nii.gz
+# fi
+
+# if [ ! -z ${JacobianOutput} ] ; then
+#     imcp ${WD}/Jacobian.nii.gz ${JacobianOutput}.nii.gz
+# fi
+
+# if [ ! -z ${DistortionCorrectionFieldOutput} ] ; then
+#     imcp ${WD}/TopupField.nii.gz ${DistortionCorrectionFieldOutput}.nii.gz
+# fi
+
+# if [ ! -z ${DistortionCorrectionMagnitudeOutput} ] ; then
+#     imcp ${WD}/Magnitude.nii.gz ${DistortionCorrectionMagnitudeOutput}.nii.gz
+# fi
+
+# if [ ! -z ${DistortionCorrectionMagnitudeBrainOutput} ] ; then
+#     imcp ${WD}/Magnitude_brain.nii.gz ${DistortionCorrectionMagnitudeBrainOutput}.nii.gz
+# fi
+
+rel "END: Topup Field Map Generation and Gradient Unwarping" c
+date > .topup_complete
+
+########################################## QA STUFF ########################################## 
+
+if [ -e $WD/qa.txt ] ; then rm -f $WD/qa.txt ; fi
+echo "cd `pwd`" >> $WD/qa.txt
+echo "# Inspect results of various corrections (negative phase)" >> $WD/qa.txt
+echo "fslview ${WD}/PhaseNeg ${WD}/PhaseNeg_gdc ${WD}/PhaseNeg_gdc_dc ${WD}/PhaseNeg_gdc_dc_jac" >> $WD/qa.txt
+echo "# Inspect results of various corrections (positive phase)" >> $WD/qa.txt
+echo "fslview ${WD}/PhasePos ${WD}/PhasePos_gdc ${WD}/PhasePos_gdc_dc ${WD}/PhasePos_gdc_dc_jac" >> $WD/qa.txt
+echo "# Check linear registration of Scout to SE EPI" >> $WD/qa.txt
+echo "fslview ${WD}/Phase${SBRefPhase}_gdc ${WD}/SBRef2Phase${SBRefPhase}_gdc" >> $WD/qa.txt
+echo "# Inspect results of various corrections to scout" >> $WD/qa.txt
+echo "fslview ${WD}/SBRef ${WD}/SBRef_dc ${WD}/SBRef_dc_jac" >> $WD/qa.txt
+echo "# Visual check of warpfield and Jacobian" >> $WD/qa.txt
+echo "fslview ${DistortionCorrectionWarpFieldOutput} ${JacobianOutput}" >> $WD/qa.txt
+
+##############################################################################################

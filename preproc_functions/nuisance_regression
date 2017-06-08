@@ -10,10 +10,11 @@ function warp_structmask_to_func {
 	[ ! -f "unwarp/struct_to_func_transform_and_distort${ext}" ] && rel "invwarp -w unwarp/T1_UD_warp_bbr -o unwarp/struct_to_func_transform_and_distort -r unwarp/EF_D_mc_target"
 	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --warp=unwarp/struct_to_func_transform_and_distort"
     else
-	rel "Using struct_to_func transform to warp csf mask into functional space" c
+	rel "Using struct_to_func transform to warp ${structvol} mask into functional space" c
 	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --premat=struct_to_func.mat"
     fi
 
+    rel "fslmaths ${outvol} -thr 0.5 -bin ${outvol} -odt char" #force to binary mask to remove tiny values due to interpolation
 }
 
 #compute motion parameter derivatives for nuisance regression
@@ -27,14 +28,14 @@ motionderiv() {
 
 COMPUTE_NUISANCE_REGRESSORS_GLOBALS=(nuisance_file nuisance_regressors no_warp postWarp postDespike postSS templateName mprageBet_base ext tr prefix bpLow bpHigh)
 
-# give 
+# give
 # - a nifti get basis functions to remove autocorrelation
 # - output
 # - optional: mask
 # write file to $out with 3dREMLfit to bandpass, remove regressors, remove autocorralation
 # USAGE:
 # remove_autocorr_and_br dnswdktm_restepi_5.nii.gz Rdnswdktm_restepi_5.nii.gz wktm_restepi_98_2_mask_dil1x_templateTrim.nii.gz
-# GOBAL $tr, $nuisance_file, $bpLow, $bpHigh
+# GLOBAL $tr, $nuisance_file, $bpLow, $bpHigh
 # there is lots of boilerplate checks. at the heart this runs 2 commands
 # 1) 1dBport to generate bandpass sine/cosine and basis function (to remove autocorr)
 # 2) 3dREMLfit to remove these
@@ -49,8 +50,6 @@ function remove_autocorr_and_br(){
   nvol=$(3dinfo -nt $img)
   [ -z "$nvol" -o $nvol -lt 1 ] && echo "$FUNC_NAME: bad number of timesteps ($nvol) in $img" >&2 && return 1
 
-
-
   bandoption=""
   if [ "$bandpass_filter" -eq 1 ]; then
      if [ -z "$bpLow" -o -z "$bpHigh" ]; then
@@ -61,20 +60,21 @@ function remove_autocorr_and_br(){
   else
      #rel "WARNING! AFNI gurus say you probably WANT bandpassing. You are NOT bandpassing (by setting no low pass and highpass above nyquist" c
      #bandoption="-band 0 100000"
-       rel "ERROR! I think you need to bandpass to remove autocorrelation. Sorry." c
-       return 1
-
+      rel "ERROR! I think you need to bandpass to remove autocorrelation. Sorry." c
+      return 1      
   fi
 
-  rel "1dBport -nodata $nvol $tr $bandoption -quad -invert > .basis.1d"
+  #MH 30May2017: for reasons I don't know, 1dBport dies when TR is < 1s and is not prefixed by zero (e.g., .894).
+  local ztr="${tr/#./0.}"
+  rel "1dBport -nodata $nvol $ztr $bandoption -quad -invert > .basis.1d"
   # same as '-nodata $nvol $tr' is same as '-input $img'
 
   reml_in_file=$nuisance_file.rmautcorr
-
+  
   if [ "$nuisance_regression" -eq 1 ]; then
-   rel "paste $nuisance_file .basis.1d > $reml_in_file"
+      rel "paste $nuisance_file .basis.1d > $reml_in_file"
   else
-   rel "cp .basis.1d $reml_in_file"
+      rel "cp .basis.1d $reml_in_file"
   fi
   # could also try below, but get different results!
   # regoption="-stimbase $nuisance_file"
@@ -98,77 +98,77 @@ function compute_nuisance_regressors {
 
     declare -a nuisancecols #nuisance regressors to be concatenated
 
+    #if despiking was applied, use this file for extracting CSF, WM, GS time series. Otherwise, use the file after skull strip, motion, and slice timing
+    [ -n "${postDespike}" ] && local prewarp_func_ts="${postDespike}" || local prewarp_func_ts="${postSS}"
+	
     if [ $no_warp -eq 0 ]; then
 	#extracting time series from post-warp files to leverage tissue probability maps for templates
-	local func_ts="${postWarp}"
+	local func_ts="${postWarp}"	
     else
-	#if despiking was applied, use this file for extracting CSF, WM, GS time series. Otherwise, use the file after skull strip, motion, and slice timing
-	[ -n "${postDespike}" ] && local func_ts="${postDespike}" || local func_ts="${postSS}"
+	local func_ts="${prewarp_func_ts}" #no warped file to refer to
     fi
 
     #parse comma-delimited regressors of interest into array
     OLDIFS="${IFS}"
     IFS=',' read -ra reg <<< "$nuisance_regressors"
     IFS="${OLDIFS}"
-
-    reg=$( printf "%s\n" "${reg[@]}" | sort -u ) #eliminate any duplicate regressors
+    #reg=$( printf "%s\n" "${reg[@]}" | sort -u ) #eliminate any duplicate regressors
+    #switched to perl because it does not reorder regressors
+    reg=$( printf "%s\n" "${reg[@]}" | perl -ne 'print if ! $a{$_}++' ) #eliminate any duplicate regressors
 
 
     for r in $reg; do
 	if [[ "$r" =~ ^(6motion|rx|ry|rz|tx|ty|tz)$ && ! -f ".motion_demean" ]]; then 
 	    #compute de-meaned motion parameters for nuisance regression
-	    1d_tool.py -overwrite -infile motion.par -set_nruns 1 \
-		-demean -write .motion_demean	    
+	    rel "1d_tool.py -overwrite -infile motion.par -set_nruns 1 -demean -write .motion_demean"
 	fi
-
+	
 	if [[ "$r" =~ ^(d6motion|drx|dry|drz|dtx|dty|dtz)$ && ! -f ".motion_deriv" ]]; then 
 	    #compute motion parameter derivatives for nuisance regression
-           motionderiv 
+            motionderiv 
 	fi
-
-       # quad (q6motion, qrx,qrt...)
+	
+	# quad (q6motion, qrx,qrt...)
 	if [[ "$r" =~ ^q(6m|r|t) && ! -f ".motion_quad" ]]; then 
       	    [ ! -L .motion.1D ] && ln -s motion.par .motion.1D
       	    3dcalc -a .motion.1D\' -expr 'a**2' -prefix - |
-             1d_tool.py -transpose -infile - -write .motion_quad 
-
+		1d_tool.py -transpose -infile - -write .motion_quad
 	fi
-
-       # quad of deriv (qd6motion, qdrx,qdrt...)
+	
+	# quad of deriv (qd6motion, qdrx,qdrt...)
 	if [[ "$r" =~ ^qd(6m|r|t) && ! -f ".motion_deriv_quad" ]]; then 
-           # need motion deriv to do quad on it
-           motionderiv 
-
+            # need motion deriv to do quad on it
+            motionderiv 
+	    
       	    [ ! -L .motion_dev.1D ] && ln -s .motion_deriv .motion_dev.1D
       	    3dcalc -a .motion_dev.1D\' -expr 'a**2' -prefix - |
-      	      1d_tool.py -transpose -infile - -write .motion_deriv_quad 
+      		1d_tool.py -transpose -infile - -write .motion_deriv_quad 
 	fi
-
-	if [[ "$r" =~ ^(csf|dcsf)$ && ! -f ".csf_ts" ]]; then
+	
+	if [[ "$r" =~ ^(csf|dcsf|csf[0-9]+|dcsf[0-9]+)$ && ! -f ".csf_ts" ]]; then
 	    #technically should probably change this to allow for use of templates for -warp_compute
 	    if [ $no_warp -eq 0 ]; then
 		#if we have a warp to standard space then use the inverse warp to transform the csf mask from the probabilistic atlas to subject space
 		if [ $templateName = MNI_3mm ]; then
 		    #thr 0.95 without erosian is best: 95 voxels
-		    rel "fslmaths \"$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_csf_tal_nlin_asym_09c_3mm\" -thr 0.95 -bin .template_csf_prob"
+		    rel "fslmaths \"$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_csf_tal_nlin_asym_09c_3mm\" -thr 0.95 -bin .template_csf_prob"
 		elif [ $templateName = MNI_2.3mm ]; then
 		    #thr 0.98 without erosion works well here: 274 voxels
-		    rel "fslmaths \"$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_csf_tal_nlin_asym_09c_2.3mm\" -thr 0.98 -bin .template_csf_prob"
+		    rel "fslmaths \"$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_csf_tal_nlin_asym_09c_2.3mm\" -thr 0.98 -bin .template_csf_prob"
 		elif [ $templateName = MNI_2mm ]; then
-
-		    rel "fslmaths \"$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_csf_tal_nlin_asym_09c_2mm\" -thr 0.98 -bin .template_csf_prob"
+		    rel "fslmaths \"$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_csf_tal_nlin_asym_09c_2mm\" -thr 0.98 -bin .template_csf_prob"
 		elif [ $templateName = SPM_2mm ]; then
 		    #thr 0.6 works best here: 193 voxels
-		    rel "fslmaths \"$HOME/standard/spm8_mni/csf.nii\" -thr 0.6 -bin -eroF .template_csf_prob"	    
+		    rel "fslmaths \"$stddir/spm8_mni/csf.nii\" -thr 0.6 -bin -eroF .template_csf_prob"	    
 		elif [ $templateName = MNI_FSL_3mm ]; then
 		    #for the FSL MNI, thr 0.5 with erosion works well visually: 87 voxels
-		    rel "fslmaths \"$HOME/standard/fsl_mni152/avg152T1_csf_3mm.nii\" -thr 0.7 -bin .template_csf_prob"	    
+		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_csf_3mm.nii\" -thr 0.7 -bin .template_csf_prob"	    
 		else
 		    rel "Unsupported template brain for CSF extraction: $templateName" c
 		    exit 1
 		fi
-		
-		rel "3dmaskave -mask .template_csf_prob${ext} -q ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskave failed. Unable to extract CSF voxels. Check your mask! .template_csf_prob${ext}" && exit 1 )
+
+		local csfmask=.template_csf_prob${ext}    
 	    else
 		#use the subject's segmented anatomical scan to identify the csf voxels
 		
@@ -198,45 +198,49 @@ function compute_nuisance_regressors {
 		    rel "cluster -i .csf_pve_thr0p8 -t 1.0 --osize=.csf_pve_clustsize_noero --no_table"
 		    rel "fslmaths .csf_pve_clustsize_noero -thr 15.01 -bin -mas ${postSS}_tmean_mask .csf_mask_noero -odt char"
 
-		    #obtain CSF timeseries from CSF mask in functional space
-		    rel "3dmaskave -mask .csf_mask_noero${ext} -q ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskave failed. Unable to extract CSF voxels. Check your mask! .wm_mask_noero${ext}" && exit 1 )
-
+		    local csfmask=.csf_mask_noero${ext}
 		else
-		    rel "3dmaskave -mask .csf_mask${ext} -q ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskave failed. Unable to extract CSF voxels. Check your mask! .csf_mask${ext}" && exit 1 )
+		    local csfmask=.csf_mask${ext}
 		fi
-
+		
 		#cleanup some intermediate files
 		rel "imrm .csf_pve_thr0p8 .csf_pve_thr0p8_ero1 .csf_pve_clustsize .csf_pve_clustsize_noero"
-
+	    fi
+	    
+	    #extract CSF time series. If a number follows the CSF specification, this is an aCompCor approach with the specified number of components
+	    if [[ "$r" =~ ^(csf[0-9]+|dcsf[0-9]+)$ ]]; then
+		rel "3dmaskSVD -vnorm -mask $csfmask -sval $(( ${r/?(d)csf/} - 1 )) -polort 2 ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskSVD failed. Unable to extract CSF voxels. Check your mask! $csfmask" && exit 1 )
+	    else
+		rel "3dmaskave -mask $csfmask -q ${func_ts}${ext} > .csf_ts" || ( echo "3dmaskave failed. Unable to extract CSF voxels. Check your mask! $csfmask" && exit 1 )
 	    fi
 
-	    rel "1d_tool.py -overwrite -infile .csf_ts -derivative -write .csf_ts_deriv"
+	    rel "1d_tool.py -overwrite -infile .csf_ts -demean -write .csf_ts" #demean	    
+	    rel "1d_tool.py -overwrite -infile .csf_ts -derivative -demean -write .csf_ts_deriv" #derivative
 	fi
 
-	if [[ "$r" =~ ^(wm|dwm)$ && ! -f ".wm_ts" ]]; then
+	if [[ "$r" =~ ^(wm|dwm|wm[0-9]+|dwm[0-9]+)$ && ! -f ".wm_ts" ]]; then
 	    if [ $no_warp -eq 0 ]; then
-		#if we have a warp to standard space then use the inverse warp to transform the csf mask from the probabilistic atlas to subject space
+		#if we have a warp to standard space then use the inverse warp to transform the wm mask from the probabilistic atlas to subject space
 		if [ $templateName = MNI_3mm ]; then
 		    #0.9 with erosion gives nice mask: 793 voxels
-		    rel "fslmaths \"$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_wm_tal_nlin_asym_09c_3mm\" -thr 0.9 -bin -eroF .template_wm_prob"
+		    rel "fslmaths \"$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_wm_tal_nlin_asym_09c_3mm\" -thr 0.9 -bin -eroF .template_wm_prob"
 		elif [ $templateName = MNI_2.3mm ]; then
 		    #0.95 with erosion: 2681 voxels
-		    rel "fslmaths \"$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_wm_tal_nlin_asym_09c_2.3mm\" -thr 0.95 -bin -eroF .template_wm_prob"
-		elif [ $templateName = MNI_2mm ]; then
-		    
-		    rel "fslmaths \"$HOME/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_wm_tal_nlin_asym_09c_2mm\" -thr 0.95 -bin -eroF .template_wm_prob"
+		    rel "fslmaths \"$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_wm_tal_nlin_asym_09c_2.3mm\" -thr 0.95 -bin -eroF .template_wm_prob"
+		elif [ $templateName = MNI_2mm ]; then		    
+		    rel "fslmaths \"$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_wm_tal_nlin_asym_09c_2mm\" -thr 0.95 -bin -eroF .template_wm_prob"
 		elif [ $templateName = SPM_2mm ]; then
 		    #0.85 with erosion: 2981 voxels
-		    rel "fslmaths \"$HOME/standard/spm8_mni/white.nii\" -thr 0.85 -bin -eroF .template_wm_prob"
+		    rel "fslmaths \"$stddir/spm8_mni/white.nii\" -thr 0.85 -bin -eroF .template_wm_prob"
 		elif [ $templateName = MNI_FSL_3mm ]; then
 		    #0.8 with erosion: 659 voxels
-		    rel "fslmaths \"$HOME/standard/fsl_mni152/avg152T1_white_3mm.nii\" -thr 0.8 -bin -eroF .template_wm_prob"	    
+		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_white_3mm.nii\" -thr 0.8 -bin -eroF .template_wm_prob"	    
 		else
-		    rel "Unsupported template brain for CSF extraction: $templateName" c
+		    rel "Unsupported template brain for WM extraction: $templateName" c
 		    exit 1
 		fi
 
-		rel "3dmaskave -mask .template_wm_prob${ext} -q ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskave failed. Unable to extract WM voxels. Check your mask! .template_wm_prob${ext}" && exit 1 )
+		local wmmask=.template_wm_prob${ext}
 	    else
 
 		#fast segmentation should have been run during preprocessMprage
@@ -268,32 +272,77 @@ function compute_nuisance_regressors {
 		    rel "cluster -i .wm_pve_thr0p8_ero1 -t 1.0 --osize=.wm_pve_clustsize_ero1 --no_table"
 		    rel "fslmaths .wm_pve_clustsize_ero1 -thr 50.01 -bin -mas ${postSS}_tmean_mask .wm_mask_ero1 -odt char"
 
-		    #obtain average WM timeseries from WM mask in functional space
-		    rel "3dmaskave -mask .wm_mask_ero1${ext} -q ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskave failed. Unable to extract WM voxels. Check your mask! .wm_mask_ero1${ext}" && exit 1 )
+		    local wmmask=.wm_mask_ero1${ext}
 		else
-		    rel "3dmaskave -mask .wm_mask${ext} -q ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskave failed. Unable to extract WM voxels. Check your mask! .wm_mask${ext}" && exit 1 )
+		    local wmmask=.wm_mask${ext}
 		fi    
 
 		#cleanup some intermediate files
 		rel "imrm .wm_pve_thr0p8 .wm_pve_thr0p8_ero2 .wm_pve_thr0p8_ero1 .wm_pve_clustsize .wm_pve_clustsize_noero_ero1"
 	    fi
 
-	    rel "1d_tool.py -overwrite -infile .wm_ts -derivative -write .wm_ts_deriv"
+	    #extract WM time series. If a number follows the WM specification, this is an aCompCor approach with the specified number of components
+	    if [[ "$r" =~ ^(wm[0-9]+|wm[0-9]+)$ ]]; then
+		rel "3dmaskSVD -vnorm -mask $wmmask -sval $(( ${r/?(d)wm/} - 1 )) -polort 2 ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskSVD failed. Unable to extract WM voxels. Check your mask! $wmmask" && exit 1 )
+	    else
+		rel "3dmaskave -mask $wmmask -q ${func_ts}${ext} > .wm_ts" || ( echo "3dmaskave failed. Unable to extract WM voxels. Check your mask! $wmmask" && exit 1 )
+	    fi
+
+	    rel "1d_tool.py -overwrite -infile .wm_ts -demean -write .wm_ts" #demean	    
+	    rel "1d_tool.py -overwrite -infile .wm_ts -derivative -demean -write .wm_ts_deriv" #compute derivative
+
 	fi
 
+	# NOTE: for now, I believe these will blow up if specified before the basic regressor (e.g., wm)
+	# quadratic of csf (qcsf*)
+	if [[ "$r" =~ ^(qcsf|qcsf[0-9]+)$ && ! -f ".csf_ts_quad" ]]; then
+	    rel "Rscript -e \"x <- read.table('.csf_ts')$V1; x2 <- x^2; cat(x2 - mean(x2), sep='\n', file='.csf_ts_quad')\""
+	fi
+
+	# quadratic of dcsf (qdcsf*)
+	if [[ "$r" =~ ^(qdcsf|qdcsf[0-9]+)$ && ! -f ".csf_ts_deriv_quad" ]]; then
+	    rel "Rscript -e \"x <- read.table('.csf_ts_deriv')$V1; x2 <- x^2; cat(x2 - mean(x2), sep='\n', file='.csf_ts_deriv_quad')\""
+	fi
+	
+	# quadratic of wm (qwm*)
+	if [[ "$r" =~ ^(qwm|qwm[0-9]+)$ && ! -f ".wm_ts_quad" ]]; then
+	    rel "Rscript -e \"x <- read.table('.wm_ts')$V1; x2 <- x^2; cat(x2 - mean(x2), sep='\n', file='.wm_ts_quad')\""
+	fi
+
+	# quadratic of dwm (qdwm*)
+	if [[ "$r" =~ ^(qdwm|qdwm[0-9]+)$ && ! -f ".wm_ts_deriv_quad" ]]; then
+	    rel "Rscript -e \"x <- read.table('.wm_ts_deriv')$V1; x2 <- x^2; cat(x2 - mean(x2), sep='\n', file='.wm_ts_deriv_quad')\""
+	fi
+	    
 	#global signal
 	if [[ "$r" =~ ^(gs|dgs)$ && ! -f ".gs_ts" ]]; then
 	    #erode the tight skull-stripped brain mask from the structural scan to identify brain voxels
-	    rel "fslmaths ${mprageBet_base} -bin -eroF -eroF .brainmask_ero2x_anat -odt char" #eroding the binarized mprage_bet
+	    #rel "fslmaths ${mprageBet_base} -bin -eroF -eroF .brainmask_ero2x_anat -odt char" #eroding the binarized mprage_bet
 
-	    warp_structmask_to_func .brainmask_ero2x_anat .brainmask_ero2x
+	    #warp_structmask_to_func .brainmask_ero2x_anat .brainmask_ero2x
 
-	    rel "fslmaths .brainmask_ero2x -mas ${postSS}_tmean_mask .brainmask_ero2x -odt char" #mask by functional brain mask
+	    #rel "fslmaths .brainmask_ero2x -mas ${postSS}_tmean_mask .brainmask_ero2x -odt char" #mask by functional brain mask
 
-	    rel "3dmaskave -mask .brainmask_ero2x${ext} -q ${func_ts}${ext} > .gs_ts"
-	    rel "1d_tool.py -overwrite -infile .gs_ts -derivative -write .gs_ts_deriv"
+	    #MH May2017: On further consideration, it's probably best to simply erode the mask from betting the functionals since
+	    #this does not depend on the quality of the functional -> structural coregistration (esp. concerning in high distortion areas)
+	    rel "fslmaths ${postSS}_tmean_mask -eroF -eroF .brainmask_ero2x -odt char"
+	    
+	    #GS uses pre-warp data since we are using a brain mask in functional space
+	    rel "3dmaskave -mask .brainmask_ero2x${ext} -q ${prewarp_func_ts}${ext} > .gs_ts"
+	    rel "1d_tool.py -overwrite -infile .gs_ts -demean -write .gs_ts" #demean	    
+	    rel "1d_tool.py -overwrite -infile .gs_ts -derivative -demean -write .gs_ts_deriv"
 	fi
 
+	# quadratic of gs
+	if [[ "$r" == "qgs" && ! -f ".gs_ts_quad" ]]; then
+	    rel "Rscript -e \"x <- read.table('.gs_ts')$V1; x2 <- x^2; cat(x2 - mean(x2), sep='\n', file='.gs_ts_quad')\""
+	fi
+
+	# quadratic of dgs
+	if [[ "$r" == "qdgs" && ! -f ".gs_ts_deriv_quad" ]]; then
+	    rel "Rscript -e \"x <- read.table('.gs_ts_deriv')$V1; x2 <- x^2; cat(x2 - mean(x2), sep='\n', file='.gs_ts_deriv_quad')\""
+	fi
+	
 	case "$r" in 
 	    6motion)
 		nuisancecols+=(".motion_demean[0]")
@@ -375,18 +424,30 @@ function compute_nuisance_regressors {
 		nuisancecols+=(".motion_deriv[4]");;
 	    dtz)
 		nuisancecols+=(".motion_deriv[5]");;
-	    wm)
+	    wm*)
 		nuisancecols+=(".wm_ts");;
-	    dwm)
+	    qwm*)
+		nuisancecols+=(".wm_ts_quad");;
+	    dwm*)
 		nuisancecols+=(".wm_ts_deriv");;
-	    csf)
+	    qdwm*)
+		nuisancecols+=(".wm_ts_deriv_quad");;
+	    csf*)
 		nuisancecols+=(".csf_ts");;
-	    dcsf)
+	    qcsf*)
+		nuisancecols+=(".csf_ts_quad");;
+	    dcsf*)
 		nuisancecols+=(".csf_ts_deriv");;
+	    qdcsf*)
+		nuisancecols+=(".csf_ts_deriv_quad");;		    
 	    gs)
 		nuisancecols+=(".gs_ts");;
+	    qgs)
+		nuisancecols+=(".gs_ts_quad");;
 	    dgs)
-		nuisancecols+=(".gs_ts_deriv");;	    
+		nuisancecols+=(".gs_ts_deriv");;
+	    qdgs)
+		nuisancecols+=(".gs_ts_deriv_quad");;
 	esac
 
     done
@@ -396,7 +457,7 @@ function compute_nuisance_regressors {
     # 20151218 WF -- "star" instead of "at" so single shell-world (one argument) sent to rel
     rel "1dcat ${nuisancecols[*]} > ${nuisance_file}"
     
-    # TODO: do multiple passes to build nuisancols so we can check that would should be redoing?
+    # TODO: do multiple passes to build nuisancecols so we can check that would should be redoing?
     rel "echo '${nuisancecols[*]}' > .regressors_in_use"
 
     rel "date > .nuisance_compute_complete"
@@ -419,7 +480,7 @@ function nuisance_regression {
     preNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
     
     local todo=
-    [ $autocorr_with_basis -eq 1 ] && todo="${todo}a"
+    [ $autocorr_with_basis -eq 1 ] && todo="${todo}A"
     [ $bandpass_filter     -eq 1 ] && todo="${todo}b"
     [ $nuisance_regression -eq 1 ] && todo="${todo}r"
 
@@ -468,22 +529,22 @@ function nuisance_regression {
 	rel "date > .bandpass_filter_complete"
 	rel "date > .nuisance_regression_complete"
 
-    # 20170420WF -- added for MJ w/MH suggestsions
-    # remove autocorliation + bandpass and regress
     elif [[ "$todo" =~ ^a ]]; then
-       # may or may not have computed regressors
-       # will use them if .nuisance_regressors exists
-       # will test for .remove_autocorr_complete
-       remove_autocorr_and_br $preNRBP $postNRBP ${subjMask}${ext}
+	# 20170420WF -- added for MJ w/MH suggestions
+	# remove autocorrelation + bandpass and regress
 
-    # we were only computing things
+	# may or may not have computed regressors
+	# will use them if .nuisance_regressors exists
+	# will test for .remove_autocorr_complete
+	remove_autocorr_and_br $preNRBP $postNRBP ${subjMask}${ext}
     else
+	# we were only computing things
        rel "(Regressors computed but no bandpass or nuisance regression)" c
     fi
     
     #explicit return code needed to avoid implicit status of prior command
     return 0
-
+    
 }
 
 # vim: set tabstop=7:
