@@ -531,7 +531,7 @@ fi
 applywarp --ref="$unbettedRefBrain" --mask="$refMask" --in="${T1}_bet" --warp="${T1}_warpcoef" --interp=spline --out="${T1}_bet_warped"
 
 #note: first input to slicer is rendered image, second is overlay
-slicer mprage_bet_warped "$bettedRefBrain" -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
+slicer ${T1}_bet_warped "$bettedRefBrain" -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
     -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
     -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png
 
@@ -539,7 +539,7 @@ pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + 
 
 montage -label "Subject brain with template outline overlaid" highres2standard1.png -pointsize 30 -geometry +0+0 highres2standard1.png
 
-slicer "$bettedRefBrain" mprage_bet_warped -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
+slicer "$bettedRefBrain" ${T1}_bet_warped -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
     -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
     -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png
 
@@ -549,7 +549,7 @@ montage -label "Template with subject brain outline overlaid" highres2standard2.
 
 pngappend highres2standard1.png - highres2standard2.png struct_to_template.png; 
 rm -f sl?.png highres2standard2.png  highres2standard1.png
-imrm mprage_bet_warped
+imrm ${T1}_bet_warped
 
 #generate symbolic link to skull-stripped mprage file for compatibility with FSL tools
 ln -sfn "${T1}_bet.nii.gz" "${T1}_brain.nii.gz"
