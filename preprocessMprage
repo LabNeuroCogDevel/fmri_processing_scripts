@@ -50,8 +50,9 @@ Command line options:
   -r -template_brain: reference brain. Currently supports "MNI_2mm", "MNI_FSL_2mm", "SPM_2mm", and "Tal_2mm". Default is "MNI_2mm".
   -ss_method: skull-stripping method used to create final brain-extracted data. Default is fnirt-inv. Options:
         fnirt-inv: uses the template brain mask warped onto the subject's brain to define brain mask
-	bet: uses the bet program (FSL) to skull strip (also respects -bet_opts).
-	3dSkullStrip: uses the 3dSkullStrip program (can pass additional parameters using -bet_opts).
+        bet: uses the bet program (FSL) to skull strip (also respects -bet_opts).
+        3dSkullStrip: uses the 3dSkullStrip program (can pass additional parameters using -bet_opts).
+        noisy: use @NoisySkullStrip
   -w -warpres: resolution of warp basis (nonlinear neighborhood size) in mm. Default is 8 mm.
   -weakbias: used for images with little and/or smooth bias fields (cf. fsl_anat).
 
@@ -474,6 +475,9 @@ elif [ -n "${brainmask}" ]; then
     fi
     rel "fslmaths ${T1}_biascorr -mas $brainmask ${T1}_bet_initial" #apply custom brainmask
     ssmethod=custom #override ssmethod so that fnirt-inv doesn't fire below
+elif [ $ssmethod = noisy ]; then
+   rel "@NoisySkullStrip -input ${T1}_biascorr${ext}"
+   rel "3dcopy ${T1}_biascorr${ext}.ns+orig. ${T1}_bet_initial${ext}" #default option for initial strip
 else
     [ -z "$betOpts" ] && betOpts="-touchup -orig_vol" #default 3dss options
     rel "3dSkullStrip -input ${T1}_biascorr${ext} -prefix ${T1}_bet_initial${ext} ${betOpts}" #default option for initial strip
