@@ -44,6 +44,7 @@ Command line options:
         Example: -n mprage.nii.gz (will complete bet, flirt, and
         fnirt, but skip DICOM -> NIFTI conversion).
   -no_bias: skip bias field correction.
+  -no_robustfov: skip robustfov neck cleanup
   -o -output: output file name. The filename for the final warped mprage image.
         Defaults to mprage_nonlinear_warp_<referenceName>.nii.gz
   -p -dicom: file pattern for dicom MR files. Defaults to "MR*". Please enclose the pattern in quotes or it may not function properly
@@ -181,6 +182,10 @@ case "$reference" in
 	unbettedRefBrain=${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm;
 	refMask=${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm_brain_mask_dil;
 	fnirtConfig=${stddir}/fnirtTalairachSettings.cnf;;
+    MNI_1mm) bettedRefBrain=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain;
+	unbettedRefBrain=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c;
+	refMask=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_dil; #Jul2017: 3dmask_tool dil of brian mask
+	fnirtConfig=${stddir}/fnirtMNI1mm.cnf;;
     MNI_2mm) bettedRefBrain=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm;
 	unbettedRefBrain=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_2mm;
 	refMask=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2mm_dil; #Nov2016: this is now a 1x dil, matching fsl_anat
