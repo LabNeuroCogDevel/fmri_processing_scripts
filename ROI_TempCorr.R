@@ -12,14 +12,20 @@ printHelp <- function() {
       "  -out_file <filename for output>: The file to be output containing correlations among ROIs.",
       "",
       "Optional arguments are:",
-      "  -corr_type <full|semi|partial>: what type of correlation; using function cor,spcor, or pcor. default to full, otherwise forced njobs to 1",
-      "  -corr_method <pearson|spearman|robust|mcd|weighted|donostah|M|pairwiseQC|pairwiseGK|none>: Method to compute correlations among time series. Default: pearson",
-      "      pearson is the standard Pearson correlation",
+      "  -pcorr_method <pearson|spearman|kendall|adalasso.net|lasso.net|pls.net|ridge.net|pcor.shrink>: Method to compute partial correlation",
+      "      pearson, spearman, and kendall compute the corresponding partial correlations (pcor function in ppcor package). BEWARE: Uses pseudoinverse for rank-deficient matrices.",
+      "      adalasso.net uses adaptive LASSO regression with cross-validation to compute partial correlations (adalasso.net function in parcor package)",
+      "      lasso.net uses LASSO regression (no adaptation) with cross-validation to compute partial correlations (adalasso.net function in parcor package)",
+      "      pls.net uses partial least squares regression models to estimate partial correlations (pls.net function in parcor package)",
+      "      ridge.net uses optimal ridge regression models to estimate partial correlations (ridge.net function in parcor package",
+      "  -pcorr_cvsplit <10>: For adalasso.net, lasso.net, pls.net, and ridge.net methods, the number of splits for k-fold cross-validation.",      
+      "  -corr_method <pearson|spearman|kendall|robust|mcd|weighted|donostah|M|pairwiseQC|pairwiseGK|cor.shrink>: Method to compute correlations among time series.",
+      "      Default: pearson is the standard Pearson correlation",
       "      spearman is Spearman correlation based on ranks",
       "      kendall is Kendall's tau correlation (also based on ranks, but with somewhat better statistical properties than Spearman)",
       "      robust uses the covRob function from the robust package with estim=\"auto\" to obtain robust estimate of correlation (reduce sensitivity to outliers)",
       "      mcd, weighted, donostah, M, pairwiseQC, pairwiseGK are different robust estimators of correlation. See ?covRob in the robust package for details.",
-      "      use 'none' to not compute the correlation matrix. See also AFNIs 3dmaskave. This can compute pca instead of mean over ROIs",
+      "      cor.shrink computes a shrinkage estimate of the correlation matrix by shrinking correlations towards the identity matrix. See ?cor.shrink in the corpcor package.",
       "  -roi_reduce <pca|median|mean|huber>: Method to obtain a single time series for voxels within an ROI. Default: pca",
       "      pca takes the first eigenvector within the ROI, representing maximal shared variance",
       "      median uses the median within each ROI",
@@ -37,8 +43,11 @@ printHelp <- function() {
       "If the -ts file does not match the -rois file, the -ts file will be resampled to match the -rois file using 3dresample. This requires that the images be coregistered,",
       "  in the same stereotactic space, and have the same grid size.",
       "",
-      "The script depends on the following R libraries: foreach, doSNOW, MASS, oro.nifti, robust, and pracma. These can be installed using:",
-      "  install.packages(c(\"foreach\", \"doSNOW\", \"MASS\", \"oro.nifti\", \"robust\", \"pracma\",\"ppcor\"))",
+      "Multiple correlation methods can be computed at once by passing a comma-separated list. Both partial and full correlations computation can also be combined.",
+      "  Example: -corr_method pearson,cor.shrink -pcor_method pcor.shrink,adalasso.net",
+      "",
+      "The script depends on the following R libraries: foreach, doSNOW, MASS, oro.nifti, parcor, ppcor, pracma, and robust. These can be installed using:",
+      "  install.packages(c(\"foreach\", \"doSNOW\", \"MASS\", \"oro.nifti\", \"parcor\", \"ppcor\", \"pracma\", \"ppcor\", \"robust\"))",
       sep="\n")
 }
 
@@ -53,11 +62,9 @@ if (length(args) == 0L) {
 }
 
 #for testing
-##fname_rsproc <- "/gpfs/group/mnh5174/default/Raj/Preprocess_Rest/10638_20140507/brnswudktm_rest_5.nii.gz" #name of preprocessed fMRI data
-##fname_roimask <- "/gpfs/group/mnh5174/default/Raj/Preprocess_Rest/power264_mni2.3mm.nii.gz"
-##fname_roimask <- "/gpfs/group/mnh5174/default/bars_ica/scripts/Sci160+tlrc.nii.gz"
-##fname_brainmask <- "/Users/michael/standard/fsl_mni152/MNI152_T1_2mm_brain_mask.nii" #optional brain mask to ensure that we don't sample time series from air, CSF, etc.
-##fname_brainmask <- "/Users/michael/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2.3mm.nii"
+#fname_rsproc <- "/gpfs/group/mnh5174/default/Raj/Preprocess_Rest/10638_20140507/brnswudktm_rest_5.nii.gz" #name of preprocessed fMRI data
+#fname_roimask <- "/gpfs/group/mnh5174/default/Raj/Preprocess_Rest/power264_mni2.3mm.nii.gz"
+#fname_brainmask <- "/gpfs/group/mnh5174/default/lab_resources/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2.3mm.nii"
 #fname_censor1D <- "/gpfs/group/mnh5174/default/MMClock/MR_Proc/10637_20140304/mni_5mm_wavelet/clock1/motion_info/censor_union.1D"
 
 #defaults
@@ -66,13 +73,15 @@ out_file <- "corr_rois.txt"
 ts_out_file <- ""
 fname_censor1D <- NULL
 fname_brainmask <- NULL
-corr_type   <- "full"
-corr_method <- "pearson"
+cm <- "pearson"
+cm_partial <- FALSE #TRUE for partial correlation methods
+pm <- c()
+pm_partial <- c()
 roi_reduce <- "pca"
 fisherz <- FALSE
 dropvols <- 0
-
-ts_only <- FALSE # only do timeseries
+pcorr_cvsplit <- 10 #default 10-fold cross-validation for parcor functions
+ts_only <- FALSE # only compute timeseries, not correlation matrix
 
 na_string <- "NA"
 clustersocketport <- 10290
@@ -109,25 +118,32 @@ while (argpos <= length(args)) {
     roi_reduce <- args[argpos + 1]
     argpos <- argpos + 2
     stopifnot(roi_reduce %in% c("pca", "mean", "median", "huber"))
-  } else if (args[argpos] == "-corr_type") {
-    corr_type <- args[argpos + 1]
-    argpos <- argpos + 2
-    stopifnot(corr_type %in% c("full","semi","partial"))    
   } else if (args[argpos] == "-corr_method") {
-    corr_method <- args[argpos + 1]
+    cm <- strsplit(args[argpos + 1], ",")[[1]]
+    cm_partial <- rep(FALSE, length(cm))
     argpos <- argpos + 2
-    stopifnot(corr_method %in% c("pearson", "spearman", "robust", "kendall", "mcd", "weighted", "donostah", "M", "pairwiseQC", "pairwiseGK", "none"))    
+    stopifnot(all(cm %in% c("pearson", "spearman", "robust", "kendall", "mcd", "weighted", "donostah", "M", "pairwiseQC", "pairwiseGK", "cor.shrink")))
+  } else if (args[argpos] == "-pcorr_method") {
+    pm <- strsplit(args[argpos + 1], ",")[[1]]
+    pm_partial <- rep(TRUE, length(pm))
+    argpos <- argpos + 2
+    stopifnot(all(pm %in% c("pearson", "spearman", "kendall", "adalasso.net", "lasso.net", "pls.net", "ridge.net", "pcor.shrink")))
+  } else if (args[argpos] == "-pcorr_cvsplit") {
+    pcorr_cvsplit <- as.numeric(args[argpos + 1])
+    if (is.na(pcorr_cvsplit)) { stop("Could not understand argument ", args[argpos+1], "to -pcorr_cvsplit") }
+    argpos <- argpos + 2
   } else if (args[argpos] == "-fisherz") {
     fisherz <- TRUE
     argpos <- argpos + 1
   } else if (args[argpos] == "-ts_only") {
-    ts_only <- T
+    ts_only <- TRUE
     argpos <- argpos + 1
   } else if (args[argpos] == "-na_string") {
     na_string <- args[argpos + 1]
     argpos <- argpos + 2
   } else if (args[argpos] == "-dropvols") {
     dropvols <- as.numeric(args[argpos + 1]) #number of vols to drop
+    if (is.na(dropvols)) { stop("Could not understand argument ", args[argpos+1], "to -dropvols") }
     argpos <- argpos + 2
   } else if (args[argpos] == "-port") {
     clustersocketport <- as.integer(args[argpos + 1])
@@ -138,12 +154,15 @@ while (argpos <= length(args)) {
   }
 }
 
+corr_method <- c(cm, pm) #put together full and partial methods
+partial <- c(cm_partial, pm_partial)
+
 #robust package uses "auto" to choose best robust estimator given problem complexity (matrix size)
-if (corr_method == "robust") { corr_method <- "auto" }
+corr_method <- ifelse(corr_method == "robust", "auto", corr_method)
 
 # check for input sanity before spending time loading things in
-if(corr_method == "none" && nchar(ts_out_file) == 0L) {
-  stop('corr_method = none and no ts_out_file! No point in running.')
+if (ts_only && nchar(ts_out_file) == 0L) {
+  stop('-ts_only is set without -ts_out_file! No point in running.')
 }
 
 suppressMessages(require(methods))
@@ -152,7 +171,6 @@ suppressMessages(require(doSNOW))
 suppressMessages(require(MASS))
 suppressMessages(require(oro.nifti))
 suppressMessages(require(pracma))
-#suppressMessages(require(ppcor))
 
 if (!is.null(fname_censor1D)) {
   stopifnot(file.exists(fname_censor1D))
@@ -162,109 +180,127 @@ if (!is.null(fname_censor1D)) {
   censorVols <- c()
 }
 
-#generate (robust) correlation matrix given a set of time series.
-genCorrMat <- function(roits, method="auto", fisherz=FALSE,type="full") {
+#generate (robust or partial) correlation matrix given a set of time series.
+genCorrMat <- function(roits, method="auto", fisherz=FALSE, partial=FALSE) {
   #roits should be an time x roi data.frame
   
   suppressMessages(require(robust))
 
-  # load ppcor if it's needed (not needed for 'full')
-  #if(type!='full') suppressMessages(require(ppcor))
-
-  # use generic corfun for correlation
-  # but what cor function should that use? determine based on type
-  corfun <- function(x,...) {
-    switch(type,
-           full    = cor(x,...),
-           semi    = ppcor::spcor(x,...)$estimate,
-           partial = ppcor::pcor(x,...)$estimate
-           )
-  }
-
   #assume that parallel has been setup upstream
   njobs <- getDoParWorkers()
-
-  # for semi and partial, we cannot chunk the data!
-  if(njobs > 1 && type %in% c('semi','partial')){
-    warning('Cannot use multiple jobs for semi or partial cor! Setting njobs to 1: i.e. -n 1')
-    njobs <- 1
-  }
   
   #sapply only works for data.frame
   if (!inherits(roits, "data.frame")) stop("genCorrMat only works properly with data.frame objects.")
 
-  # we can only use fancy pants when doing full (e.g. mcd|weighted|donostah|M|pairwiseQC|pairwiseGK)
-  # shouldn't see 'none' method b/c we quit earlier
-  if (type != 'full' && ! method %in% c("pearson", "spearman", "kendall")){
-    stop(sprintf('cannot use method %s with type %s',method,type))
-  }
-  
   #remove missing ROI columns for estimating correlation
   nacols <- which(sapply(roits, function(col) all(is.na(col))))
   if (length(nacols) > 0) nona <- roits[,nacols*-1]
   else nona <- roits
   
-  #Due to rank degeneracy of many RS-fcMRI roi x time matrices, correlations are filled in pairwise.
-  #This is slow, of course, but necessary.
-  rcorMat <- matrix(NA, nrow=ncol(nona), ncol=ncol(nona))
-  diag(rcorMat) <- 1
-  
-  #indices of lower triangle
-  lo.tri <- which(lower.tri(rcorMat), arr.ind=TRUE)
-  
-  # how many chucks per core
-  # for small datasets, need to make sure we didn't pick too high a number
-  chunksPerProcessor <- 8
-
-  # if we only have one job, we want all the chunks together
-  # that is we want chunksize == nrow(lo.tri)
-  if(njobs == 1) { chunksPerProcessor <- 1 }
-
-  repeat {
-    chunksize <- floor(nrow(lo.tri)/njobs/chunksPerProcessor)
-    if(chunksize >= 1) break
-    # decrease chunk size and check we can still go lower
-    chunksPerProcessor <- chunksPerProcessor - 1
-    cat('WARNING: job is small, decreasing chunks to',chunksPerProcessor,'\n')
-    if(chunksPerProcessor<1) stop('too many jobs for too little work, lower -n')
+  #All partial correlation methods are necessarily full matrix methods (since partial correlation is conditioned on remaining variables)
+  #Standard correlations are also computed on full matrices. Only the robust estimators of correlation blow up on singular matrices
+  if (method %in% c("pearson", "spearman", "kendall", "cor.shrink", "pcor.shrink", "adalasso.net", "lasso.net", "pls.net", "ridge.net")) {
+    pairwise <- FALSE
+  } else {
+    #estimators using covRob from robust package tend to expect positive definite matrix
+    pairwise <- TRUE
   }
 
-  # let us know when we are asking for a lot of work
-  # the threshold is less for non-full cor types
-  chunksizewarn <- 10^3
-  if(type !='full')  chunksizewarn <-  10^2 
-  if( chunksize > chunksizewarn) warning(sprintf('lots of datapoints (%d) going to each processor',chunksize))
-
-  #do manual chunking: divide correlations across processors, where each processor handles 10 chunks in total (~350 corrs per chunk)
-  corrvec <- foreach(pair=iter(lo.tri, by="row", chunksize=chunksize), .inorder=TRUE, .combine=c, .multicombine=TRUE, .packages="robust") %dopar% {
-    #iter will pass entire chunk of lo.tri, use apply to compute row-wise corrs
-    #basic cor for testing (much faster)
-    if (method %in% c("pearson", "spearman", "kendall")) {
-      apply(pair, 1, function(x) corfun(na.omit(cbind(nona[,x[1]], nona[,x[2]])), method=method)[1,2])  
+  if (method %in% c("cor.shrink", "pcor.shrink")) { stopifnot(require(corpcor))
+  } else if (method %in% c("adalasso.net", "lasso.net", "pls.net", "ridge.net")) { stopifnot(suppressMessages(require(parcor))) }
+  
+  if (!pairwise) {
+    if (method=="cor.shrink") {
+      message("Estimating shrinkage estimates (always positive definite) of correlation matrix using cor.shrink")
+      rcorMat <- corpcor::cor.shrink(as.matrix(nona)) #omit lambda to estimate shrinkage using analytic formula
+    } else if (method=="pcor.shrink") {
+      message("Estimating shrinkage estimates (always positive definite) of partial correlation matrix using pcor.shrink")
+      rcorMat <- corpcor::pcor.shrink(as.matrix(nona)) #omit lambda to estimate shrinkage using analytic formula
+    } else if (method=="adalasso.net") {
+      rcorMat <- parcor::adalasso.net(as.matrix(nona), k=pcorr_cvsplit, both=TRUE)$pcor.adalasso
+    } else if (method=="lasso.net") {
+      rcorMat <- parcor::adalasso.net(as.matrix(nona), k=pcorr_cvsplit, both=FALSE)$pcor.lasso
+    } else if (method=="pls.net") {
+      rcorMat <- parcor::pls.net(as.matrix(nona), k=pcorr_cvsplit)$pcor
+    } else if (method=="ridge.net") {
+      rcorMat <- parcor::ridge.net(as.matrix(nona), k=pcorr_cvsplit)$pcor
+    } else if (partial) {
+      stopifnot(require(ppcor))
+      message("ppcor pcor func")
+      rcorMat <- ppcor::pcor(as.matrix(nona), method=method)
     } else {
+      #conventional cor using specified method
+      rcorMat <- cor(as.matrix(nona), method=method)
+    }
+
+    #adalasso.net(X, k = 10,use.Gram=FALSE,both=TRUE,verbose=FALSE,intercept=TRUE)
+    #ridge.net(X, lambda, plot.it = FALSE, scale = TRUE, k = 10,verbose=FALSE)
+    #pls.net(X, scale = TRUE, k = 10, ncomp = 15,verbose=FALSE)
+
+    #come back to this: diagnostics on partial correlation?
+    #if (partial) {
+    #  require(parcor)
+    #  #at the moment, GeneNet does not expose ggm.test.edges, so set fdr=FALSE to avoid crash
+    #  perf <- parcor::performance.pcor(rcorMat, true.pcor=NULL, fdr=FALSE, cutoff.ggm=0.8, verbose=FALSE, plot.it=FALSE)
+    #  print(perf)
+    #}
+  } else {
+    
+    #Due to rank degeneracy of many RS-fcMRI roi x time matrices, correlations are sometimes filled in pairwise.
+    #This is slow, of course, but necessary.
+    rcorMat <- matrix(NA, nrow=ncol(nona), ncol=ncol(nona))
+    diag(rcorMat) <- 1
+    
+    #indices of lower triangle
+    lo.tri <- which(lower.tri(rcorMat), arr.ind=TRUE)
+    
+    # how many chucks per core
+    # for small datasets, need to make sure we didn't pick too high a number
+    chunksPerProcessor <- 8
+
+    # if we only have one job, we want all the chunks together
+    # that is we want chunksize == nrow(lo.tri)
+    if(njobs == 1) { chunksPerProcessor <- 1 }
+
+    repeat {
+      chunksize <- floor(nrow(lo.tri)/njobs/chunksPerProcessor)
+      if(chunksize >= 1) break
+      # decrease chunk size and check we can still go lower
+      chunksPerProcessor <- chunksPerProcessor - 1
+      cat('WARNING: job is small, decreasing chunks to',chunksPerProcessor,'\n')
+      if(chunksPerProcessor<1) stop('too many jobs for too little work, lower -n')
+    }
+
+    # let us know when we are asking for a lot of work
+    # the threshold is less for non-full cor types
+    chunksizewarn <- 10^3
+    if (chunksize > chunksizewarn) warning(sprintf('lots of datapoints (%d) going to each processor',chunksize))
+
+    #do manual chunking: divide correlations across processors, where each processor handles 10 chunks in total (~350 corrs per chunk)
+    corrvec <- foreach(pair=iter(lo.tri, by="row", chunksize=chunksize), .inorder=TRUE, .combine=c, .multicombine=TRUE, .packages="robust") %dopar% {
+      #iter will pass entire chunk of lo.tri, use apply to compute row-wise corrs
       apply(pair, 1, function(x) covRob(na.omit(cbind(nona[,x[1]], nona[,x[2]])), estim=method, corr=TRUE)$cov[1,2])
     }
+    
+    rcorMat[lo.tri] <- corrvec
+    #duplicate the lower triangle to upper
+    rcorMat[upper.tri(rcorMat)] <- t(rcorMat)[upper.tri(rcorMat)] #transpose flips filled lower triangle to upper
   }
   
   #populate lower triangle of correlation matrix
   if (fisherz == TRUE) { 
     message("Applying the Fisher z transformation to correlation coefficients.")
-    corrvec <- atanh(corrvec)
+    rcorMat <- atanh(rcorMat)
+    diag(rcorMat) <- 15 #avoid Inf in output by a large value. tanh(15) is ~1
   }
-  rcorMat[lo.tri] <- corrvec
-  #duplicate the lower triangle to upper
-  rcorMat[upper.tri(rcorMat)] <- t(rcorMat)[upper.tri(rcorMat)] #transpose flips filled lower triangle to upper
   
   #add back in NA cols
   if (length(nacols) > 0) {
     processedCorrs <- matrix(NA, nrow=ncol(roits), ncol=ncol(roits))
-    #for complete redundancy (haha), insert NA for the row and col of each na time series in the original
-    #processedCorrs[nacols,] <- NA
-    #processedCorrs[,nacols] <- NA
     
     #fill in all non-NA cells row-wise
     processedCorrs[!1:ncol(roits) %in% nacols, !1:ncol(roits) %in% nacols] <- rcorMat
-  } else processedCorrs <- rcorMat
+  } else { processedCorrs <- rcorMat }
   
   processedCorrs #return processed correlations
   
@@ -313,7 +349,7 @@ if (grepl("^.*\\.(HEAD|BRIK|BRIK.gz)$", fname_roimask, perl=TRUE)) {
     roimask@.Data <- roimask[,,,,drop=T]    
   }
 } else {
-  roimask <- readNIfTI(fname_roimask)
+  roimask <- readNIfTI(fname_roimask, reorient=FALSE)
 }
 
 #optional: apply brain mask
@@ -323,7 +359,7 @@ if (!is.null(fname_brainmask)) {
   if (grepl("^.*\\.(HEAD|BRIK|BRIK.gz)$", fname_brainmask, perl=TRUE)) {
     brainmask <- readAFNI(fname_brainmask)
   } else {
-    brainmask <- readNIfTI(fname_brainmask)
+    brainmask <- readNIfTI(fname_brainmask, reorient=FALSE)
   }
   
   #brain mask and roi mask must be of same dimension
@@ -343,7 +379,7 @@ message("Reading in 4D file: ", fname_rsproc)
 if (grepl("^.*\\.(HEAD|BRIK|BRIK.gz)$", fname_rsproc, perl=TRUE)) {
   rsproc <- readAFNI(fname_rsproc)
 } else {
-  rsproc <- readNIfTI(fname_rsproc)
+  rsproc <- readNIfTI(fname_rsproc, reorient=FALSE)
 }
 
 if (!identical(dim(rsproc)[1:3], dim(roimask)[1:3])) {
@@ -353,7 +389,7 @@ if (!identical(dim(rsproc)[1:3], dim(roimask)[1:3])) {
   runAFNICommand(paste0("3dresample -overwrite -inset ", fname_rsproc, " -rmode NN -master ", fname_roimask, " -prefix tmpResamp.nii.gz"))
   stopifnot(file.exists("tmpResamp.nii.gz"))
   
-  rsproc <- readNIfTI("tmpResamp.nii.gz")
+  rsproc <- readNIfTI("tmpResamp.nii.gz", reorient=FALSE)
   unlink("tmpResamp.nii.gz")
 }
 
@@ -471,26 +507,26 @@ if (nchar(ts_out_file) > 0L) {
   write.table(df, file=ts_out_file, col.names=F, row.names=F)
 }
 
-# WF20160906 - we only want the timeseries. we have that so quit.
-if (ts_only) { quit(save="no", 0, FALSE) }
-
-# just want to print time series, not actually compute correlations: for DM 20160517
-if(corr_method == "none") {
-  stopCluster(clusterobj)
-  quit(save="no", 0, TRUE)
+#If we only want the timeseries, quit before computing correlations
+if (ts_only) {
+    stopCluster(clusterobj)
+    quit(save="no", 0, FALSE)
 }
 
-message("Computing correlations among ROI times series using method: ", ifelse(corr_method=="auto", "robust", corr_method))
-cormat <- genCorrMat(as.data.frame(roiavgmat_censored), method=corr_method, fisherz=fisherz,type=corr_type)
+pp <- ifelse(partial==TRUE, "_partial", "") #insert 'partial' into message and file name if relevant
+for (m in 1:length(corr_method)) {
+  message("Computing", sub("_", " ", pp[m]), " correlations among ROI times series using method: ", ifelse(corr_method[m]=="auto", "robust", corr_method[m]))
+  cormat <- genCorrMat(as.data.frame(roiavgmat_censored), method=corr_method[m], fisherz=fisherz, partial=partial[m])
+  this_out_file <- sub("((\\.[^.\\s]+)+)$", paste0("_", corr_method[m], pp[m], "\\1"), out_file) #add correlation-specific suffix to file
+  message("Writing correlations to: ", this_out_file)
+  if (grepl(".*\\.gz$", this_out_file, perl=TRUE)) {
+    ##write compressed
+    gzf <- gzfile(this_out_file, "w")
+    write.table(cormat, file=gzf, col.names=FALSE, row.names=FALSE, na=na_string)
+    close(gzf)    
+  } else {
+    write.table(cormat, file=this_out_file, col.names=FALSE, row.names=FALSE, na=na_string)
+  }
+}
 
 stopCluster(clusterobj)
-
-message("Writing correlations to: ", out_file)
-if (grepl(".*\\.gz$", out_file, perl=TRUE)) {
-  ##write compressed
-  gzf <- gzfile(out_file, "w")
-  write.table(cormat, file=gzf, col.names=FALSE, row.names=FALSE, na=na_string)
-  close(gzf)    
-} else {
-  write.table(cormat, file=out_file, col.names=FALSE, row.names=FALSE, na=na_string)
-}
