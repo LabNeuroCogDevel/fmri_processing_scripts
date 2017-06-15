@@ -401,9 +401,13 @@ if (length(maskvals) > 1000) {
   warning("More than 1000 putative ROIs identified in mask file: ", fname_roimask)
 }
 
-setDefaultClusterOptions(master="localhost", port=clustersocketport)
-clusterobj <- makeSOCKcluster(njobs)
-registerDoSNOW(clusterobj)
+if (njobs > 1) {
+    setDefaultClusterOptions(master="localhost", port=clustersocketport)
+    clusterobj <- makeSOCKcluster(njobs)
+    registerDoSNOW(clusterobj)
+} else {
+    registerDoSEQ()
+}
 
 #to reduce RAM overhead of having to copy rsproc_censor to each worker, obtain list of vox x time mats for rois
 
@@ -509,7 +513,7 @@ if (nchar(ts_out_file) > 0L) {
 
 #If we only want the timeseries, quit before computing correlations
 if (ts_only) {
-    stopCluster(clusterobj)
+    try(stopCluster(clusterobj))
     quit(save="no", 0, FALSE)
 }
 
@@ -529,4 +533,5 @@ for (m in 1:length(corr_method)) {
   }
 }
 
-stopCluster(clusterobj)
+if (njobs > 1) { try(stopCluster(clusterobj)) }
+quit(save="no", 0, FALSE)
