@@ -20,6 +20,7 @@ function parse_args {
     detectSiemens=0
     dicomPattern=
     dte=
+    epi_echospacing=
     fm_phase=
     fm_magnitude=
     fm_cfg=
@@ -47,6 +48,8 @@ function parse_args {
     MATLAB_single_thread=
     ref_vol=  #don't set a motion correction reference volume by default
     rescalingMethod="10000_globalmedian" #scale whole brain 4D by single constant to normalize median to 10000.
+    se_phasepos=
+    se_phaseneg=
     sliceAcquisition= #never assume slice acquistion order. Force definition or use auto-detect from DICOM.
     sliceMotion4D=0
     sliceTimesFile=
@@ -231,6 +234,12 @@ function parse_args {
 	elif [ $1 = -dicom ]; then
 	    dicomPattern="${2}"
 	    shift 2
+	elif [ $1 = -epi_echospacing ]; then
+	    epi_echospacing="${2}"
+	    shift 2
+	elif [ $1 = -epi_pedir ]; then
+	    epi_pedir="${2}" #should be x/-x/y/-y/z/-z
+	    shift 2
 	elif [ $1 = -fm_phase ]; then
 	    fm_phase="${2}"
 	    shift 2
@@ -344,6 +353,12 @@ function parse_args {
 	    sliceMotion4D=1
 	    mc_program="sliceMotion4d"
 	    shift 1
+	elif [ $1 = -se_phaseneg ]; then
+	    se_phaseneg="${2}"
+	    shift 2
+	elif [ $1 = -se_phasepos ]; then
+	    se_phasepos="${2}"
+	    shift 2
 	elif [ $1 = -siemens ]; then
 	    detectSiemens=1
 	    shift 1
@@ -500,6 +515,25 @@ function parse_args {
     #smoothed files include the FHWM as a sufix
     [ $no_smooth -eq 0 ] && smoothing_suffix="_${smoothing_kernel}" || smoothing_suffix=
 
+    #####
+    #High-pass filtering for slow-frequency scanner drift
+    #-bptf 60 -1: high-pass filter with FWHM = 60 volumes (e.g., so filter slower than about 141 volumes)
+    #             -1 indicates don't low-pass filter
+    #NB. The -bptf specification is in terms of sigma (width of Gaussian). As a result, this is the HWHM, not FWHM.
+    #Details: https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1109&L=fsl&D=0&P=202555
+    #To achieve the desired cutoff, we need to compute the number of volumes as follows:
+    #  sigma[vol] = cutoff[sec]/(2.355*TR[sec])
+    # where 2.355 is the FWHM -> Sigma conversion
+
+    #allow for seconds to be passed in, then converted to volumes
+    if [ "${hpFilter: -1}" == "s" ]; then
+	rel "High pass filter specified in seconds: $hpFilter. Dividing by 2.355*${tr} (TR) for fslmaths -bptf" c
+	hpFilter=$( echo "scale=4; ${hpFilter%?}/(2.355*${tr})" | bc )
+    else
+	rel "Dividing -hp_filter argument $hpFilter (in volumes) by 2.355 for FWHM argument to fslmaths -bptf." c	    
+	hpFilter=$( echo "scale=4; ${hpFilter}/2.355" | bc )
+    fi    
+    
     if [ -n "${logFile}" ]; then
 	if [ -f "${logFile}" ]; then
 	    #stat and date are not portable across Linux and BSD...

@@ -36,7 +36,7 @@ Command line options:
         untouched), -d y ("yes": deletes DICOM files), -d a ("archive":
         compresses files into archive file: mprage_dicom.tar.gz. If not
         passed, user will be prompted for action. Can also use "yes", "no", and "archive."
-  -grad_unwarp: a file containing gradient nonlineatiy coefficients for a SIEMENS scanner (e.g., trio.coeff.grad).
+  -grad_unwarp: a file containing gradient nonlinearity coefficients for a SIEMENS scanner (e.g., trio.coeff.grad).
         Structural image will be corrected for gradient distortion prior to transformation to template.
   -h -help: print command help
   -log: Name for log file that documents each command that is run. Default: preprocessMprage.log
@@ -643,7 +643,7 @@ if [ -n "$gcoeffs" ]; then
 
     #GDC procedure tends to create tiny values at many non-brain voxels since the gradient correction is applied wrt scanner coordinates
     #To reduce gray voxels outside the head and reduce file size (since a run of zeros can be compressed efficiently,
-    #whereas a run of small values cannot, mask the postgdc files with dilated pre-gdc files
+    #whereas a run of small values cannot), mask the postgdc files with dilated pre-gdc files
     rel "fslmaths \"${T1}_bet\" -bin -dilF -fillh bet_mask"
     
     rel "fslmaths \"${T1}_biascorr${warpsuffix}\" -mas \"${T1}_biascorr_mask\" \"${T1}_biascorr${warpsuffix}\""

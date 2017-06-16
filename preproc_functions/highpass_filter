@@ -4,26 +4,7 @@ function highpass_filter {
     [ $no_hp -eq 1 ] && return 0 #skip high-pass filtering
 
     if [[ ! -f ".temporal_filtering_complete" ]]; then
-
-	#####
-	#High-pass filtering for slow-frequency scanner drift
-	#-bptf 60 -1: high-pass filter with FWHM = 60 volumes (e.g., so filter slower than about 141 volumes)
-	#             -1 indicates don't low-pass filter
-	#NB. The -bptf specification is in terms of sigma (width of Gaussian). As a result, this is the HWHM, not FWHM.
-	#Details: https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1109&L=fsl&D=0&P=202555
-	#To achieve the desired cutoff, we need to compute the number of volumes as follows:
-	#  sigma[vol] = cutoff[sec]/(2.355*TR[sec])
-	# where 2.355 is the FWHM -> Sigma conversion
-
-	#allow for seconds to be passed in, then converted to volumes
-	if [ "${hpFilter: -1}" == "s" ]; then
-	    rel "High pass filter specified in seconds: $hpFilter. Dividing by 2.355*TR $tr for fslmaths -bptf" c
-	    hpFilter=$( echo "scale=4; ${hpFilter%?}/(2.355*${tr})" | bc )
-	else
-	    rel "Dividing -hp_filter argument $hpFilter (in volumes) by 2.355 for FWHM argument to fslmaths -bptf." c	    
-	    hpFilter=$( echo "scale=4; ${hpFilter}/2.355" | bc )
-	fi
-
+	
 	rel "High-pass filtering functional data to remove signals slower than $hpFilter volumes" c
 
 	#Beginning with FSL 5.0.7, bptf removes the mean component. Thus, need to add this back after filtering.
