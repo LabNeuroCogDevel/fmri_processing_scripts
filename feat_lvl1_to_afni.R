@@ -5,14 +5,21 @@ printHelp <- function() {
   #to do
 }
 
-#read in command line arguments.
-args <- commandArgs(trailingOnly = FALSE)
 ##Sys.setenv(AFNIDIR="/opt/aci/sw/afni/16.0.00/bin")
 Sys.setenv(AFNIDIR="/opt/aci/sw/afni/17.0.02/bin")
 
+#read in command line arguments
+args <- commandArgs(trailingOnly = FALSE)
+
 scriptpath <- dirname(sub("--file=", "", grep("--file=", args, fixed=TRUE, value=TRUE), fixed=TRUE))
 argpos <- grep("--args", args, fixed=TRUE)
-args <- args[(argpos+1):length(args)]
+if (length(argpos) > 0L) {
+   args <- args[(argpos+1):length(args)]
+} else {
+  args <- c()
+}
+
+#contains runAFNICommand
 source(file.path(scriptpath, "R_helper_functions.R"))
 
 if (length(args) == 0L) {

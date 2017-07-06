@@ -53,7 +53,18 @@ printHelp <- function() {
 
 
 #read in command line arguments.
-args <- commandArgs(trailingOnly = TRUE)
+args <- commandArgs(trailingOnly = FALSE)
+
+scriptpath <- dirname(sub("--file=", "", grep("--file=", args, fixed=TRUE, value=TRUE), fixed=TRUE))
+argpos <- grep("--args", args, fixed=TRUE)
+if (length(argpos) > 0L) {
+   args <- args[(argpos+1):length(args)]
+} else {
+  args <- c()
+}
+
+#contains runAFNICommand
+source(file.path(scriptpath, "R_helper_functions.R"))
 
 if (length(args) == 0L) {
   message("ROI_TempCorr expects at least -ts <4D file> -rois <3D file> -out_file <filename for output>.\n")
@@ -313,32 +324,6 @@ getRobLocation <- function(vec, type="huber", k=3.0) {
   else if (type=="huber") return(huber(vec, k=k)$mu)
   else if (type=="median") return(median(vec, na.rm=TRUE))
 }
-
-#wrapper for running an AFNI command safely within R
-#if AFNI does not have its environment setup properly, commands may not work
-runAFNICommand <- function(args, afnidir=NULL, stdout=NULL, stderr=NULL) {
-  #look for AFNIDIR in system environment if not passed in
-  if (is.null(afnidir)) {
-    env <- system("env", intern=TRUE)
-    if (length(afnidir <- grep("^AFNIDIR=", env, value=TRUE)) > 0L) {
-      afnidir <- sub("^AFNIDIR=", "", afnidir)
-    } else {
-      warning("AFNIDIR not found in environment. Defaulting to ", paste0(normalizePath("~/"), "/afni"))
-      afnidir <- paste0(normalizePath("~/"), "/afni")
-    }
-  }
-  
-  Sys.setenv(AFNIDIR=afnidir) #export to R environment
-  afnisetup=paste0("AFNIDIR=", afnidir, "; PATH=${AFNIDIR}:${PATH}; DYLD_FALLBACK_LIBRARY_PATH=${AFNIDIR}; ${AFNIDIR}/")
-  afnicmd=paste0(afnisetup, args)
-  if (!is.null(stdout)) { afnicmd=paste(afnicmd, ">", stdout) }
-  if (!is.null(stderr)) { afnicmd=paste(afnicmd, "2>", stderr) }
-  cat("AFNI command: ", afnicmd, "\n")
-  retcode <- system(afnicmd)
-  return(retcode)
-}
-
-
 
 ### BEGIN DATA PROCESSING
 message("Reading roi mask: ", fname_roimask)
