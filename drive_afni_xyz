@@ -15,14 +15,18 @@ fi
 trap "rm -f .tmpfile" EXIT SIGHUP SIGINT SIGTERM
 
 coord_file=
-lrcol=
-pacol=
-iscol=
+lrcol=1 #defaults
+pacol=2
+iscol=3
 lpi=1 #only support LPI coords at the moment...
 comment_char="#" #default to # as comment
+image_file=
 while [ _$1 != _ ] ; do
     if [ $1 = -coord_file ]; then
 	coord_file="$2"
+	shift 2
+    elif [ $1 = -image_file ]; then
+	image_file="$2"
 	shift 2
     elif [ $1 = -lr ]; then
 	lrcol=$2
@@ -39,8 +43,20 @@ while [ _$1 != _ ] ; do
     elif [ $1 = -comment_char ]; then
 	comment_char="$2"
 	shift 2
+    else
+	echo "Don't know what this means: $1"
+	exit 1
     fi
 done
+
+if [ -n "$image_file" ]; then
+    if [ -r "$image_file" ]; then
+	plugout_drive -com "SET_FUNCTION $image_file" -quit 2>&1 >/dev/null
+    else
+	echo "Cannot locate -image_file $image_file"
+	exit 1
+    fi
+fi
 
 echo "Assuming coordinates are in LPI order."
 

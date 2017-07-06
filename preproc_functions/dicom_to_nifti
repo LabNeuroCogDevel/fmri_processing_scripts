@@ -39,6 +39,8 @@ function dicom_to_nifti {
 	    dicomHdr=$( dicom_hdr -sexinfo "${firstDicom}" )
 	    detectTR=$( echo "${dicomHdr}" | grep "0018 0080.*ACQ Repetition Time" | perl -pe 's:.*ACQ Repetition Time//(\d+)\s*$:\1:' )
 	    detectTR=$( echo "scale=3; ${detectTR}/1000" | bc ) #convert to seconds from milliseconds
+	    detectTE=$( echo "${dicomHdr}" | grep "0018 0081.*ACQ Echo Time" | perl -pe 's:.*ACQ Echo Time//(\d+)\s*$:\1:' )
+	    detectTE=$( echo "scale=3; ${detectTE}/1000" | bc ) #convert to seconds from milliseconds
 	    detectSliceOrder=$( echo "${dicomHdr}" | grep "sSliceArray.ucMode" | perl -pe 's/sSliceArray.ucMode\s+=\s+\d?x?(\d)$/\1/' ) #Trio uses 0x4 style whereas Prisma is just 4
 	    detectSeries=$( echo "${dicomHdr}" | grep "REL Series Number//" | perl -pe 's|^.*REL Series Number//(\d+).*$|\1|' ) #series number
 	    detectProtocolName=$( echo "${dicomHdr}" | grep "ACQ Protocol Name//" | perl -pe 's|^.*ACQ Protocol Name//(\w+).*$|\1|' ) #protocol name
@@ -67,6 +69,7 @@ function dicom_to_nifti {
 
 	    rel "Auto-detecting TR and slice acquisition order from DICOM header: ${firstDicom}" c
 	    rel "  Detected TR: ${detectTR}s" c
+	    rel "  Detected TE: ${detectTE}s" c
 	    rel "  Detected Slice Order: ${detectSliceOrder}" c
 	    rel "  Number of slices: ${detectSliceNum}" c
 	    rel "  Protocol name: ${detectProtocolName}" c
@@ -93,6 +96,7 @@ function dicom_to_nifti {
 
 	    #tr and sliceAcquisition parameters will be created downstream in check_requirements based on .detect_tr and .detect_sliceorder
 	    echo "${detectTR}" > .detect_tr
+	    echo "${detectTE}" > .detect_te
 	    echo "${detectSliceOrder}" > .detect_sliceorder
 	    echo "${detectSeries}" > .detect_series
 	    echo "${detectProtocolName}" > .detect_protocolname

@@ -62,6 +62,7 @@ function resetcfg {
     fieldmap_cfg=
     proc_freesurfer=0
     proc_functional=0
+    preproc_resume=0 #whether to prefer preprocessFunctional -resume
     functional_dirpattern=
     functional_dicompattern=
     detect_refimg=0

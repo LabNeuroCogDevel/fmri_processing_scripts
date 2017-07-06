@@ -11,7 +11,7 @@ function warp_structmask_to_func {
 	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --warp=unwarp/struct_to_func_transform_and_distort"
     else
 	rel "Using struct_to_func transform to warp ${structvol} mask into functional space" c
-	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --premat=struct_to_func.mat"
+	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --premat=$funcdir/transforms/struct_to_func.mat"
     fi
 
     rel "fslmaths ${outvol} -thr 0.5 -bin ${outvol} -odt char" #force to binary mask to remove tiny values due to interpolation
@@ -455,7 +455,18 @@ function compute_nuisance_regressors {
     rel "Creating ${nuisance_file} containing regressors as columns: ${nuisancecols[*]}" c
     #rel "1dcat -overwrite ${nuisancecols[@]} > ${nuisance_file}"
     # 20151218 WF -- "star" instead of "at" so single shell-world (one argument) sent to rel
-    rel "1dcat ${nuisancecols[*]} > ${nuisance_file}"
+    rel "1dcat ${nuisancecols[*]} > unfiltered_${nuisance_file}"
+
+    #MH Jun2017: Need to apply the same filtering to nuisance regressors as the data
+    #3dBandpass will take care of this internally, but 3dDetrend, or the user later at some point,
+    #may not, which could cause frequency mismatch
+
+    if [ "$bandpass_filter" -eq 1 ]; then
+	rel "1dBandpass -dt $tr $bpLow $bpHigh unfiltered_${nuisance_file} > ${nuisance_file}"
+    elif [ "$no_hp" -eq 0 ]; then
+	#hpFilter has already been converted in parse_args to FWHM volumes. Pass forward verbatim to 1dbptf"
+	rel "1dbptf -matrix unfiltered_${nuisance_file} -tr $tr -time_along_rows -out_file ${nuisance_file} -hp_volumes $hpFilter"
+    fi    
     
     # TODO: do multiple passes to build nuisancecols so we can check that would should be redoing?
     rel "echo '${nuisancecols[*]}' > .regressors_in_use"
@@ -473,7 +484,7 @@ function nuisance_regression {
          "$bandpass_filter"     -eq 0 &&  \
          "$autocorr_with_basis" -eq 0     \
     ]]; then
-      rel "(Not trying to deal with nuisance regressors, bandpassing, or autocorrelation)" c
+      #rel "(Not trying to deal with nuisance regressors, bandpassing, or autocorrelation)" c
       return 0 #no nuisance, bandpass, or basis correct. exit
     fi
 
@@ -485,11 +496,10 @@ function nuisance_regression {
     [ $nuisance_regression -eq 1 ] && todo="${todo}r"
 
     # todo is 
-    #  only: a b r 
-    #  combined: ab abr br
-    #  'a' alone is not allowed, will throw error -- checked by parseargs or preprocessFunctional
+    #  only: A b r 
+    #  combined: Ab Abr br
+    #  'A' alone is not allowed, will throw error -- checked by parseargs or preprocessFunctional
     
-
     prefix="${todo}${prefix}"
     postNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
 

@@ -8,14 +8,21 @@ printHelp <- function() {
     #to do
 }
 
-#read in command line arguments.
-args <- commandArgs(trailingOnly = FALSE)
 ##Sys.setenv(AFNIDIR="/opt/aci/sw/afni/16.0.00/bin")
 Sys.setenv(AFNIDIR="/opt/aci/sw/afni/17.0.02/bin")
 
+#read in command line arguments
+args <- commandArgs(trailingOnly = FALSE)
+
 scriptpath <- dirname(sub("--file=", "", grep("--file=", args, fixed=TRUE, value=TRUE), fixed=TRUE))
 argpos <- grep("--args", args, fixed=TRUE)
-args <- args[(argpos+1):length(args)]
+if (length(argpos) > 0L) {
+   args <- args[(argpos+1):length(args)]
+} else {
+  args <- c()
+}
+
+#contains runAFNICommand
 source(file.path(scriptpath, "R_helper_functions.R"))
 
 if (length(args) == 0L) {
@@ -28,15 +35,24 @@ outfilename <- "gfeat_stats"
 auxfilename <- "gfeat_aux"
 
 argpos <- 1
+output_varcope <- TRUE #whether to include group varcope (variance estimate) in the statistics output
+output_subjstats <- TRUE
+
 while (argpos <= length(args)) {
     if (args[argpos] == "--gfeat_dir") {
         gfeatdir <- args[argpos + 1] #name of preprocessed fMRI data
         argpos <- argpos + 2
-    } else if (args[argpos] == "--stat_outfile") { #name of output file for main stats file
-        outfilename <- args[argpos + 1]
-        argpos <- argpos + 2
     } else if (args[argpos] == "--aux_outfile") {
         auxfilename <- args[argpos + 1]
+        argpos <- argpos + 2
+    } else if (args[argpos] == "--no_varcope") {
+        output_varcope <- FALSE
+        argpos <- argpos + 1
+    } else if (args[argpos] == "--no_subjstats") {
+        output_subjstats <- FALSE
+        argpos <- argpos + 1
+    } else if (args[argpos] == "--stat_outfile") { #name of output file for main stats file
+        outfilename <- args[argpos + 1]
         argpos <- argpos + 2
     } else {
         stop("Not sure what to do with argument: ", args[argpos])
@@ -45,19 +61,24 @@ while (argpos <= length(args)) {
 
 if (!file.exists(gfeatdir)) {
     stop("Unable to locate --gfeatdir:", gfeatdir, ". Did you pass in the absolute path?")
+} else {
+    gfeatdir <- normalizePath(gfeatdir) #convert to absolute so that commands below work as expected
 }
 
-setwd(gfeatdir)
+#setwd(gfeatdir)
 
 ##find cope directories
 copedirs <- grep("/cope[0-9]+\\.feat", list.dirs(path=gfeatdir, full.names=TRUE, recursive=FALSE), value=TRUE, perl=TRUE)
+cat("Located the following cope directories:\n")
 print(copedirs)
+cat("\n\n")
 
 copeafni <- c()
 for (d in 1:length(copedirs)) {
     ##run the L1 -> AFNI conversion for each separate cope
-    print(copedirs[d])
-    system(paste("feat_lvl1_to_afni.R -feat_dir", copedirs[d]))
+    cat("Processing: ", copedirs[d], "\n\n")
+    vc_suffix <- ifelse(output_varcope, "", "--no_varcope")
+    system(paste("feat_lvl1_to_afni.R --no_auxstats --feat_dir", copedirs[d], vc_suffix))
     copename <- readLines(file.path(copedirs[d], "design.lev")) #contains the L2 effect name (e.g., clock_onset)
 
     afniout <- file.path(copedirs[d], "feat_stats+tlrc")
@@ -67,9 +88,16 @@ for (d in 1:length(copedirs)) {
     ##need to add prefix for each cope to make the stats unique
     retcode <- runAFNICommand(paste0("3drefit -relabel_all_str '", briklabels, "' ", afniout))
 
-    ##for now, eliminate the aux file
-    system(paste("rm", file.path(copedirs[d], "feat_aux+tlrc*")))
+    ##for now, eliminate the aux file (now handled by --no_auxstats above)
+    #system(paste("rm", file.path(copedirs[d], "feat_aux+tlrc*")))
 
+    if (output_subjstats) {
+      ##filtered_func_data contains the cope from the lower level. Copy to output directory and rename
+      retcode <- runAFNICommand(paste("3dcopy -overwrite", file.path(copedirs[d], "filtered_func_data.nii.gz"), paste0(outfilename, "_", copename, "_cope.nii.gz")))
+      retcode <- runAFNICommand(paste("3dcopy -overwrite", file.path(copedirs[d], "var_filtered_func_data.nii.gz"), paste0(outfilename, "_", copename, "_varcope.nii.gz")))
+      #retcode <- runAFNICommand(paste("3dcopy -overwrite", file.path(copedirs[d], "tdof_filtered_func_data.nii.gz"), paste0(outfilename, "_", copename, "_tdof.nii.gz"))) #have no use for this at the moment
+    }
+  
     copeafni <- c(copeafni, afniout)
 }
 

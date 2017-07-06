@@ -2,7 +2,17 @@
 
 function check_requirements {
     #preliminary checks for required files and settings
-    
+
+    #dcm2niix is preferred for SE TOPUP correction because Dimon seems to lose important header information that
+    #results in the fieldmap behaving strangely between TOPUP, flirt -fieldmap, and fugue. This appears to be largely resolved
+    #by using fslreorient2std on input images to achieve LPI/RPI before applying fieldmaps.
+    command -v dcm2niix >/dev/null 2>&1 && have_dcm2niix=1 || have_dcm2niix=0
+
+    #ANTS is quite good at coregistration (better than flirt in many cases) and will be increasingly preferred in the pipeline
+    #c3d provides a tool for transforming an ANTS matrix (itk) to FSL-compatible.mat
+    command -v antsRegistrationSyN.sh >/dev/null 2>&1 && have_ants=1 || have_ants=0
+    command -v c3d_affine_tool >/dev/null 2>&1 && have_c3d=1 || have_c3d=0
+        
     #use the saved slice order from dicom_to_nifti conversion
     if [ -f .detect_sliceorder ]; then
 	if [ -n "$sliceAcquisition" ]; then
@@ -14,12 +24,20 @@ function check_requirements {
 
     if [ -f .detect_tr ]; then
 	if [ -n "$tr" ]; then
-	    rel "Ignoring user setting for TR: ${tr} because of auto-detected TR in .detect_tr." c
+	    rel "Ignoring user setting for -tr: ${tr} because of auto-detected TR in .detect_tr." c
 	fi
 
 	read tr < .detect_tr
     fi
 
+    if [ -f .detect_te ]; then
+	if [ -n "$epiTE" ]; then
+	    rel "Ignoring user setting for -epi_te: ${epiTE} because of auto-detected TE in .detect_te." c
+	fi
+
+	read epiTE < .detect_te
+    fi
+  
     #use the saved series number and protocol name for epiref detection
     if [ -f .detect_series ]; then
 	read series < .detect_series
@@ -116,17 +134,27 @@ function check_requirements {
 	    
 	    if [ $isdicom -eq 1 ]; then
 		rel "Converting -func_refimg to NIfTI" c
-		rel "to3d -prefix epiref.nii.gz -ushort2float \"$funcRefimg\""
+		if [ $have_dcm2niix -eq 1 ]; then
+		    [ -r epiref.nii.gz ] && rm -f epiref.nii.gz
+		    dcm2niix -f epiref -o ./ $( dirname "${funcRefimg}" )
+		else
+		    rel "Using to3d to convert epiref to NIfTI. Warning: this will occasionally result in inconsistent unwarping behavior due to bad image headers. Prefer dcm2niix!" c
+		    rel "to3d -overwrite -prefix epiref.nii.gz -ushort2float \"$funcRefimg\""
+		fi
 	    else
 		#copy reference image to local directory to make directory more portable
 		rel "fslmaths \"$funcRefimg\" epiref"
 	    fi
+
+	    rel "fslreorient2std epiref epiref" #reorient epiref to LPI/RPI. Crucial to getting fieldmap orientation and behavior consistent
 	    
 	    #skull strip reference image to improve coregistration
-	    rel "bet epiref epiref_brain -f 0.3 -n -R" #include bias field correction given heavy bias for 32-channel data
+	    #rel "bet epiref epiref_brain -f 0.3 -n -R" #include bias field correction given heavy bias for 32-channel data
+	    rel "3dSkullStrip -overwrite -input epiref${ext} -prefix epiref_brain${ext} -orig_vol"
 	    rel "fast -o epiref_brain -l 20 -b -B -t 2 --iter=12 --nopve --fixed=0 epiref_brain"
 	    rel "imrm epiref_brain_seg" #not needed for anything
 	    #use epiref_brain_restore for coregistration
+	    qa_image epiref_brain epiref "epiref_skullstrip.png" "Skull-stripped epiref overlaid with original epiref"
 	    
 	    rel "date > .epiref_bet_complete"
 	fi
@@ -135,6 +163,25 @@ function check_requirements {
     #if no warp and ICA-AROMA are both requested, we must compute the warp to MNI to have the script work properly
     if [[ $no_warp -eq 1 && $ica_aroma -eq 1 ]]; then
 	compute_warp=1
+    fi
+
+    #####
+    #High-pass filtering for slow-frequency scanner drift
+    #-bptf 60 -1: high-pass filter with FWHM = 60 volumes (e.g., so filter slower than about 141 volumes)
+    #             -1 indicates don't low-pass filter
+    #NB. The -bptf specification is in terms of sigma (width of Gaussian). As a result, this is the HWHM, not FWHM.
+    #Details: https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1109&L=fsl&D=0&P=202555
+    #To achieve the desired cutoff, we need to compute the number of volumes as follows:
+    #  sigma[vol] = cutoff[sec]/(2.355*TR[sec])
+    # where 2.355 is the FWHM -> Sigma conversion
+
+    #allow for seconds to be passed in, then converted to volumes
+    if [ "${hpFilter: -1}" == "s" ]; then
+	rel "High pass filter specified in seconds: $hpFilter. Dividing by 2.355*${tr} (TR) for fslmaths -bptf" c
+	hpFilter=$( echo "scale=4; ${hpFilter%?}/(2.355*${tr})" | bc )
+    else
+	rel "Dividing -hp_filter argument $hpFilter (in volumes) by 2.355 for FWHM argument to fslmaths -bptf." c	    
+	hpFilter=$( echo "scale=4; ${hpFilter}/2.355" | bc )
     fi
     
     #check for existence of required files

@@ -19,7 +19,9 @@ function register_func2struct {
 
     mprageBet_base=$( remove_ext ${mprageBet} ) #skull-stripped mprage image basename
 
-    if [ -n "${fm_phase}" ]; then
+    #if using traditional GRE fieldmap or using TOPUP indirect pipeline (in which the field goes through the same pipeline as a typical fieldmap)
+    #then convert the PE direction for flirt BBR and setup the additional string to include fieldmap unwarping in flirt.
+    if [[ -n "${fm_phase}" || ( -n "${se_phasepos}" && $topup_direct -eq 0 ) ]]; then
 
 	inweight="-inweight $(pwd)/unwarp/EF_UD_fmap_sigloss"
 	#echo spacing and phase encode direction should be defined when $fm_cfg is sourced by prepareFieldmap (upstream)
@@ -43,21 +45,89 @@ function register_func2struct {
 	local target="epiref_brain_restore"
 	local oname="epiref"
 
-        if [[ ! -f epiref_to_func.mat  || ! -f .t2star_coreg_complete ]]; then
+        if [[ ! -f transforms/epiref_to_func.mat  || ! -f .t2star_coreg_complete ]]; then
             #calculate ref -> func coregistration to concatenate with ref -> struct
             rel "Using intermediate T2* reference file (epiref) as coregistration target" c
-            rel "flirt -in mc_target_brain_restore -ref epiref_brain_restore -out func_to_epiref -omat func_to_epiref.mat -dof 6 -interp spline"
-            rel "convert_xfm -omat epiref_to_func.mat -inverse func_to_epiref.mat"
-            rel "date > .t2star_coreg_complete"
-        fi
+
+	    #coregistration is (usually) improved by registering whole head after skull strip to aid in fitting
+	    #any additional shared features (eyes, skull, etc.) that should be identical due to intrasubject-intramodal registration
+	    #prefer ANTS if available, which tends to produce more robust transformation matrices
+	    if [[ $have_ants -eq 1 && $have_c3d -eq 1 ]]; then
+		rel "antsRegistrationSyN.sh -d 3 -f epiref${ext} -m mc_target${ext} -t r -o func_to_epiref" #rigid transformation
+		#convert to FSL-compatible transformation
+		rel "c3d_affine_tool -ref epiref${ext} -src mc_target${ext} -itk func_to_epiref0GenericAffine.mat -ras2fsl -o transforms/func_to_epiref.mat"
+		rel "immv func_to_epirefWarped func_to_epiref"
+		rel "imrm func_to_epirefInverseWarped" #not useful
+		rel "mv func_to_epiref0GenericAffine.mat transforms/func_to_epiref.itk"
+	    else
+		rel "Using flirt with skull-stripped images, then whole head. I suggest installing ANTS and c3d so that it uses this registration instead" c
+		rel "flirt -in mc_target_brain_restore -ref epiref_brain_restore -out func_to_epiref_brain -omat transforms/func_to_epiref_brain.mat -dof 6 -interp spline"
+		rel "flirt -in mc_target -ref epiref -out func_to_epiref -omat transforms/func_to_epiref.mat -dof 6 -interp spline -nosearch -init transforms/func_to_epiref_brain.mat"
+	    fi
+
+	    #compute epiref -> func
+	    rel "convert_xfm -omat transforms/epiref_to_func.mat -inverse transforms/func_to_epiref.mat"
+
+	    #compute sefmap -> func transform via epiref if available (TOPUP)
+	    if [ -f "$funcdir/transforms/sefmap2epiref.mat" ]; then
+		convert_xfm -omat $funcdir/transforms/sefmap2func.mat -concat $funcdir/transforms/epiref_to_func.mat $funcdir/transforms/sefmap2epiref.mat		
+	    fi
+
+	    rel "date > .t2star_coreg_complete"
+	    qa_image epiref_brain_restore func_to_epiref "mc_target_to_epiref.png" "Epiref overlaid with 6dof-coregistered mc_target"
+	fi
     else
 	local target="mc_target_brain_restore"
 	local oname="func"
     fi
+
+    #undistort mc_target and epiref when using TOPUP direct pipeline.
+    #in the direct pipeline, the target EPI is undistorted directly via the WarpField from TOPUP (--dfout), rather than the TopupField (rad/s)
+    #pushed through the usual fieldmap steps including despiking, extrapolation, etc.
+    #because SE fieldmaps are not prone to edge effects and already estimate distortion in the whole image, they tend to be somewhat better
+    #in facilitating func -> struct coregistration through the direct pipeline
     
-    if [[ ! -f func_to_struct.mat || ! -f .func2struct_complete ]]; then
+    topupsuffix= #indicates whether to use undistorted EPI image for coregistration to struct (rather than via bbr fieldmap in flirt)
+    if [[ $topup_direct -eq 1 && -n "$se_phasepos" ]]; then
+	topupsuffix="_undistorted"
+	if [ -n "$funcRefimg" ]; then
+     	    rel "Undistorting epiref image for func -> struct registration" c
+     	    rel "applywarp -i epiref -r epiref -o epiref_undistorted -w topup_undistort/ER_WarpField --rel --interp=spline"
+     	    rel "applywarp -i epiref_brain_restore -r epiref_brain_restore -o epiref_brain_restore_undistorted -w topup_undistort/ER_WarpField --rel --interp=spline"
+	    qa_image epiref_brain_restore_undistorted epiref_brain_restore "undistort_epiref_direct.png" "Undistorted epiref using TOPUP warp field directly overlaid with distorted epiref"
+	fi
+
+	#compute func -> epiref -> se fmap transform
+	rel "convert_xfm -omat transforms/func2sefmap.mat -concat transforms/epiref2sefmap.mat transforms/func_to_epiref.mat"
+	rel "convert_xfm -omat transforms/sefmap2func.mat -inverse transforms/func2sefmap.mat" #compute SE -> func transform
+	rel "convertwarp --relout --rel -r mc_target --premat=transforms/func2sefmap.mat --warp1=topup_undistort/SE_WarpField --postmat=transforms/sefmap2func.mat --out=topup_undistort/EF_WarpField"
+	
+	rel "Undistorting mc_target images" c
+	rel "applywarp -i mc_target -r mc_target -o mc_target_undistorted -w topup_undistort/EF_WarpField --rel --interp=spline"
+	rel "applywarp -i mc_target_brain_restore -r mc_target_brain_restore -o mc_target_brain_restore_undistorted -w topup_undistort/EF_WarpField --rel --interp=spline"
+
+	qa_image mc_target_brain_restore_undistorted mc_target_brain_restore "undistort_mc_target_direct.png" "Undistorted mc_target using TOPUP warp field directly overlaid with distorted mc_target"
+	topupsuffix="_undistorted"
+    fi
+
+    #trust fmap -> struct transform as initialization for func -> struct warp
+    #in principle, if BBR-based coreg succeeds, it may be even better than letting func -> be estimated. But it depends on the quality of func -> fmap in prepare_fieldmap
+    initMat=
+    if [ $use_fm -eq 1 ]; then
+	#need to compute func_to_struct_init.mat via the concatentation of func -> fmap -> struct warps
+	if [ $target = "mc_target_brain_restore" ]; then
+	    rel "convert_xfm -omat $funcdir/transforms/func2struct_viafmap.mat -concat $funcdir/transforms/fmap2struct.mat $funcdir/transforms/epi2fmap.mat"
+	    initMat=$funcdir/transforms/func2struct_viafmap.mat
+	else
+	    rel "convert_xfm -omat $funcdir/transforms/ref2struct_viafmap.mat -concat $funcdir/transforms/fmap2struct.mat $funcdir/transforms/ref2fmap.mat"
+	    initMat=$funcdir/transforms/ref2struct_viafmap.mat
+	fi
+    fi
+
+    if [[ ! -f transforms/func_to_struct.mat || ! -f .func2struct_complete ]]; then
 	rel "Warping subject functional to subject structural" c
 
+	#TODO: move 6dof transform outside of these checks to reduce redundancy. Then mv to _init in case of BBR
 	if [ $funcStructFlirtDOF = "bbr" ]; then
 
 	    if [ $bbrCapable -eq 1 ]; then
@@ -67,34 +137,54 @@ function register_func2struct {
 		
 		#standard 6 parameter EPI-to-T1 registration to get initial estimate of transform
 		#leaving off inweight for now because should handle fieldmap in flirt now
-		rel "flirt -in $target -ref $mprageBet -out ${oname}_to_struct_init -omat ${oname}_to_struct_init.mat -dof 6 -interp spline"
+		if [ -z "$initMat" ]; then
+		    rel "Estimating initial $oname -> struct transform using 6dof coregistration" c
+		    rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct_init -omat transforms/${oname}_to_struct_init.mat -dof 6 -interp spline"
+		    initMat=transforms/${oname}_to_struct_init.mat
+		else
+		    rel "Using initial $oname -> struct transform from fieldmap coregistration process" c
+		    rel "applywarp -i ${target}${topupsuffix} -r $mprageBet --premat=$initMat --interp=spline --rel -o ${oname}_to_struct_init"
+		fi
 
+		qa_image $mprageBet ${oname}_to_struct_init "${oname}_to_struct_init.png" "Structural overlaid with 6dof-coregistered ${oname}"
+		
 		#now do the BBR-based registration
 		#N.B.: the epi_reg program uses betted T1 for initial transformation, but the unbetted image for BBR registration!
-		rel "flirt -in $target -ref $mprageBet -out ${oname}_to_struct -omat ${oname}_to_struct.mat -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
-		    -cost bbr -init ${oname}_to_struct_init.mat -dof 6 -schedule ${FSLDIR}/etc/flirtsch/bbr.sch $bbrfmap"
+		rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct -omat transforms/${oname}_to_struct.mat -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
+		    -cost bbr -init $initMat -dof 6 -schedule ${FSLDIR}/etc/flirtsch/bbr.sch $bbrfmap"
 
+		qa_image $mprageBet ${oname}_to_struct "${oname}_to_struct.png" "Structural overlaid with bbr-coregistered ${oname}"
+
+		if [ $no_warp -eq 0 ]; then
+		    rel "applywarp -i ${oname}_to_struct -r $templateBrain -w $warpCoef -o ${oname}_to_template --interp=spline --rel"
+		    qa_image $templateBrain ${oname}_to_template "${oname}_to_template.png" "Template overlaid with warped ${oname}"
+		    #rel "imrm ${oname}_to_template"
+		fi		    
+		
 		#KH: need the struct_to_func.mat for nuisance regression. Thus, do not limit to fieldmap transform below.
-		rel "convert_xfm -omat struct_to_${oname}.mat -inverse ${oname}_to_struct.mat"
+		rel "convert_xfm -omat transforms/struct_to_${oname}.mat -inverse transforms/${oname}_to_struct.mat"
 	    else
 		rel "BBR EPI-to-T1 requested, but flirt < v6.0. Reverting to typical 6 DOF registration" c
 		funcStructFlirtDOF=6
-		rel "flirt -in $target -ref $mprageBet -out ${oname}_to_struct -omat ${oname}_to_struct.mat -dof $funcStructFlirtDOF $inweight -interp spline"
+		rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct -omat transforms/${oname}_to_struct.mat -dof $funcStructFlirtDOF $inweight -interp spline"
+		qa_image $mprageBet ${oname}_to_struct "${oname}_to_struct.png" "Structural overlaid with 6dof-coregistered ${oname}"
 	    fi
 	else
-	    rel "flirt -in $target -ref $mprageBet -out ${oname}_to_struct -omat ${oname}_to_struct.mat -dof $funcStructFlirtDOF $inweight -interp spline"
+	    rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct -omat transforms/${oname}_to_struct.mat -dof $funcStructFlirtDOF $inweight -interp spline"
+	    qa_image $mprageBet ${oname}_to_struct "${oname}_to_struct.png" "Structural overlaid with 6dof-coregistered ${oname}"
 	fi
 
 	#For intermediate target, concatenate func -> epiref and epiref -> struct to derive func -> struct
 	if [ -n "$funcRefimg" ]; then
-	    rel "convert_xfm -omat func_to_struct.mat -concat epiref_to_struct.mat func_to_epiref.mat"
-	    rel "convert_xfm -omat struct_to_func.mat -inverse func_to_struct.mat"
+	    rel "convert_xfm -omat transforms/func_to_struct.mat -concat transforms/epiref_to_struct.mat transforms/func_to_epiref.mat"
+	    rel "convert_xfm -omat transforms/struct_to_func.mat -inverse transforms/func_to_struct.mat"
 	fi
 
 	if [ $createBBRFmapWarp -eq 1 ]; then
 	    #also generate a func -> struct image without fmap unwarping in BBR to verify that fieldmap unwarping is helping with coregistration
-	    rel "applywarp -i $target -o ${oname}_to_struct_nounwarp --premat=${oname}_to_struct.mat --interp=spline -r \"$mprageBet\""
-
+	    rel "applywarp -i $target -o ${oname}_to_struct_nounwarp --premat=transforms/${oname}_to_struct.mat --interp=spline -r \"$mprageBet\""
+	    qa_image "$mprageBet" ${oname}_to_struct_nounwarp ${oname}_to_struct_nounwarp.png "Structural image overlaid with bbr-coregistered distorted ${oname}"
+	    
 	    #when BBR is used, we need to transform the FM into functional space via the inverse of the func -> struct warp
 	    #in the new (epi_reg) approach, the FM is never explicitly aligned to the EPI. This occurs via the func -> struct inverse.
 	    rel "Creating FM shiftmap in EPI space by using the struct_to_func.mat from BBR coregistration as transformation." c
@@ -103,16 +193,16 @@ function register_func2struct {
 	    #create EF_UD_warp file used for one-step interpolation to MNI (potentially with MC, too)
 
 	    #invert func_to_struct.mat to generate struct_to_func transformation. Used to get fmap back into EPI space.
-	    rel "convert_xfm -omat fmap2epi_bbr.mat -concat struct_to_func.mat unwarp/fmap2struct.mat" #assemble fmap2epi via fm -> struct + struct -> epi
+	    rel "convert_xfm -omat transforms/fmap2epi_bbr.mat -concat transforms/struct_to_func.mat tranforms/fmap2struct.mat" #assemble fmap2epi via fm -> struct + struct -> epi
 
 	    #warp fmap into EPI space using transform fmap2epi_bbr.mat
-	    rel "applywarp -i unwarp/FM_UD_fmap_unmasked -r mc_target --premat=fmap2epi_bbr.mat -o unwarp/EF_UD_fmap_bbr --interp=spline"
+	    rel "applywarp -i unwarp/FM_UD_fmap_unmasked -r mc_target --premat=transforms/fmap2epi_bbr.mat -o unwarp/EF_UD_fmap_bbr --interp=spline"
 	    rel "fslmaths unwarp/EF_UD_fmap_bbr -abs -bin unwarp/EF_UD_fmap_bbr_mask" #create fmap mask
 
 	    #save unmasked shift map in EPI space
 	    rel "fugue --loadfmap=unwarp/EF_UD_fmap_bbr --mask=unwarp/EF_UD_fmap_bbr_mask --saveshift=unwarp/EF_UD_shift_bbr --unmaskshift --dwell=$dwelltime --unwarpdir=$unwarpdir"
 	    rel "convertwarp -r unwarp/EF_D_mc_target -s unwarp/EF_UD_shift_bbr -o unwarp/EF_UD_warp_bbr --shiftdir=$unwarpdir --relout" #warp coefficients to undistort EPI in functional space
-	    rel "convertwarp -r \"$mprageBet\" -s unwarp/EF_UD_shift_bbr -o unwarp/T1_UD_warp_bbr --postmat=func_to_struct.mat --shiftdir=$unwarpdir --relout" #warp coefficients to undistort and transform EPI into structural space
+	    rel "convertwarp -r \"$mprageBet\" -s unwarp/EF_UD_shift_bbr -o unwarp/T1_UD_warp_bbr --postmat=transforms/func_to_struct.mat --shiftdir=$unwarpdir --relout" #warp coefficients to undistort and transform EPI into structural space
 	fi
 	
 	touch .func2struct_complete
