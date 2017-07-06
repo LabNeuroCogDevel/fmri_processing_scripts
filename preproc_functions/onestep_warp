@@ -10,7 +10,7 @@ unable_warp_msg(){
 }
 
 # GLOBALS:
-ONESTEPWARP_GLOBALS=(templateBrain subjMask fm_phase mc_first prefix funcFile createBBRFmapWarp no_st st_first sliceMotion4D preMC despike postDespike postSS nowarp funcWarpInterp warpCoef)
+ONESTEPWARP_GLOBALS=(templateBrain subjMask se_phasepos fm_phase mc_first prefix funcFile createBBRFmapWarp no_st st_first sliceMotion4D preMC despike postDespike postSS nowarp funcWarpInterp warpCoef)
 
 function onestep_warp {
 
@@ -21,8 +21,7 @@ function onestep_warp {
 
     # record all the globals used by this function
     print_vars_in ONESTEPWARP_GLOBALS
-
-
+    
     # figure out what to do based on the target
     local warp_target="$1"
 
@@ -30,7 +29,7 @@ function onestep_warp {
 	local ref="$templateBrain"
 	local mask="${subjMask}"
 
-	if [[ -n "$fm_phase" && $mc_first -eq 0 ]]; then #if -mc_first, then fieldmap unwarping happens upstream
+	if [[ $use_fm -eq 1 && $mc_first -eq 0 ]]; then #if -mc_first, then fieldmap unwarping happens upstream
 	    prefix="wu${prefix}" #fm unwarp and warp to standard
 	else
 	    prefix="w${prefix}" #just warp to standard
@@ -39,17 +38,17 @@ function onestep_warp {
 	#filename for post-warp, used in nuisance regression
 	postWarp="${prefix}${funcFile}"
 	
-	if [[ -n "$fm_phase" && -f .warp_complete && -f .fmunwarp_complete ]]; then
+	if [[ $use_fm -eq 1 && -f .warp_complete && -f .fmunwarp_complete ]]; then
 	    #echo "returning 0"
 	    return 0
-	elif [[ -z "$fm_phase" && -f .warp_complete ]]; then
+	elif [[ $use_fm -eq 0 && -f .warp_complete ]]; then
 	    return 0   #relevant steps already complete
 	fi
     elif [ $warp_target = mc_target ]; then
 	local ref=mc_target
 	local mask=mc_target_mask #Used to be unwarp/EF_UD_fmap_mag_brain_mask, but should constrain warp to observed EPI data (in case FM has larger extent)
 
-	if [ -n "$fm_phase" ]; then
+	if [ $use_fm -eq 1 ]; then
 	    prefix="u${prefix}"
 	fi
 	
@@ -66,11 +65,14 @@ function onestep_warp {
     # goal is to reduce the number of data interpolations.
     #
     # Combinations that combine motion correction with fieldmap unwarping and/or warp to standard
-    # require a unique volume-wise warp.
+    # require a unique volume-wise warp (i.e., volwise=1)
 
-    if [ -n "$fm_phase" ]; then
-	#fmap_unwarp_field is the fm unwarp field aligned to mc_target (coregistration target)
-	if [ $createBBRFmapWarp -eq 1 ]; then
+    if [ $use_fm -eq 1 ]; then
+	#fmap_unwarp_field is the fm unwarp field aligned to mc_target (aka 'example func' [EF], the coregistration target)
+	if [ $topup_direct -eq 1 ]; then
+	    rel "Using the TOPUP unwarping coefficients directly to unwarp functional data" c
+	    local fmap_unwarp_field=topup_undistort/EF_WarpField
+	elif [ $createBBRFmapWarp -eq 1 ]; then
 	    rel "Using unwarp information from BBR -fieldmap functional -> struct alignment" c
 	    local fmap_unwarp_field=unwarp/EF_UD_warp_bbr
 	else
@@ -81,7 +83,7 @@ function onestep_warp {
 
     #setup the warp field based on the processing circumstance
     if [ $warp_target = mc_target ]; then
-	if [[ -z "${fm_phase}" && ( $mc_first -eq 1 || $no_st -eq 1 ) ]]; then
+	if [[ $use_fm -eq 0 && ( $mc_first -eq 1 || $no_st -eq 1 ) ]]; then
 	    #Combination 1: motion correction alone. In this case, do nothing because motion correction alone was performed upstream (by 3dvolreg or mcflirt)
 	    #  $warp_target = mc_target
 	    #  Conditions: a) no fieldmap AND
@@ -89,15 +91,15 @@ function onestep_warp {
 
 	    return 0 #nothing to do
 
-	elif [[ ( -n "${fm_phase}" && ( $no_st -eq 1 || $st_first -eq 1 ) && $no_warp -eq 1 ) \
-	    || ( -n "${fm_phase}" && $mc_first -eq 1 && $sliceMotion4D -eq 0 ) ]]; then
+	elif [[ ( $use_fm -eq 1 && ( $no_st -eq 1 || $st_first -eq 1 ) && $no_warp -eq 1 ) \
+	    || ( $use_fm -eq 1 && $mc_first -eq 1 && $sliceMotion4D -eq 0 ) ]]; then
 	    #Combination 2: motion correct + fieldmap unwarp
 	    #  $warp_target = mc_target
-	    #  Conditions: a) fieldmap provided (-fm_phase) AND     ###IS THIS A REAL POSSIBILITY?
+	    #  Conditions: a) fieldmap provided (use_fm=1) AND     ###IS THIS A REAL POSSIBILITY?
 	    #              b) -no_st OR -st_first AND
 	    #              c) -no_warp
 	    #
-	    #  Conditions: a) fieldmap provided (-fm_phase) AND
+	    #  Conditions: a) fieldmap provided (use_fm=1) AND
 	    #              b) -mc_first AND
 	    #              c) Use conventional motion and slice timing correction (i.e., not -4d_slice_motion)
 	    #        
@@ -114,7 +116,7 @@ function onestep_warp {
 	elif [[ $no_warp -eq 1 && $sliceMotion4D -eq 1 ]]; then
 	    #Combination 3: fieldmap unwarp alone (not volume-wise)
 	    #  $warp_target = mc_target
-	    #  Conditions: a) OPTIONAL: fieldmap provided (-fm_phase)
+	    #  Conditions: a) OPTIONAL: fieldmap provided (use_fm=1)
 	    #              b) -no_warp
 	    #              c) data already motion-corrected by -4d_slice_motion
 
@@ -126,7 +128,7 @@ function onestep_warp {
 	    volwise=0
 
 
-	    if [[ -n "$fm_phase" ]]; then
+	    if [[ $use_fm -eq 1 ]]; then
 		rel "Apply fieldmap unwarping alone" c
 		rel "convertwarp --ref=$ref --warp1=$fmap_unwarp_field  \
 			--relout --out=func_to_${warp_target}_warp_allv"
@@ -142,7 +144,7 @@ function onestep_warp {
                 # w->W for warped to struct (instead of standard)
 	        #prefix="W${prefix}" 
                 #rel "warping to structural only (no FM, no standard) $ref and func_to_struct.mat" c
-                #rel "convertwarp --ref=$ref --premat=func_to_struct.mat \
+                #rel "convertwarp --ref=$ref --premat=$funcdir/transforms/func_to_struct.mat \
 	    	#        --relout --out=func_to_${warp_target}_warp_allv"
             fi 
 
@@ -167,7 +169,7 @@ function onestep_warp {
 	    exit 1
 	fi
     elif [ $warp_target = standard ]; then #warp to standard space
-	if [[ -z "${fm_phase}" && $no_warp -eq 1 ]]; then
+	if [[ $use_fm -eq 0 && $no_warp -eq 1 ]]; then
 	    #Combination 4: motion correction alone. In this case, do nothing because motion correction alone was performed upstream (by 3dvolreg or mcflirt)
 	    #  $warp_target = standard
 	    #  Conditions: a) no fieldmap AND
@@ -177,7 +179,7 @@ function onestep_warp {
 
 	    return 0 #if no warp to standard and no fieldmap, then nothing to do
 
-	elif [[ -z "$fm_phase" && ( $no_st -eq 1 || $st_first -eq 1 ) && $sliceMotion4D -eq 0 ]]; then
+	elif [[ $use_fm -eq 0 && ( $no_st -eq 1 || $st_first -eq 1 ) && $sliceMotion4D -eq 0 ]]; then
 	    #Combination 5: motion correct + warp to standard
 	    #  $warp_target = standard
 	    #  Conditions: a) No fieldmap AND
@@ -190,10 +192,10 @@ function onestep_warp {
 	    #just need to add --premat inside volwise loop
 	    volwise=1
 	    rel "Volume-wise motion correction + warp to $warp_target in one interpolation" c
-	    cvcmd="convertwarp --ref=$ref --midmat=func_to_struct.mat \
+	    cvcmd="convertwarp --ref=$ref --midmat=$funcdir/transforms/func_to_struct.mat \
 		--warp2=${warpCoef} --relout"	#use --warp2 to warp after vol -> mc_target and func -> struct
 
-	elif [[ ( -z "$fm_phase" && $sliceMotion4D -eq 1 ) || $mc_first -eq 1 ]]; then
+	elif [[ ( $use_fm -eq 0 && $sliceMotion4D -eq 1 ) || $mc_first -eq 1 ]]; then
 	    #Combination 6: warp to standard 
 	    #  $warp_target = standard
 	    #  Conditions: a) no fieldmap AND
@@ -211,13 +213,13 @@ function onestep_warp {
 
 	    volwise=0
 	    rel "Warp to $warp_target alone via $warpCoef." c
-	    rel "convertwarp --ref=$ref --premat=func_to_struct.mat --warp1=$warpCoef \
+	    rel "convertwarp --ref=$ref --premat=$funcdir/transforms/func_to_struct.mat --warp1=$warpCoef \
 		--relout --out=func_to_${warp_target}_warp_allv"
 
-	elif [[ -n "$fm_phase" && $sliceMotion4D -eq 1 ]]; then
+	elif [[ $use_fm -eq 1 && $sliceMotion4D -eq 1 ]]; then
 	    #Combination 3: fieldmap unwarp + warp to standard (not volume-wise)
 	    #  $warp_target = standard
-	    #  Conditions: a) fieldmap provided (-fm_phase) AND
+	    #  Conditions: a) fieldmap provided (use_fm=1) AND
 	    #              b) data already motion-corrected by -4d_slice_motion
 
 	    if [ $despike -eq 1 ]; then		
@@ -228,20 +230,20 @@ function onestep_warp {
 
 	    volwise=0
 	    rel "Fieldmap unwarping + warp to $warp_target in one interpolation" c
-	    rel "convertwarp --ref=$ref --warp1=$fmap_unwarp_field --midmat=func_to_struct.mat \
+	    rel "convertwarp --ref=$ref --warp1=$fmap_unwarp_field --midmat=$funcdir/transforms/func_to_struct.mat \
 		--warp2=${warpCoef} --relout --out=func_to_${warp_target}_warp_allv"
 	    
-	elif [[ -n "$fm_phase" && ( $no_st -eq 1 || $st_first -eq 1 ) && $sliceMotion4D -eq 0 ]]; then
+	elif [[ $use_fm -eq 1 && ( $no_st -eq 1 || $st_first -eq 1 ) && $sliceMotion4D -eq 0 ]]; then
 	    #Combination 4: motion correct + fieldmap unwarp + warp to standard
 	    #  $warp_target = standard
 	    #  Conditions: a) -no_st OR -st_first AND
-	    #              b) fieldmap provided (-fm_phase) AND
+	    #              b) fieldmap provided (use_fm=1) AND
     
 	    towarp="${preMC}"
 
 	    volwise=1
 	    rel "Volume-wise motion correction, fieldmap unwarping, and warp to $warp_target in one interpolation" c
-	    cvcmd="convertwarp --ref=$ref --warp1=$fmap_unwarp_field --midmat=func_to_struct.mat \
+	    cvcmd="convertwarp --ref=$ref --warp1=$fmap_unwarp_field --midmat=$funcdir/transforms/func_to_struct.mat \
 		--warp2=${warpCoef} --relout"
 	    
 	else
@@ -317,7 +319,7 @@ function onestep_warp {
 	exit 1
     fi
 
-    [ -n "$fm_phase" ] && rel "date > .fmunwarp_complete"
+    [ $use_fm -eq 1 ] && rel "date > .fmunwarp_complete"
     [ $warp_target = standard ] && rel "date > .warp_complete"
 
     #explicit return code needed to avoid implicit status of prior command

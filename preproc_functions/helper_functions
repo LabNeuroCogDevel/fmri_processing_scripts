@@ -585,3 +585,30 @@ function print_vars_in {
 }
 
 # vim: set tabstop=7:
+
+#small function to check coregistration of two images
+function qa_image {
+    underlay="${1}"
+    overlay="${2}"
+    fname="${3}"
+    title="${4}"
+
+    xsize=$( fslval $underlay dim1 )
+    if [ $xsize -gt 100 ]; then #set scale of slicer depending on size of images (since pngs from larger 3d images are larger in pixel size)
+	scale=2
+	fsize=36
+    else
+	scale=3
+	fsize=26
+    fi
+    [ -z "$qa_imgdir" ] && local qa_imgdir=. #default to current directory if not specified
+    rel "slicer \"$underlay\" \"$overlay\" -s $scale -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
+	   -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
+	   -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png"
+
+    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png \"${qa_imgdir}/$fname\""
+
+    [ -n "$title" ] && rel "montage -label \"${title}\nunderlay:$( basename $underlay )\noverlay:$( basename $overlay )\" \"${qa_imgdir}/$fname\" -pointsize $fsize -geometry +0+0 \"${qa_imgdir}/$fname\""
+
+    rm -f sl?.png #cleanup
+}

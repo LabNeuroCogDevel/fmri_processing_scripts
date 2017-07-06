@@ -3,16 +3,30 @@ set -e
 
 [ -z $ext ] && ext=.nii.gz #will be set upstream after incorporating in pipeline
 
+#SE prefix denotes that image is in spin-echo (i.e., fieldmap) space
+#ER prefix denotes epiref space
+
+#ANTS is quite good at coregistration (better than flirt in many cases) and will be increasingly preferred in the pipeline
+#c3d provides a tool for transforming an ANTS matrix (itk) to FSL-compatible.mat
+command -v antsRegistrationSyN.sh >/dev/null 2>&1 && have_ants=1 || have_ants=0
+command -v c3d_affine_tool >/dev/null 2>&1 && have_c3d=1 || have_c3d=0
+
+[ ! -d "transforms" ] && mkdir "transforms"
+
 #shameless adaptation of HCP script: https://github.com/Washington-University/Pipelines
 scriptDir=$( dirname "$0" )
 source "${scriptDir}/helper_functions" #for rel
 logFile="topuplog.txt"
 
+if [ -r .topup_complete ]; then
+    echo "Topup preprocessing already complete"
+    exit 0
+fi
+
+[ -r "topuplog.txt" ] && rm -rf topuplog.txt #clear any existing log before proceeding
 
 # Requirements for this script
-#  installed versions of: FSL (version 5.0.6), HCP-gradunwarp (version 1.0.3)
-#  environment: as in SetUpHCPPipeline.sh  (or individually: FSLDIR, HCPPIPEDIR_Global, HCPPIPEDIR_Bin and PATH for gradient_unwarp.py)
-
+#  installed versions of: FSL (version 5.0.6+), HCP-gradunwarp (version 1.0.3)
 
 Usage() {
   echo "`basename $0`: Script for using topup to do distortion correction for EPI (scout)"
@@ -39,11 +53,13 @@ Usage() {
 
 # Output images (in $WD): 
 #          BothPhases      (input to topup - combines both pe direction data, plus masking)
-#          SBRef2PhaseNeg_gdc.mat SBRef2PhaseNeg_gdc   (linear registration result)
+#          epiref2PhaseNeg_gdc.mat epiref2PhaseNeg_gdc   (linear registration result)
 #          PhaseNeg_gdc  PhasePos_gdc
 #          PhaseNeg_gdc_dc  PhaseNeg_gdc_dc_jac  PhasePos_gdc_dc  PhasePos_gdc_dc_jac
-#          SBRef_dc   SBRef_dc_jac
-#          WarpField  Jacobian
+#          SE_UD_epiref (undistorted epiref in SE space)       SE_UD_epiref_jac (with Jacobian intensity correction)
+#          ER_UD_epiref (undistorted epiref in epiref space)   ER_UD_epiref_jac (with Jacobian intensity correction)
+#          SE_WarpField SE_Jacobian (in spin-echo space)
+#          ER_WarpField ER_Jacobian (in epiref space)
 # Output images (not in $WD): 
 #          ${DistortionCorrectionWarpFieldOutput}  ${JacobianOutput}
 
@@ -59,6 +75,7 @@ WD=topup_undistort
 TopupConfig=${FSLDIR}/etc/flirtsch/b02b0.cnf #default
 UseJacobian=false
 GradientDistortionCoeffs=
+EpirefUnwarpDirection=
 
 #process command line inputs
 while [ _$1 != _ ] ; do
@@ -112,6 +129,11 @@ while [ _$1 != _ ] ; do
     fi
 done
 
+if [ -z "$EpirefUnwarpDirection" ]; then
+    echo "-epiref_pedir (phase encoding direction of EPI image) is a required argument."
+    exit 1
+fi
+
 #sanity check the jacobian option
 if [[ "$UseJacobian" != "true" && "$UseJacobian" != "false" ]]
 then
@@ -147,7 +169,12 @@ fi
 # Copy these into directory for further processing
 rel "imcp $PhaseEncodeNeg ${WD}/PhaseNeg"
 rel "imcp $PhaseEncodePos ${WD}/PhasePos"
-rel "imcp $EpirefInputName ${WD}/SBRef"
+rel "imcp $EpirefInputName ${WD}/epiref"
+
+#this should probably be done upstream to get registration matrices correct
+#rel "fslreorient2std ${WD}/PhaseNeg ${WD}/PhaseNeg"
+#rel "fslreorient2std ${WD}/PhasePos ${WD}/PhasePos"
+#rel "fslreorient2std ${WD}/epiref ${WD}/epiref"
 
 function gradunwarp() {
     d=$( dirname "$img" )
@@ -246,7 +273,7 @@ if [[ $EpirefUnwarpDirection = "x" || $EpirefUnwarpDirection = "x-" || $EpirefUn
     #Note: the above calculation implies full k-space acquisition for SE EPI.
     #In case of partial Fourier/k-space acquisition (though not recommended), $dimx-1 does not equal to nPEsteps.
     
-    ro_time=`echo "scale=6; ${DwellTime} * ${nPEsteps}" | bc -l` #Compute Total_readout in secs with up to 6 decimal places
+    ro_time=$( echo "scale=6; ${DwellTime} * ${nPEsteps}" | bc -l ) #Compute Total_readout in secs with up to 6 decimal places
     rel "Total calculated readout time is $ro_time secs. Does this match your expectation?" c
 
     #add a line for each negative phase image in X dimension (PhaseNeg)
@@ -306,68 +333,96 @@ rel "fslmaths ${WD}/BothPhases -abs -add 1 -mas ${WD}/Mask -dilM -dilM -dilM -di
 
 # RUN TOPUP
 # Needs FSL (version 5.0.6 or higher)
-rel "topup --imain=${WD}/BothPhases --datain=$txtfname --config=${TopupConfig} --out=${WD}/Coefficents --iout=${WD}/Magnitudes \
---fout=${WD}/TopupField --dfout=${WD}/WarpField --rbmout=${WD}/MotionMatrix --jacout=${WD}/Jacobian -v"
+rel "topup --imain=${WD}/BothPhases --datain=$txtfname --config=${TopupConfig} --out=${WD}/Coefficents --iout=${WD}/SE_Magnitudes \
+    	   --fout=${WD}/SE_TopupField --dfout=${WD}/SE_WarpField --rbmout=${WD}/MotionMatrix --jacout=${WD}/SE_Jacobian -v"
 
 #Remove Z slice padding if needed
 if [ ! $(($numslice % 2)) -eq "0" ] ; then
   rel "Removing Z slice padding" c
-  for Image in ${WD}/BothPhases ${WD}/Mask ${WD}/Coefficents_fieldcoef ${WD}/Magnitudes ${WD}/TopupField* ${WD}/WarpField* ${WD}/Jacobian* ; do
+  for Image in ${WD}/BothPhases ${WD}/Mask ${WD}/Coefficents_fieldcoef ${WD}/SE_Magnitudes ${WD}/SE_TopupField* ${WD}/SE_WarpField* ${WD}/SE_Jacobian* ; do
     rel "fslroi ${Image} ${Image} 0 -1 0 -1 0 ${numslice} 0 -1"
   done
 fi
 
 
-#register the SBRef to the the spin-echo sequence of the same phase
-rel "Registering the SBRef image to the SE image with the same phase encoding direction" c
+#register the epiref to the the spin-echo sequence of the same phase
+rel "Registering the epiref image to the SE image with the same phase encoding direction" c
 if [[ $EpirefUnwarpDirection = "x" || $EpirefUnwarpDirection = "y" ]] ; then
-    # Direction of SBRef phase encoding is positive. --epiref_pedir = x,y
+    # Direction of epiref phase encoding is positive. --epiref_pedir = x,y
     # select the first volume from PhasePos
     VolumeNumber=$(($dimtNeg + 1))
     vnum=$( zeropad $VolumeNumber 2 )
-    
-    # register scout to SE input (PhasePos) + combine motion and distortion correction
-    rel "flirt -dof 6 -interp spline -in ${WD}/SBRef -ref ${WD}/PhasePos_gdc -omat ${WD}/SBRef2PhasePos_gdc.mat -out ${WD}/SBRef2PhasePos_gdc"
-    rel "convert_xfm -omat ${WD}/SBRef2WarpField.mat -concat ${WD}/MotionMatrix_${vnum}.mat ${WD}/SBRef2PhasePos_gdc.mat"
-    rel "convertwarp --relout --rel -r ${WD}/PhasePos_gdc --premat=${WD}/SBRef2WarpField.mat --warp1=${WD}/WarpField_${vnum} --out=${WD}/WarpField"
-    rel "imcp ${WD}/Jacobian_${vnum} ${WD}/Jacobian"
-    SBRefPhase=Pos
-
+    setarget=PhasePos_gdc
+    epirefPhase=Pos
 elif [[ $EpirefUnwarpDirection = "x-" || $EpirefUnwarpDirection = "-x" || $EpirefUnwarpDirection = "y-" || $EpirefUnwarpDirection = "-y" ]] ; then
-    # Direction of SBRef phase encoding is negative. --epiref_pedir = -x,-y
+    # Direction of epiref phase encoding is negative. --epiref_pedir = -x,-y
     # select the first volume from PhaseNeg
     VolumeNumber=$((0 + 1))
     vnum=$( zeropad $VolumeNumber 2 )
-    # register scout to SE input (PhaseNeg) + combine motion and distortion correction
-    rel "flirt -dof 6 -interp spline -in ${WD}/SBRef.nii.gz -ref ${WD}/PhaseNeg_gdc -omat ${WD}/SBRef2PhaseNeg_gdc.mat -out ${WD}/SBRef2PhaseNeg_gdc"
-    rel "convert_xfm -omat ${WD}/SBRef2WarpField.mat -concat ${WD}/MotionMatrix_${vnum}.mat ${WD}/SBRef2PhaseNeg_gdc.mat"
-    rel "convertwarp --relout --rel -r ${WD}/PhaseNeg_gdc --premat=${WD}/SBRef2WarpField.mat --warp1=${WD}/WarpField_${vnum} --out=${WD}/WarpField"
-    rel "imcp ${WD}/Jacobian_${vnum} ${WD}/Jacobian"
-    SBRefPhase=Neg
+    setarget=PhaseNeg_gdc
+    epirefPhase=Neg
 fi
 
+
+#register epiref to SE image of the same phase
+if [[ $have_ants -eq 1 && $have_c3d -eq 1 ]]; then
+    rel "fslroi ${WD}/${setarget} ${WD}/${setarget}_vol1 0 1" #ants blows up on 4d targets
+    rel "antsRegistrationSyN.sh -d 3 -f ${WD}/${setarget}_vol1${ext} -m ${WD}/epiref${ext} -t r -o ${WD}/epiref2${setarget}" #rigid transformation
+    #convert to FSL-compatible transformation
+    rel "c3d_affine_tool -ref ${WD}/${setarget}_vol1${ext} -src ${WD}/epiref${ext} -itk ${WD}/epiref2${setarget}0GenericAffine.mat -ras2fsl -o transforms/epiref2${setarget}.mat"
+    rel "immv ${WD}/epiref2${setarget}Warped ${WD}/epiref2${setarget}"
+    rel "mv ${WD}/epiref2${setarget}0GenericAffine.mat transforms/epiref2${setarget}.itk"
+    rel "imrm ${WD}/epiref2${setarget}InverseWarped ${WD}/${setarget}_vol1" #not useful
+else
+    # further testing suggests that flirt coregistration is somewhat improved using skull-stripped images
+    # register scout to SE input + combine motion and distortion correction
+    rel "3dSkullStrip -overwrite -input ${WD}/epiref${ext} -prefix ${WD}/epiref_brain${ext} -touchup"
+    rel "3dSkullStrip -overwrite -input ${WD}/${setarget}${ext} -prefix ${WD}/${setarget}_brain${ext} -touchup"    
+    #rel "flirt -dof 6 -interp spline -in ${WD}/epiref -ref ${WD}/${setarget} -omat transforms/epiref2${setarget}.mat -out ${WD}/epiref2${setarget}"
+    rel "flirt -dof 6 -interp spline -in ${WD}/epiref_brain -ref ${WD}/${setarget}_brain -omat transforms/epiref2${setarget}.mat -out ${WD}/epiref2${setarget}"    
+fi
+
+#compute warpfield in SE_Magnitude space (from TOPUP) and epiref space
+rel "convert_xfm -omat transforms/epiref2sefmap.mat -concat ${WD}/MotionMatrix_${vnum}.mat transforms/epiref2${setarget}.mat"
+rel "convert_xfm -omat transforms/sefmap2epiref.mat -inverse transforms/epiref2sefmap.mat" #compute SE -> EpiRef
+
+#setup the relevant unwarping coefficients
+#removing the epiref -> sefmap transform from HCP pipeline
+#rel "convertwarp --relout --rel -r ${WD}/${setarget} --premat=transforms/epiref2sefmap.mat --warp1=${WD}/SE_WarpField_${vnum} --out=${WD}/SE_WarpField"
+rel "imcp ${WD}/SE_WarpField_${vnum} ${WD}/SE_WarpField"
+
+#epiref -> sefmap -> unwarp -> epiref transform (undistort images coregistered to epiref)
+rel "convertwarp --relout --rel -r ${WD}/epiref --premat=transforms/epiref2sefmap.mat --warp1=${WD}/SE_WarpField_${vnum} --postmat=transforms/sefmap2epiref.mat --out=${WD}/ER_WarpField"
+
+rel "imcp ${WD}/SE_Jacobian_${vnum} ${WD}/SE_Jacobian"
+
+#Create a Jacobian in epiref space for general use in pipeline
+rel "applywarp -i ${WD}/SE_Jacobian -r ${WD}/epiref --premat=transforms/sefmap2epiref.mat -o ${WD}/ER_Jacobian --interp=spline --rel"
 
 # PhasePos (first vol) - warp and Jacobian modulate to get distortion corrected output
 VolumeNumber=$(($dimtNeg + 1))
 vnum=$( zeropad $VolumeNumber 2 )
-rel "applywarp --rel --interp=spline -i ${WD}/PhasePos_gdc -r ${WD}/PhasePos_gdc --premat=${WD}/MotionMatrix_${vnum}.mat -w ${WD}/WarpField_${vnum} -o ${WD}/PhasePos_gdc_dc"
-rel "fslmaths ${WD}/PhasePos_gdc_dc -mul ${WD}/Jacobian_${vnum} ${WD}/PhasePos_gdc_dc_jac"
+rel "applywarp --rel --interp=spline -i ${WD}/PhasePos_gdc -r ${WD}/PhasePos_gdc --premat=${WD}/MotionMatrix_${vnum}.mat -w ${WD}/SE_WarpField_${vnum} -o ${WD}/PhasePos_gdc_dc"
+rel "fslmaths ${WD}/PhasePos_gdc_dc -mul ${WD}/SE_Jacobian_${vnum} ${WD}/PhasePos_gdc_dc_jac"
 
 # PhaseNeg (first vol) - warp and Jacobian modulate to get distortion corrected output
 VolumeNumber=$((0 + 1))
 vnum=$( zeropad $VolumeNumber 2 )
-rel "applywarp --rel --interp=spline -i ${WD}/PhaseNeg_gdc -r ${WD}/PhaseNeg_gdc --premat=${WD}/MotionMatrix_${vnum}.mat -w ${WD}/WarpField_${vnum} -o ${WD}/PhaseNeg_gdc_dc"
-rel "fslmaths ${WD}/PhaseNeg_gdc_dc -mul ${WD}/Jacobian_${vnum} ${WD}/PhaseNeg_gdc_dc_jac"
+rel "applywarp --rel --interp=spline -i ${WD}/PhaseNeg_gdc -r ${WD}/PhaseNeg_gdc --premat=${WD}/MotionMatrix_${vnum}.mat -w ${WD}/SE_WarpField_${vnum} -o ${WD}/PhaseNeg_gdc_dc"
+rel "fslmaths ${WD}/PhaseNeg_gdc_dc -mul ${WD}/SE_Jacobian_${vnum} ${WD}/PhaseNeg_gdc_dc_jac"
 
 # Scout - warp and Jacobian modulate to get distortion corrected output
-rel "applywarp --rel --interp=spline -i ${WD}/SBRef -r ${WD}/SBRef -w ${WD}/WarpField -o ${WD}/SBRef_dc"
-rel "fslmaths ${WD}/SBRef_dc -mul ${WD}/Jacobian.nii.gz ${WD}/SBRef_dc_jac"
+rel "applywarp --rel --interp=spline -i ${WD}/epiref -r ${WD}/${setarget} --premat=transforms/epiref2sefmap.mat -w ${WD}/SE_WarpField -o ${WD}/SE_UD_epiref"
+rel "fslmaths ${WD}/SE_UD_epiref -mul ${WD}/SE_Jacobian.nii.gz ${WD}/SE_UD_epiref_jac"
+
+rel "applywarp --rel --interp=spline -i ${WD}/epiref -r ${WD}/epiref -w ${WD}/ER_WarpField -o ${WD}/ER_UD_epiref"
+rel "fslmaths ${WD}/ER_UD_epiref -mul ${WD}/ER_Jacobian ${WD}/ER_UD_epiref_jac"
 
 # Calculate Equivalent Field Map
 rel "Calculate equivalent fieldmap" c
-rel "fslmaths ${WD}/TopupField -mul 6.283 ${WD}/TopupField"
-rel "fslmaths ${WD}/Magnitudes.nii.gz -Tmean ${WD}/Magnitude.nii.gz"
-rel "bet ${WD}/Magnitude ${WD}/Magnitude_brain -f 0.35 -m" #Brain extract the magnitude image
+rel "fslmaths ${WD}/SE_TopupField -mul 6.283185 ${WD}/SE_TopupField" #multiply field by 2*pi to convert Hz to rad/s
+rel "fslmaths ${WD}/SE_Magnitudes.nii.gz -Tmean ${WD}/SE_Magnitude.nii.gz"
+rel "bet ${WD}/SE_Magnitude ${WD}/SE_Magnitude_brain -f 0.35 -m" #Brain extract the magnitude image
 
 # copy images to specified outputs (not used at the moment -- from original HCP script)
 # if [ ! -z ${DistortionCorrectionWarpFieldOutput} ] ; then
@@ -379,7 +434,7 @@ rel "bet ${WD}/Magnitude ${WD}/Magnitude_brain -f 0.35 -m" #Brain extract the ma
 # fi
 
 # if [ ! -z ${DistortionCorrectionFieldOutput} ] ; then
-#     imcp ${WD}/TopupField.nii.gz ${DistortionCorrectionFieldOutput}.nii.gz
+#     imcp ${WD}/SE_TopupField.nii.gz ${DistortionCorrectionFieldOutput}.nii.gz
 # fi
 
 # if [ ! -z ${DistortionCorrectionMagnitudeOutput} ] ; then
@@ -402,10 +457,10 @@ echo "fslview ${WD}/PhaseNeg ${WD}/PhaseNeg_gdc ${WD}/PhaseNeg_gdc_dc ${WD}/Phas
 echo "# Inspect results of various corrections (positive phase)" >> $WD/qa.txt
 echo "fslview ${WD}/PhasePos ${WD}/PhasePos_gdc ${WD}/PhasePos_gdc_dc ${WD}/PhasePos_gdc_dc_jac" >> $WD/qa.txt
 echo "# Check linear registration of Scout to SE EPI" >> $WD/qa.txt
-echo "fslview ${WD}/Phase${SBRefPhase}_gdc ${WD}/SBRef2Phase${SBRefPhase}_gdc" >> $WD/qa.txt
+echo "fslview ${WD}/Phase${epirefPhase}_gdc ${WD}/epiref2Phase${epirefPhase}_gdc" >> $WD/qa.txt
 echo "# Inspect results of various corrections to scout" >> $WD/qa.txt
-echo "fslview ${WD}/SBRef ${WD}/SBRef_dc ${WD}/SBRef_dc_jac" >> $WD/qa.txt
+echo "fslview ${WD}/epiref ${WD}/ER_UD_epiref ${WD}/ER_UD_epiref_jac" >> $WD/qa.txt
 echo "# Visual check of warpfield and Jacobian" >> $WD/qa.txt
-echo "fslview ${DistortionCorrectionWarpFieldOutput} ${JacobianOutput}" >> $WD/qa.txt
+echo "fslview ${WD}/SE_WarpField ${WD}/SE_Jacobian" >> $WD/qa.txt
 
 ##############################################################################################

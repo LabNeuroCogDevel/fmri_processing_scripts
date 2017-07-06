@@ -654,25 +654,15 @@ fi
 #create png to check registration
 rel "applywarp --ref=\"$unbettedRefBrain\" --mask=\"$refMask\" --in=\"${T1}_bet\" --warp=\"${anat2mni}\" --interp=spline --out=subject_to_template_brain"
 
-#note: first input to slicer is rendered image, second is overlay
-slicer subject_to_template_brain "$bettedRefBrain" -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
-    -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
-    -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png
+#create png of subject brain overlaid with template
+qa_image subject_to_template_brain "$bettedRefBrain" highres2standard1.png "Subject brain with template outline overlaid"
 
-pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png highres2standard1.png
+#create png of template brain overlaid with subject
+qa_image "$bettedRefBrain" subject_to_template_brain highres2standard2.png "Template with subject brain outline overlaid"
 
-montage -label "Subject brain with template outline overlaid" highres2standard1.png -pointsize 30 -geometry +0+0 highres2standard1.png
-
-slicer "$bettedRefBrain" subject_to_template_brain -s 2 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
-    -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
-    -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png
-
-pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png highres2standard2.png
-
-montage -label "Template with subject brain outline overlaid" highres2standard2.png -pointsize 30 -geometry +0+0 highres2standard2.png
-
+#combine into one image
 pngappend highres2standard1.png - highres2standard2.png struct_to_template.png; 
-rm -f sl?.png highres2standard2.png  highres2standard1.png
+rm -f highres2standard2.png  highres2standard1.png
 rel "imrm subject_to_template_brain"
 
 #generate symbolic link to skull-stripped mprage file for compatibility with FSL tools

@@ -161,49 +161,153 @@ function prepare_fieldmap {
     if [ $( imtest mc_target_brain ) -eq 0 ]; then
 	#include bias field correction for mc_target given heavy bias in 32-channel data.
 	#in principle, this should aid in coregistration
-	rel "bet mc_target.nii.gz mc_target_brain -f 0.3 -n -m -R"
+	#rel "bet mc_target mc_target_brain -f 0.3 -n -m -R"
+	rel "3dSkullStrip -overwrite -input mc_target${ext} -prefix mc_target_brain${ext} -orig_vol"
+	rel "fslmaths mc_target_brain -bin mc_target_mask -odt char"
 	rel "fast -o mc_target_brain -l 20 -b -B -t 2 --iter=12 --nopve --fixed=0 mc_target_brain"
 	rel "imrm mc_target_brain_seg" #not needed for anything
-	rel "immv mc_target_brain_mask mc_target_mask"	
+	rel "immv mc_target_brain_mask mc_target_mask"
+	qa_image mc_target_brain mc_target "mc_target_skullstrip.png" "Skull-stripped mc_target overlaid with original mc_target"
     fi
-    
-    [ -z "$fm_phase" ] && rel "no 'fm_phase' (skipping prepare_fieldmap)" c  && return 0 #skip fieldmap 
-
-    # we need to do this before testing if complete
-    # because we use the warpdir sourced from the file
-    # later (one-step warp)
-    find_and_source_config "$fm_cfg" || return 1
-
-    if [[ -n "${fm_phase}" && -f ".prepare_fieldmap_complete" ]]; then
-	return 0 #preparefieldmap already completed
-    fi
-
-    local funcdir=$(pwd) #define working directory for functional processing
 
     # Make an unwarp temps working directory
     tempsdir=$(pwd)/unwarptemps
     [ -d $tempsdir ] && rm -r $tempsdir
     mkdir $tempsdir
 
+    if [[ ( -n "${fm_phase}" || -n "se_phasepos" ) && -f ".prepare_fieldmap_complete" ]]; then
+	return 0 #preparefieldmap already completed
+    elif [ -n "$fm_phase" ]; then
+	prepare_gre_fieldmap #setup fieldmap files using GRE
+    elif [ -n "$se_phasepos" ]; then
+	prepare_se_fieldmap #setup fieldmap files using SE + TOPUP
+    fi
+
+    #handle rare case where PE dir needs to be flipped for fieldmap processing after TOPUP step
+    if [ $flip_topup_pedir -eq 1 ]; then
+	case $unwarpdir in
+	    x)     unwarpdir=-x  ;;
+	    -x|x-) bbr_pedir=x ;;
+	    y)     bbr_pedir=-y  ;;
+	    -y|y-) bbr_pedir=y ;; 
+	    z)     bbr_pedir=-z  ;;
+	    -z|z-) bbr_pedir=z ;;
+	    *)     echo "Unable to determine unwarping direction from '$unwarpdir'"
+		   exit 1 ;;
+	esac
+    fi
+	
+    preproc_fieldmap #refine fieldmap and align to functional and structural images
+}
+
+#this function is responsible for running TOPUP on the phase+ and phase- images
+#then exporting the rad/s TopupField to the unwarp directory for preprocessing using the typical steps (preproc_fieldmap)
+function prepare_se_fieldmap {
+    #TODO: use lock files as in GRE fieldmap to prevent collisions
+
+    #convert SE images to NIfTI if needed
+    #determine if the image already exists
+    if [ $( imtest $se_phasepos ) -eq 0 ]; then
+	if [ $( ls $se_phasepos | wc -l ) -eq 0 ]; then
+	    rel "Could not find any images matching -se_phasepos specification." c && exit 1
+	else
+	    first_dicom=$( ls $se_phasepos | head -n 1 )
+	    dicom_hdr "$first_dicom" 2>&1 | grep -q "ERROR: can't open.*as a DICOM file" && isdicom=0 || isdicom=1 # 0 exit status from grep indicates a match
+	
+	    if [ $isdicom -eq 1 ]; then
+		rel "Converting -se_phasepos to NIfTI" c
+		if [ $have_dcm2niix -eq 1 ]; then
+		    [ -r se_phasepos.nii.gz ] && rm -f se_phasepos.nii.gz
+		    dcm2niix -f se_phasepos -o ./ $( dirname "${se_phasepos}" )
+		else
+		    rel "Using Dimon to convert se_phasepos to NIfTI. Warning: this may result in inconsistent unwarping behavior due to bad image headers. Prefer dcm2niix!" c
+		    dimon "${se_phasepos}" "se_phasepos"
+		fi
+		se_phasepos=se_phasepos
+	    else
+		rel "Cannot recognize $first_dicom as DICOM or NIfTI" c
+		exit 1
+	    fi
+	fi	
+    fi
+
+    if [ $( imtest $se_phaseneg ) -eq 0 ]; then
+	if [ $( ls $se_phaseneg | wc -l ) -eq 0 ]; then
+	    rel "Could not find any images matching -se_phaseneg specification." c && exit 1
+	else
+	    first_dicom=$( ls $se_phaseneg | head -n 1 )
+	    dicom_hdr "$first_dicom" 2>&1 | grep -q "ERROR: can't open.*as a DICOM file" && isdicom=0 || isdicom=1 # 0 exit status from grep indicates a match
+	    
+	    if [ $isdicom -eq 1 ]; then
+		rel "Converting -se_phaseneg to NIfTI" c
+		if [ $have_dcm2niix -eq 1 ]; then
+		    [ -r se_phaseneg.nii.gz ] && rm -f se_phaseneg.nii.gz
+		    dcm2niix -f se_phaseneg -o ./ $(dirname "${se_phaseneg}" )
+		else
+		    rel "Using Dimon to convert se_phaseneg to NIfTI. Warning: this may result in inconsistent unwarping behavior due to bad image headers. Prefer dcm2niix!" c
+		    dimon "${se_phaseneg}" "se_phaseneg"
+		fi
+		se_phaseneg=se_phaseneg #variable now refers to converted NIfTI
+	    else
+		rel "Cannot recognize $first_dicom as DICOM or NIfTI" c
+		exit 1
+	    fi
+	fi
+    fi
+
+    #topup works from data before skull-stripping
+    #determine which is the target for distortion correction
+    if [ -n "$funcRefimg" ]; then
+	local target="epiref"
+    else
+	local target="mc_target"
+    fi
+    
+    #Should now be in a position to call topup script. This will concatenate phase+ and phase- images, then perform distortion correction
+    #Note that topup internally runs motion coregistration to the first volume in the series. Thus, the warp outputs are aligned to this volume
+    #  and need to be realigned to relevant images in the pipeline (e.g., epiref or struct) to be useful.
+    #The outputs include:
+    # 1) SE_TopupField: the distortion field in rad/s, suitable for input to fugue and other standard fieldmap steps (--fout)
+    # 2) SE_WarpField: warp coefficients for each volume in BothPhases usable with applywarp. Note that this is a scalar/constant transform from TopupField (--dfout)
+    # 2) BothPhases: concatenated SE images (negative, then positive)
+    # 3) PhasePos: phase-positive SE image
+    # 4) PhaseNeg: phase-negative SE image
+    # 5) Coefficients: distortion coeffients useful with applytopup (--out)
+    # 6) SE_Magnitudes: concatenated distortion corrected SE images
+    # 7) SE_Magnitude: temporal mean of Magnitudes, useful for coregistration to other targets (e.g., epiref or struct)
+    
+    rel "Running TOPUP on SE phase+ and phase- images to estimate and correct distortion. See topuplog.txt for details" c
+    rel "${scriptDir}/preproc_functions/TopupPreprocessingAll -workingdir topup_undistort -phaseneg $se_phaseneg -phasepos $se_phasepos \
+		-epiref ${target} -epiref_pedir ${unwarpdir} -echospacing ${dwelltime} -usejacobian false"
+
+    qa_image topup_undistort/SE_Magnitude topup_undistort/SE_UD_epiref epiref_to_sefmap.png "SE Magnitude overlaid with undistorted coregistered epiref"
+    qa_image topup_undistort/ER_UD_epiref topup_undistort/epiref epiref_undistort.png "Undistorted epiref (TOPUP direct warp) overlaid with distorted epiref"
+    
+    #Saves a file called ER_WarpField in topup_undistort that is aligned to the epiref
+    #Use this to undistort the files used in functional -> structural coregistration
+    
+    rel "Copying fieldmap ingredients to FSL namespace images" c
+    [ ! -d "unwarp" ] && mkdir unwarp
+    cd unwarp
+
+    rel "fslmaths ../topup_undistort/SE_Magnitude       FM_UD_fmap_mag"
+    rel "fslmaths ../topup_undistort/SE_TopupField      FM_UD_fmap"
+        
+    rel "date > .prepare_fieldmap_complete"
+    
+}
+
+function prepare_gre_fieldmap {
+    # we need to do this before testing if complete
+    # because we use the warpdir sourced from the file
+    # later (one-step warp)
+    find_and_source_config "$fm_cfg" || return 1
+
     # check that all required variables exist (defined in cfg)
     for inputName in mcMats fm_phase fm_magnitude epiTE dwelltime unwarpdir TEdiff signallossthresh scanner; do
 	inputVal=${!inputName}
 	[ -z "${inputVal}" ] && echo "$inputName cannot be empty" && exit 1
     done
-
-    #Apr2014: When phase encoding is in the X direction, there is a disjunction between the unwarpdir for FUGUE versus convertwarp and flirt -bbr -pedir.
-    #Corresponded with Mark Jenkinson and he acknowledged the bug. This workaround assumes that the direction in the cfg file gives proper results for
-    #convertwarp and flirt -bbr -pedir, but that the direction needs to be reversed for FUGUE. This workaround pertains to some CogEmo data using 
-    #the Northwestern OFC and my K01 pilot data.
-    if [ $unwarpdir = x ]; then
-	rel "Reversing phase encode direction for use in FUGUE. convertwarp and flirt -pedir will use x, whereas FUGUE will use x-" c
-	fugue_unwarpdir=x-
-    elif [ $unwarpdir = x- ]; then
-	rel "Reversing phase encode direction for use in FUGUE. convertwarp and flirt -pedir will use x-, whereas FUGUE will use x" c
-	fugue_unwarpdir=x
-    else
-	fugue_unwarpdir=$unwarpdir
-    fi
 
     #handle dicom-to-nifti conversion of phase and magnitude
     local fm_phasedir=$( dirname "$fm_phase" )
@@ -461,32 +565,52 @@ function prepare_fieldmap {
 
     ## setup
     rel "Copying fieldmap ingredients to FSL namespace images" c
-    mkdir unwarp && cd $_
+    [ ! -d "unwarp" ] && mkdir unwarp
+    cd unwarp
 
-    [ -n "$funcRefimg" ] &&     rel "fslmaths ../epiref_brain      ER_D_epiref"
-    rel "fslmaths ../mc_target_brain       EF_D_mc_target"
     rel "fslmaths $fm_magnitude      FM_UD_fmap_mag"
-    rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
 
-    ### STEP 1: Convert fieldmap to rad/s
+    #Convert fieldmap to rad/s
     if [ $( imtest "${fm_phasedir}/FM_UD_fmap" ) -eq 0 ]; then
 	#conversion to rads/sec not complete
 	fieldmap_make_rads_per_sec # creates master FM_UD_fmap in $fm_phasedir
     else
-
        rel "already have ${fm_phasedir}/FM_UD_fmap " c
     fi
 
     rel "fslmaths \"${fm_phasedir}/FM_UD_fmap\" FM_UD_fmap" #copy fieldmap in rads/sec to unwarp/
-
-    #used to require cfg file to specify code to convert fieldmap to rad/s, but better to standardize since conversion should be same on Siemens
-    #rel "fieldmapToRS $fm_phase"   # FM_UD_fmap
 
     #now that we have a phase map in rads/sec ($fm_phasedir/FM_UD_fmap) and no longer have to worry about concurrent writes,
     #remove the lock files so that other processes can proceed.
     [ -f "${fm_phasedir}/.fmphase_inprogress" ] && rm -f "${fm_phasedir}/.fmphase_inprogress"
     [ -f "${fm_magnitudedir}/.fmmagnitude_inprogress" ] && rm -f "${fm_magnitudedir}/.fmmagnitude_inprogress"
 
+}
+
+#preprocess fieldmap by creating masks, warping to structural, etc.
+#largely based on FSL epi_reg script
+function preproc_fieldmap {
+
+    #Apr2014: When phase encoding is in the X direction, there is a disjunction between the unwarpdir for FUGUE versus convertwarp and flirt -bbr -pedir.
+    #Corresponded with Mark Jenkinson and he acknowledged the bug. This workaround assumes that the direction in the cfg file gives proper results for
+    #convertwarp and flirt -bbr -pedir, but that the direction needs to be reversed for FUGUE. This workaround pertains to some CogEmo data using 
+    #the Northwestern OFC and my K01 pilot data.
+    if [ $unwarpdir = x ]; then
+	rel "Reversing phase encode direction for use in FUGUE. convertwarp and flirt -pedir will use x, whereas FUGUE will use x-" c
+	fugue_unwarpdir=x-
+    elif [ $unwarpdir = x- ]; then
+	rel "Reversing phase encode direction for use in FUGUE. convertwarp and flirt -pedir will use x-, whereas FUGUE will use x" c
+	fugue_unwarpdir=x
+    else
+	fugue_unwarpdir=$unwarpdir
+    fi
+
+    #assume that we have a) copied FM_UD_fmap_mag and FM_UD_fmap into unwarp directory and b) have cd'd into that directory
+    #skull strip magnitude image for registration
+    rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
+    [ -n "$funcRefimg" ] &&     rel "fslmaths ../epiref_brain_restore      ER_D_epiref"
+    rel "fslmaths ../mc_target_brain_restore                EF_D_mc_target"
+    
     #change image orientation to LPI/RPI to match EPI (ease registration)
     #N.B. This needs to be run on the local copies, not in $fm_phasedir to avoid file collisions during parallel runs of preprocessFunctional
     rel "fslreorient2std FM_UD_fmap FM_UD_fmap"
@@ -625,7 +749,7 @@ function prepare_fieldmap {
 	-z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png"
 
     #pull these together
-    rel "pngappend sla.png + slb.png + slc.png + sld.png + sle.png + slf.png + slg.png + slh.png + sli.png + slj.png + slk.png + sll.png fmap+mag.png"
+    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/fmap+mag.png"
     rel "rm sl[a-l].png"
 
     ### STEP 6: Compute a signal loss (sigloss) estimate and make a siglossed magnitude image for forward warp
@@ -645,14 +769,14 @@ function prepare_fieldmap {
     # This uses the "forward warp" of the fieldmap to distort the sigloss and magnitude images
     # to match EPI. These are then used for the sigloss+mag png file.
     rel "fugue -i FM_UD_fmap_mag_brain_siglossed \
-    --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mag_brain_mask --dwell=$dwelltime \
-    -w FM_D_fmap_mag_brain_siglossed --nokspace --unwarpdir=$fugue_unwarpdir"
+           --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mag_brain_mask --dwell=$dwelltime \
+           -w FM_D_fmap_mag_brain_siglossed --nokspace --unwarpdir=$fugue_unwarpdir"
 
     _picture FM_D_fmap_mag_brain_siglossed "undistorted to distorted ($fugue_unwarpdir), forward warp via FM_UD_fmap"
 
     rel "fugue -i FM_UD_fmap_sigloss \
-    --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mag_brain_mask --dwell=$dwelltime \
-    -w FM_D_fmap_sigloss --nokspace --unwarpdir=$fugue_unwarpdir"
+           --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mag_brain_mask --dwell=$dwelltime \
+           -w FM_D_fmap_sigloss --nokspace --unwarpdir=$fugue_unwarpdir"
 
     _picture FM_D_fmap_sigloss "undistorted to distorted ($fugue_unwarpdir), forward warp via FM_UD_fmap"
 
@@ -675,7 +799,7 @@ function prepare_fieldmap {
     -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
     -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png"
 
-    rel "pngappend sla.png + slb.png + slc.png + sld.png + sle.png + slf.png + slg.png + slh.png + sli.png + slj.png + slk.png + sll.png FM_UD_sigloss+mag.png"
+    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/FM_UD_sigloss+mag.png"
     rel "rm sl[a-l].png"
 
     ##STEP 8. ALIGN MAGNITUDE WITH EPI
@@ -697,17 +821,23 @@ function prepare_fieldmap {
     #the epi2fmap.mat matrix is only used internally here, but does lead EF_D_mc_target and EF_UD_mc_target to look quite ugly.
     # -refweight FM_D_fmap_sigloss
 
-    rel "flirt -in EF_D_mc_target -ref FM_D_fmap_mag_brain_siglossed -omat epi2fmap.mat -o grot -dof 6"
-    [ -n "$funcRefimg" ] && rel "flirt -in ER_D_epiref -ref FM_D_fmap_mag_brain_siglossed -omat ref2fmap.mat -o grot -dof 6"
+    rel "flirt -in EF_D_mc_target -ref FM_D_fmap_mag_brain_siglossed -omat $funcdir/transforms/epi2fmap.mat -o grot -dof 6"
+    qa_image FM_D_fmap_mag_brain_siglossed grot mc_target_to_fmap_mag_brain_siglossed.png "Distorted fm magnitude overlaid with distorted mc_target"
+    
+    if [ -n "$funcRefimg" ]; then
+	rel "flirt -in ER_D_epiref -ref FM_D_fmap_mag_brain_siglossed -omat $funcdir/transforms/ref2fmap.mat -o grot -dof 6"
+	qa_image FM_D_fmap_mag_brain_siglossed grot epiref_to_fmap_mag_brain_siglossed.png "Distorted fm magnitude overlaid with distorted epiref"
+    fi
+	
     _picture grot "align FM (mag,sigloss in) to epi (ref) (make epi2fmap.mat, use this image for thumbnail)"
-
+   
     # reverse  EF->FM  to get FM->EF (to put all fieldmap stuff in epi space)
-    rel "convert_xfm -omat fmap2epi.mat -inverse epi2fmap.mat"
-    [ -n "$funcRefimg" ] && rel "convert_xfm -omat fmap2ref.mat -inverse ref2fmap.mat"
+    rel "convert_xfm -omat $funcdir/transforms/fmap2epi.mat -inverse $funcdir/transforms/epi2fmap.mat"
+    [ -n "$funcRefimg" ] && rel "convert_xfm -omat $funcdir/transforms/fmap2ref.mat -inverse $funcdir/transforms/ref2fmap.mat"
 
     # transform all the fieldmap images into EPI space (mc_target),  FM_UDs become EF_UDs
     for file in "FM_UD_fmap" "FM_UD_fmap_mag_brain" "FM_UD_fmap_mag_brain_mask" "FM_UD_fmap_sigloss"; do
-	rel "flirt -in $file -ref EF_D_mc_target -init fmap2epi.mat -applyxfm -out ${file/FM_/EF_} -interp spline"
+	rel "flirt -in $file -ref EF_D_mc_target -init $funcdir/transforms/fmap2epi.mat -applyxfm -out ${file/FM_/EF_} -interp spline"
 	#creates "EF_UD_fmap" "EF_UD_fmap_mag_brain" "EF_UD_fmap_mag_brain_mask" "EF_UD_fmap_sigloss"
 	_picture ${file/FM_/EF_}  "align FM (mag,sigloss in) to epi (ref) (make epi2fmap.mat)"
     done
@@ -728,6 +858,8 @@ function prepare_fieldmap {
     rel "fugue --loadfmap=EF_UD_fmap --dwell=$dwelltime --mask=EF_UD_fmap_mag_brain_mask -i EF_D_mc_target -u EF_UD_mc_target --unwarpdir=$fugue_unwarpdir --saveshift=EF_UD_shift"
     _picture EF_UD_shift "pixelshift ($fugue_unwarpdir)  EF_D_example using EF_UD_fmap"
 
+    qa_image EF_UD_mc_target EF_D_mc_target undistort_mc_target.png "Undistorted mc_target overlaid with original mc_target"
+    
     # Create warpfield file for undistorting EPI data based on shiftmap above
     # In FSL 4.1.9, this was used for the unwarping of functionals. In the new setup (consistent with 5.0+),
     # we get the warpfield from the BBR func2struct coregistration with -fieldmap.
@@ -750,7 +882,7 @@ function prepare_fieldmap {
 	-y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
 	-z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png"
 
-    rel "pngappend sla.png + slb.png + slc.png + sld.png + sle.png + slf.png + slg.png + slh.png + sli.png + slj.png + slk.png + sll.png EF_UD_shift+mag.png"
+    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/EF_UD_shift+mag.png"
     rel "rm sl[a-l].png"
 
     #TODO: Feat composes a few other images (animated GIFs) to show before and after.
@@ -761,9 +893,22 @@ function prepare_fieldmap {
     #adapted from epi_reg
     rel "Coregister the fieldmap to the structural image for use in func2struct alignment with BBR cost function." c
 
-    rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -dof 6 -omat fmap2struct.mat -out fmap2struct" #magnitude to structural
+    rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -dof 6 -omat $funcdir/transforms/fmap2struct.mat -out fmap2struct -interp spline" #magnitude to structural
     #note that epi_reg requests unbetted MPRAGE and runs an additional flirt on the unbetted magnitude and MPRAGE images.
 
+    qa_image "$mprageBet" fmap2struct fmap_mag_to_struct.png "Structural image overlaid with 6dof-coregistered undistorted fmap mag"
+    
+    #further testing indicates that BBR makes substantial improvements in (magnitude) -> struct coregistration for some subjects
+    if [[ $bbrCapable -eq 1 && $funcStructFlirtDOF = "bbr" ]]; then
+	local mprageBet_base=$( remove_ext ${mprageBet} ) #skull-stripped mprage image basename
+	rel "immv fmap2struct fmap2struct_init"
+	rel "mv $funcdir/transforms/fmap2struct.mat $funcdir/transforms/fmap2struct_init.mat"
+	rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -out fmap2struct -omat $funcdir/transforms/fmap2struct.mat -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
+	        -cost bbr -init $funcdir/transforms/fmap2struct_init.mat -dof 6 -schedule ${FSLDIR}/etc/flirtsch/bbr.sch $bbrfmap"
+
+	qa_image "$mprageBet" fmap2struct fmap_mag_to_struct_bbr.png "Structural image overlaid with bbr-coregistered undistorted fmap mag"
+    fi
+    
     # unmask the fieldmap (necessary to avoid edge effects)
     rel "fslmaths FM_UD_fmap -abs -bin -mul FM_UD_fmap_mag_brain_mask FM_UD_fmap_mask"
 
@@ -771,7 +916,7 @@ function prepare_fieldmap {
     rel "fugue --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mask --unmaskfmap --savefmap=FM_UD_fmap_unmasked --unwarpdir=$fugue_unwarpdir"
 
     # the following is a NEW HACK to fix extrapolation when fieldmap is too small
-    rel "applywarp -i FM_UD_fmap_unmasked -r $mprageBet --premat=fmap2struct.mat -o FM_UD_fmap2struct_pad0"
+    rel "applywarp -i FM_UD_fmap_unmasked -r $mprageBet --premat=$funcdir/transforms/fmap2struct.mat -o FM_UD_fmap2struct_pad0"
     rel "fslmaths FM_UD_fmap2struct_pad0 -abs -bin FM_UD_fmap2struct_pad0_innermask"
     rel "fugue --loadfmap=FM_UD_fmap2struct_pad0 --mask=FM_UD_fmap2struct_pad0_innermask --unmaskfmap --unwarpdir=${fugue_unwarpdir} --savefmap=FM_UD_fmap2struct_dilated"
     rel "fslmaths FM_UD_fmap2struct_dilated fmapForBBR" #create the fieldmap to be used for BBR func -> struct coregistration
@@ -793,7 +938,6 @@ function prepare_fieldmap {
     rel "date > .prepare_fieldmap_complete"
 
 }
-
 
 find_and_source_config(){
     local fm_cfg="$1"

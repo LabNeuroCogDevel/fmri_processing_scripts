@@ -11,7 +11,7 @@ function warp_structmask_to_func {
 	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --warp=unwarp/struct_to_func_transform_and_distort"
     else
 	rel "Using struct_to_func transform to warp ${structvol} mask into functional space" c
-	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --premat=struct_to_func.mat"
+	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --premat=$funcdir/transforms/struct_to_func.mat"
     fi
 
     rel "fslmaths ${outvol} -thr 0.5 -bin ${outvol} -odt char" #force to binary mask to remove tiny values due to interpolation
@@ -464,7 +464,7 @@ function compute_nuisance_regressors {
     if [ "$bandpass_filter" -eq 1 ]; then
 	rel "1dBandpass -dt $tr $bpLow $bpHigh unfiltered_${nuisance_file} > ${nuisance_file}"
     elif [ "$no_hp" -eq 0 ]; then
-	#hpFilter has already been converted in highpass_filter to FWHM volumes. Pass forward verbatim to 1dbptf"
+	#hpFilter has already been converted in parse_args to FWHM volumes. Pass forward verbatim to 1dbptf"
 	rel "1dbptf -matrix unfiltered_${nuisance_file} -tr $tr -time_along_rows -out_file ${nuisance_file} -hp_volumes $hpFilter"
     fi    
     
