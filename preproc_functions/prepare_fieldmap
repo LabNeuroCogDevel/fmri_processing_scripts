@@ -187,11 +187,11 @@ function prepare_fieldmap {
     if [ $flip_topup_pedir -eq 1 ]; then
 	case $unwarpdir in
 	    x)     unwarpdir=-x  ;;
-	    -x|x-) bbr_pedir=x ;;
-	    y)     bbr_pedir=-y  ;;
-	    -y|y-) bbr_pedir=y ;; 
-	    z)     bbr_pedir=-z  ;;
-	    -z|z-) bbr_pedir=z ;;
+	    -x|x-) unwarpdir=x ;;
+	    y)     unwarpdir=-y  ;;
+	    -y|y-) unwarpdir=y ;; 
+	    z)     unwarpdir=-z  ;;
+	    -z|z-) unwarpdir=z ;;
 	    *)     echo "Unable to determine unwarping direction from '$unwarpdir'"
 		   exit 1 ;;
 	esac
