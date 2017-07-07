@@ -308,6 +308,7 @@ EndOfHelp
 
 #load preprocessing functions
 scriptDir=$( dirname "$0" )
+source "${scriptDir}/preproc_functions/waitforlock"
 source "${scriptDir}/preproc_functions/helper_functions"
 source "${scriptDir}/preproc_functions/parse_args"
 source "${scriptDir}/preproc_functions/check_requirements"
