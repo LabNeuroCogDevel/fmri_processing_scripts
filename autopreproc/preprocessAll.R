@@ -95,7 +95,12 @@ if (usegradunwarp) {
 loc_mrproc_root = Sys.getenv("loc_mrproc_root")
 gre_fieldmap_dirpattern = Sys.getenv("gre_fieldmap_dirpattern")
 fieldmap_cfg = Sys.getenv("fieldmap_cfg")
-useFieldmap = ifelse(nchar(gre_fieldmap_dirpattern) > 0, TRUE, FALSE) #whether to include fieldmaps in processing
+se_phasepos_dirpattern = Sys.getenv("se_phasepos_dirpattern")
+se_phaseneg_dirpattern = Sys.getenv("se_phaseneg_dirpattern")
+se_phasepos_dicompattern = Sys.getenv("se_phasepos_dicompattern")
+se_phaseneg_dicompattern = Sys.getenv("se_phaseneg_dicompattern")
+useGREFieldmap = ifelse(nchar(gre_fieldmap_dirpattern) > 0, TRUE, FALSE) #whether to include GRE fieldmaps in processing
+useSEFieldmap = ifelse(nchar(se_phasepos_dirpattern) > 0, TRUE, FALSE) #whether to include SE fieldmaps in processing
 
 ##All of the above environment variables must be in place for script to work properly.
 if (any(c(mprage_dirpattern, preprocessed_dirname, paradigm_name, n_expected_funcruns, preproc_call) == "")) {
@@ -120,11 +125,17 @@ if (useOfflineMB) {
     cat("  Expected name of offline-reconstructed multiband files:", mb_filepattern, "\n")
     cat("  Directory containing MB-reconstructed files:", MB_src, "\n")
 }
-if (useFieldmap) {
+if (useGREFieldmap) {
     cat("  Using GRE fieldmap correction\n")
     cat("  Expected name of GRE fieldmap source directories:", gre_fieldmap_dirpattern, "\n")
     cat("  Fieldmap configuration file:", fieldmap_cfg, "\n")
 }
+if (useSEFieldmap) {
+    cat("  Using SE fieldmap correction via TOPUP\n")
+    cat("  Expected name of SE positive fieldmap source directories:", se_phasepos_dirpattern, "\n")
+    cat("  Expected name of SE negative fieldmap source directories:", se_phaseneg_dirpattern, "\n")
+}
+    
 cat("--------\n\n")
 
 ##handle all mprage directories
@@ -293,7 +304,7 @@ for (d in subj_dirs) {
     #determine directories for fieldmap if using
     fmdirs <- NULL
     magdir <- phasedir <- NA_character_ #reduce risk of accidentally carrying over fieldmap from one subject to next in loop
-    if (useFieldmap) {
+    if (useGREFieldmap) {
         ##determine phase versus magnitude directories for fieldmap
         ##in runs so far, magnitude comes first. preprocessFunctional should handle properly if we screw this up...
         fmdirs <- sort(normalizePath(Sys.glob(file.path(d, gre_fieldmap_dirpattern))))
@@ -308,6 +319,21 @@ for (d in subj_dirs) {
         } else { stop("In ", d, ", number of fieldmap dirs is not 2: ", paste0(fmdirs, collapse=", ")) }
     }
 
+    posdir <- negdir <- NA_character_ #reduce risk of accidentally carrying over fieldmap from one subject to next in loop
+    if (useSEFieldmap) {
+       fmdirspos <- sort(normalizePath(Sys.glob(file.path(d, se_phasepos_dirpattern))))
+       fmdirsneg <- sort(normalizePath(Sys.glob(file.path(d, se_phaseneg_dirpattern)))) 
+       if (length(fmdirspos)==1L && length(fmdirsneg)==1L) {
+           apply_fieldmap <- TRUE
+           posdir <- file.path(loc_mrproc_root, subid, "positive_spinecho")
+           negdir <- file.path(loc_mrproc_root, subid, "negative_spinecho")
+           if (!file.exists(posdir)) { system(paste("cp -Rp", fmdirspos[1], posdir)) }
+           if (!file.exists(negdir)) { system(paste("cp -Rp", fmdirsneg[1], negdir)) }
+           posdir <- file.path(posdir, se_phasepos_dicompattern)
+           negdir <- file.path(negdir, se_phaseneg_dicompattern)
+       } else { stop("In ", d, ", number of SE dirs is not 2: ", paste0(fmdirspos, fmdirsneg, collapse=", ")) }
+    }
+    
     mpragedir <- file.path(loc_mrproc_root, subid, "mprage")
     if (file.exists(mpragedir)) {
         if (! (file.exists(file.path(mpragedir, paste0("mprage_warpcoef", gradunwarpsuffix, ".nii.gz"))) && file.exists(file.path(mpragedir, "mprage_bet.nii.gz")) ) ) {
@@ -425,7 +451,7 @@ for (d in subj_dirs) {
 
         ##add all functional runs, along with mprage and fmap info, as a data.frame to the list
         all_funcrun_dirs[[d]] <- data.frame(funcdir=list.dirs(pattern=paste0(paradigm_name, "[0-9]+$"), path=outdir, recursive = FALSE),
-                                        refimgs=refimgs, magdir=magdir, phasedir=phasedir, mpragedir=mpragedir, stringsAsFactors=FALSE)
+                                        refimgs=refimgs, magdir=magdir, phasedir=phasedir, posdir=posdir, negdir=negdir, mpragedir=mpragedir, stringsAsFactors=FALSE)
 
     } else {
         ##check for existing run directories and setup copy queue as needed
@@ -475,7 +501,7 @@ for (d in subj_dirs) {
             ##list.dirs below. This works in the MB case because of the more careful checks on number of runs etc.
         }
         
-        all_funcrun_dirs[[d]] <- data.frame(funcdir=rundirs, refimgs=refimgs, magdir=magdir, phasedir=phasedir, mpragedir=mpragedir, stringsAsFactors=FALSE)
+        all_funcrun_dirs[[d]] <- data.frame(funcdir=rundirs, refimgs=refimgs, magdir=magdir, phasedir=phasedir, posdir=posdir, negdir=negdir, mpragedir=mpragedir, stringsAsFactors=FALSE)
 
     }
     
@@ -517,7 +543,7 @@ registerDoMC(njobs) #setup number of jobs to fork
 f <- foreach(cd=iter(all_funcrun_dirs, by="row"), .inorder=FALSE) %dopar% {
     setwd(cd$funcdir)
 
-    resumepart <- funcpart <- mpragepart <- fmpart <- refimgpart <- ""
+    resumepart <- funcpart <- mpragepart <- fmpart <- separt <- refimgpart <- ""
     if (file.exists(".preprocessfunctional_incomplete") && preproc_resume) {
         resumepart <- "-resume"
         preproc_call <- "" #clear other settings
@@ -532,11 +558,14 @@ f <- foreach(cd=iter(all_funcrun_dirs, by="row"), .inorder=FALSE) %dopar% {
 
         if (!is.na(cd$magdir)) { fmpart <- paste0("-fm_phase \"", cd$phasedir, "\" -fm_magnitude \"", cd$magdir, "\" -fm_cfg ", fieldmap_cfg) }
 
+        #-epi_pedir and -epi_echospacing need to be specified in preproc_call of config file
+        if (!is.na(cd$posdir)) { separt <- paste0("-se_phasepos \"", cd$posdir, "\" -se_phaseneg \"", cd$negdir, "\"") }
+        
         if (!is.na(cd$refimgs)) { refimgpart <- paste0("-func_refimg \"", cd$refimgs, "\" ") }
     }
 
     ##run preprocessFunctional
-    args <- paste(resumepart, funcpart, mpragepart, fmpart, refimgpart, preproc_call)
+    args <- paste(resumepart, funcpart, mpragepart, fmpart, separt, refimgpart, preproc_call)
     
     ret_code <- system2("preprocessFunctional", args, stderr="preprocessFunctional_stderr", stdout="preprocessFunctional_stdout")
     if (ret_code != 0) { stop("preprocessFunctional failed in directory: ", cd$funcdir) }
