@@ -136,7 +136,7 @@ usegradunwarp=grepl("-grad_unwarp\\s+", preprocessMprage_call, perl=TRUE)
 gradunwarpsuffix=""
 if (usegradunwarp) {
   message("Using structural -> MNI warp coefficients that include gradient undistortion: _withgdc.")
-  message("Also: assuming that all images provided to preprocessFunctional (incl. mprage and fieldmap) are not corrected for gradient disortion")
+  message("Also: assuming that all images provided to preprocessFunctional (incl. mprage and fieldmap) are not corrected for gradient distortion")
   gradunwarpsuffix <- "_withgdc"
 } 
 
@@ -298,12 +298,11 @@ if (length(mprage_toprocess) > 0L) {
       } else {
         ret_code <- system2("preprocessMprage", preprocessMprage_call, stderr="preprocessMprage_stderr", stdout="preprocessMprage_stdout")
         if (ret_code != 0) { message("preprocessMprage failed in directory: ", file.path(outdir, "mprage")) }
-      }
-
-      #echo current date/time to .preprocessmprage_complete to denote completed preprocessing
-      #NB: newer versions of preprocessMprage (Nov2016 and beyond) handle this internally
-      if (!file.exists(".preprocessmprage_complete")) {
-        sink(".preprocessmprage_complete"); cat(as.character(Sys.time())); sink()
+        #echo current date/time to .preprocessmprage_complete to denote completed preprocessing
+        #NB: newer versions of preprocessMprage (Nov2016 and beyond) handle this internally
+        if (!file.exists(".preprocessmprage_complete")) {
+          sink(".preprocessmprage_complete"); cat(as.character(Sys.time())); sink()
+        }
       }
 
       if (file.exists("need_analyze")) { unlink("need_analyze") } #remove dummy file
@@ -331,7 +330,7 @@ if (proc_freesurfer) {
     
     if (!file.exists(file.path(outdir, "mprage"))) {
       message("Cannot locate processed mprage data for: ", outdir)
-    } else if (!file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {
+    } else if (!use_job_array && !file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {
       message("Cannot locate .preprocessmprage_complete in: ", outdir)
     } else if (file.exists(file.path(fs_subjects_dir, paste0(freesurfer_id_prefix, subid)))) {
       message("Skipping FreeSurfer pipeline for subject: ", subid)
@@ -360,7 +359,7 @@ if (proc_freesurfer) {
       } else {              
         ret_code <- system2("FreeSurferPipeline", args=freesurfer_call,
                             stderr="FreeSurferPipeline_stderr", stdout="FreeSurferPipeline_stdout")
-        if (ret_code != 0) { stop("FreeSurferPipeline failed in directory: ", fs_toprocess[d]) }
+        if (ret_code != 0) { message("FreeSurferPipeline failed in directory: ", fs_toprocess[d]) }
       }
     }
 
@@ -418,13 +417,17 @@ for (d in subj_dirs) {
       if (!file.exists(phasedir)) { system(paste("cp -Rp", fmdirs[2], phasedir)) } #copy untouched phasedir to processed directory
       magdir <- file.path(magdir, "MR*") #add dicom pattern at end to be picked up by preprocessFunctional
       phasedir <- file.path(phasedir, "MR*")
-    } else { stop("In ", d, ", number of fieldmap dirs is not 2: ", paste0(fmdirs, collapse=", ")) }
+    } else {
+      message("In ", d, ", number of fieldmap dirs is not 2: ", paste0(fmdirs, collapse=", "))
+      message("Skipping subject: ", d)
+      next
+    }
   }
 
   posdir <- negdir <- NA_character_ #reduce risk of accidentally carrying over fieldmap from one subject to next in loop
   if (useSEFieldmap) {
     fmdirspos <- sort(normalizePath(Sys.glob(file.path(d, se_phasepos_dirpattern))))
-    fmdirsneg <- sort(normalizePath(Sys.glob(file.path(d, se_phaseneg_dirpattern)))) 
+    fmdirsneg <- sort(normalizePath(Sys.glob(file.path(d, se_phaseneg_dirpattern))))
     if (length(fmdirspos)==1L && length(fmdirsneg)==1L) {
       apply_fieldmap <- TRUE
       posdir <- file.path(loc_mrproc_root, subid, "positive_spinecho")
@@ -433,18 +436,30 @@ for (d in subj_dirs) {
       if (!file.exists(negdir)) { system(paste("cp -Rp", fmdirsneg[1], negdir)) }
       posdir <- file.path(posdir, se_phasepos_dicompattern)
       negdir <- file.path(negdir, se_phaseneg_dicompattern)
-    } else { stop("In ", d, ", number of SE dirs is not 2: ", paste0(fmdirspos, fmdirsneg, collapse=", ")) }
+    } else {
+      message("In ", d, ", number of SE dirs is not 2: ", paste0(fmdirspos, fmdirsneg, collapse=", "))
+      message("Skipping subject: ", d)
+      next
+    }
   }
   
   mpragedir <- file.path(loc_mrproc_root, subid, "mprage")
-  if (file.exists(mpragedir)) {
-    if (! (file.exists(file.path(mpragedir, paste0("mprage_warpcoef", gradunwarpsuffix, ".nii.gz"))) && file.exists(file.path(mpragedir, "mprage_bet.nii.gz")) ) ) {
-      stop("Unable to locate required mprage files in dir: ", mpragedir)
+  #Only validate mprage directory structure if we are not using job arrays.
+  #For a job array, the mprage folders/files may not be in place yet since this script functions more for setup than computation
+  if (!use_job_array) { 
+    if (file.exists(mpragedir)) {
+      if (! (file.exists(file.path(mpragedir, paste0("mprage_warpcoef", gradunwarpsuffix, ".nii.gz"))) && file.exists(file.path(mpragedir, "mprage_bet.nii.gz")) ) ) {
+        message("Unable to locate required mprage files in dir: ", mpragedir)
+        message("Skipping subject: ", d)
+        next
+      }
+    } else {
+      message("Unable to locate mprage directory: ", mpragedir)
+      message("Skipping subject: ", d)
+      next
     }
-  } else {
-    stop ("Unable to locate mprage directory: ", mpragedir)
   }
-  
+    
   ##create paradigm_run1-paradigm_run<N> folder structure and copy raw data
   if (!file.exists(outdir)) { #create preprocessed root folder if absent
     dir.create(outdir, showWarnings=FALSE, recursive=TRUE)
@@ -663,16 +678,15 @@ if (use_job_array) {
 } else {
   registerDoMC(njobs) #setup number of jobs to fork
 }
-    
-if (nrow(all_funcrun_dirs) > 0L) {
+
+if (!is.null(all_funcrun_dirs) && nrow(all_funcrun_dirs) > 0L) {
   #loop over directories to process
   ##for (cd in all_funcrun_dirs) {
   f <- foreach(i=1:nrow(all_funcrun_dirs), .inorder=FALSE) %dopar% {
     cd <- all_funcrun_dirs[i,]
-    setwd(cd$funcdir)
-
+    
     resumepart <- funcpart <- mpragepart <- fmpart <- separt <- refimgpart <- ""
-    if (file.exists(".preprocessfunctional_incomplete") && preproc_resume) {
+    if (dir.exists(cd$funcdir) && file.exists(file.path(cd$funcdir, ".preprocessfunctional_incomplete")) && preproc_resume) {
       resumepart <- "-resume"
       preproc_call <- "" #clear other settings
     } else {
@@ -701,9 +715,10 @@ if (nrow(all_funcrun_dirs) > 0L) {
                          paste("preprocessFunctional", args, ">preprocessFunctional_stdout 2>preprocessFunctional_stderr"))
       cat(output_script, sep="\n", file=file.path(qsubdir, paste0("qsub_one_preprocessFunctional_", i)))
     } else {
+      setwd(cd$funcdir)
       ret_code <- system2("preprocessFunctional", args, stderr="preprocessFunctional_stderr", stdout="preprocessFunctional_stdout")
-      if (ret_code != 0) { stop("preprocessFunctional failed in directory: ", cd$funcdir) }
-    }   
+      if (ret_code != 0) { message("preprocessFunctional failed in directory: ", cd$funcdir) }
+    }
   }
 
   if (use_job_array) {

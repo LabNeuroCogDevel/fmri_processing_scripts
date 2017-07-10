@@ -42,6 +42,7 @@ function resetcfg {
     remote_mb_root=
     remote_subid_regex=
     remote_folder_filter=
+    remote_folder_depth=1
     loc_root=
     loc_mrraw_root=
     loc_mrproc_root=
@@ -67,6 +68,7 @@ function resetcfg {
     functional_dirpattern=
     functional_dicompattern=
     detect_refimg=0
+    use_job_array=0 #whether to use PBS job array    
 }
 
 njobs=8 #default to 8 parallel jobs
