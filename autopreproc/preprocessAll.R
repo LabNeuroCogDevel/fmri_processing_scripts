@@ -9,19 +9,34 @@
 #The only parameter expected on the command line is the number of jobs to run in parallel, 
 #and if not specified, the script defaults to 8.
 
-args <- commandArgs(trailingOnly = TRUE)
-options(width=180)
+#read in command line arguments.
+args <- commandArgs(trailingOnly = FALSE)
+
+scriptpath <- dirname(sub("--file=", "", grep("--file=", args, fixed=TRUE, value=TRUE), fixed=TRUE))
+argpos <- grep("--args", args, fixed=TRUE)
+if (length(argpos) > 0L) { args <- args[(argpos+1):length(args)] } else { args <- c() }
+
+#contains exec_pbs_array and list.dirs
+source(normalizePath(file.path(scriptpath, "..", "R_helper_functions.R")))
+
+options(width=200)
+execdir <- getwd()
 #location of raw MR data
 goto=Sys.getenv("loc_mrraw_root")
 if (! file.exists(goto)) { stop("Cannot find directory: ", goto) }
 setwd(goto)
 basedir <- getwd() #root directory for processing
 
-if (length(args) > 0L) {
-    njobs <- as.numeric(args[1L])
+njobs <- Sys.getenv("njobs") #number of parallel jobs to run
+if (njobs != "") {
+  njobs <- as.numeric(njobs)
+} else if (length(args) > 0L) {
+  njobs <- as.numeric(args[1L])
 } else {
-    njobs <- 8
+  njobs <- 8
 }
+
+cat("Maximum number of parallel jobs to execute simultaneously: ", njobs, "\n")
 
 #load required libraries
 library(foreach)
@@ -48,31 +63,65 @@ if (is.na(preproc_resume)) { preproc_resume <- FALSE } else if (preproc_resume==
 
 fs_subjects_dir = NULL
 if (is.na(proc_freesurfer)) {
-    proc_freesurfer <- FALSE
+  proc_freesurfer <- FALSE
 } else if (proc_freesurfer == 1) {
-    proc_freesurfer <- TRUE
-    fs_subjects_dir <- Sys.getenv("SUBJECTS_DIR")
-    freesurfer_id_prefix = Sys.getenv("freesurfer_id_prefix") #string to prepend onto subject id for uniqueness
+  proc_freesurfer <- TRUE
+  fs_subjects_dir <- Sys.getenv("SUBJECTS_DIR")
+  freesurfer_id_prefix = Sys.getenv("freesurfer_id_prefix") #string to prepend onto subject id for uniqueness
 } else {
-    proc_freesurfer <- FALSE #should I trap other possibilities here?    
+  proc_freesurfer <- FALSE #should I trap other possibilities here?    
 }
 
 proc_functional = as.numeric(Sys.getenv("proc_functional")) #whether to run preprocessFunctional (or just terminate after structurals)
 if (is.na(proc_functional)) {
-    proc_functional <- FALSE
+  proc_functional <- FALSE
 } else if (proc_functional == 1) {
-    proc_functional <- TRUE
+  proc_functional <- TRUE
 } else {
-    proc_functional <- FALSE #should I trap other possibilities here?    
+  proc_functional <- FALSE #should I trap other possibilities here?    
+}
+
+#whether to use a PBS job array rather than running jobs directly through R
+use_job_array = as.numeric(Sys.getenv("use_job_array"))
+if (is.na(use_job_array)) {
+  use_job_array <- FALSE
+} else if (use_job_array == 1) {
+  use_job_array <- TRUE
+  cat("Using PBS job array approach to parallel execution\n\n")
+} else {
+  use_job_array <- FALSE #should I trap other possibilities here?    
+}
+
+job_array_preamble <- Sys.getenv("job_array_preamble")
+if (job_array_preamble=="") {
+  job_array_preamble <- c(
+    "#!/usr/bin/env sh",
+  "",
+  "#PBS -A mnh5174_a_g_hc_default",
+  "#PBS -j oe",
+  "#PBS -W group_list=mnh5174_collab" #default to having correct group
+  #"#PBS -M michael.hallquist@psu.edu", #job arrays generate one email per worker!! Too much pain
+  #"#PBS -m abe"
+  )
+}
+
+#setup default wall times for different steps
+if (use_job_array) {
+  mprage_walltime <- Sys.getenv("mprage_walltime")
+  if (mprage_walltime == "") { mprage_walltime <- "4:00:00" } # 4-hour max estimate for a single subject mprage to process
+  freesurfer_walltime <- Sys.getenv("freesurfer_walltime")
+  if (freesurfer_walltime == "") { freesurfer_walltime <- "54:00:00" } # 54-hour max estimate for a single subject freesurfer to process
+  functional_walltime <- Sys.getenv("functional_walltime")
+  if (functional_walltime == "") { functional_walltime <- "36:00:00" } # 36-hour max estimate for a single subject functional to process  
 }
 
 detect_refimg = as.numeric(Sys.getenv("detect_refimg")) #whether to pass raw directory to preprocessFunctional in order to detect refimg
 if (is.na(detect_refimg)) {
-    detect_refimg <- FALSE
+  detect_refimg <- FALSE
 } else if (detect_refimg == 1) {
-    detect_refimg <- TRUE
+  detect_refimg <- TRUE
 } else {
-    detect_refimg <- FALSE #should I trap other possibilities here?    
+  detect_refimg <- FALSE #should I trap other possibilities here?    
 }
 
 
@@ -86,9 +135,9 @@ preprocessMprage_call <- paste0(preprocessMprage_call, " -dicom \"", mprage_dico
 usegradunwarp=grepl("-grad_unwarp\\s+", preprocessMprage_call, perl=TRUE)
 gradunwarpsuffix=""
 if (usegradunwarp) {
-    message("Using structural -> MNI warp coefficients that include gradient undistortion: _withgdc.")
-    message("Also: assuming that all images provided to preprocessFunctional (incl. mprage and fieldmap) are not corrected for gradient disortion")
-    gradunwarpsuffix <- "_withgdc"
+  message("Using structural -> MNI warp coefficients that include gradient undistortion: _withgdc.")
+  message("Also: assuming that all images provided to preprocessFunctional (incl. mprage and fieldmap) are not corrected for gradient disortion")
+  gradunwarpsuffix <- "_withgdc"
 } 
 
 #optional config settings
@@ -104,7 +153,7 @@ useSEFieldmap = ifelse(nchar(se_phasepos_dirpattern) > 0, TRUE, FALSE) #whether 
 
 ##All of the above environment variables must be in place for script to work properly.
 if (any(c(mprage_dirpattern, preprocessed_dirname, paradigm_name, n_expected_funcruns, preproc_call) == "")) {
-    stop("Script expects system environment to contain the following variables: mprage_dirpattern, preprocessed_dirname, paradigm_name, n_expected_funcruns, preproc_call")
+  stop("Script expects system environment to contain the following variables: mprage_dirpattern, preprocessed_dirname, paradigm_name, n_expected_funcruns, preproc_call")
 }
 
 ##convert expected runs to numeric
@@ -121,54 +170,58 @@ cat("  Name of paradigm folder:", paradigm_name, ", expected runs:", n_expected_
 cat("  Prefer preprocessFunctional -resume for directories in process: ", as.character(preproc_resume), "\n")
 
 if (useOfflineMB) {
-    cat("  Using offline-reconstructed multiband data (Tae Kim Pittsburgh sequence)\n")
-    cat("  Expected name of offline-reconstructed multiband files:", mb_filepattern, "\n")
-    cat("  Directory containing MB-reconstructed files:", MB_src, "\n")
+  cat("  Using offline-reconstructed multiband data (Tae Kim Pittsburgh sequence)\n")
+  cat("  Expected name of offline-reconstructed multiband files:", mb_filepattern, "\n")
+  cat("  Directory containing MB-reconstructed files:", MB_src, "\n")
 }
 if (useGREFieldmap) {
-    cat("  Using GRE fieldmap correction\n")
-    cat("  Expected name of GRE fieldmap source directories:", gre_fieldmap_dirpattern, "\n")
-    cat("  Fieldmap configuration file:", fieldmap_cfg, "\n")
+  cat("  Using GRE fieldmap correction\n")
+  cat("  Expected name of GRE fieldmap source directories:", gre_fieldmap_dirpattern, "\n")
+  cat("  Fieldmap configuration file:", fieldmap_cfg, "\n")
 }
 if (useSEFieldmap) {
-    cat("  Using SE fieldmap correction via TOPUP\n")
-    cat("  Expected name of SE positive fieldmap source directories:", se_phasepos_dirpattern, "\n")
-    cat("  Expected name of SE negative fieldmap source directories:", se_phaseneg_dirpattern, "\n")
+  cat("  Using SE fieldmap correction via TOPUP\n")
+  cat("  Expected name of SE positive fieldmap source directories:", se_phasepos_dirpattern, "\n")
+  cat("  Expected name of SE negative fieldmap source directories:", se_phaseneg_dirpattern, "\n")
 }
-    
+if (use_job_array) {
+  cat("  Using a PBS array approach to queue preprocessing\n")
+  cat("  Maximum number of concurrent jobs:", njobs, "\n")
+  cat("  Walltime for single preprocessMprage:", mprage_walltime, "\n")
+  if (proc_freesurfer) { cat("  Walltime for freesurfer:", freesurfer_walltime, "\n") }
+  cat("  Walltime for single functional:", functional_walltime, "\n")
+  cat("  Basic setup for qsub scripts:\n")
+  cat(job_array_preamble, sep="\n")
+}
 cat("--------\n\n")
 
 ##handle all mprage directories
-##overload built-in list.dirs function to support pattern match
-list.dirs <- function(...) {
-    args <- as.list(match.call())[-1L] #first argument is call itself
-
-    if (! "recursive" %in% names(args)) { args$recursive <- TRUE } #default to recursive
-    if (! ("full.names" %in% names(args))) { args$full.names <- TRUE } #default to full names
-    if (! "path" %in% names(args)) { args$path <- getwd() #default to current directory
-                                 } else { args$path <- eval(args$path) }
-    args$include.dirs <- TRUE
-
-    flist <- do.call(list.files, args)
-
-    oldwd <- getwd()
-    if (args$full.names == FALSE) {
-        #cat("path: ", args$path, "\n")
-        setwd(args$path)
-    }
-    ##ensure that we only have directories (no files)
-    ##use unlist to remove any NULLs from elements that are not directories
-    dlist <- unlist(sapply(flist, function(x) { if (file.info(x)$isdir) { x } else { NULL } }, USE.NAMES = FALSE))
-    setwd(oldwd)
-    return(dlist) #will be null if no matches
-}
 
 ##find original mprage directories to rename
 ##mprage_dirs <- list.dirs(pattern=mprage_dirpattern)
 
-##Much faster on *nix-friendly systems than above because can control recursion depth
+##Much faster on *nix-friendly systems than above because can control search depth
 ##Note that the depth of 2 assumes a structure such as Project_Dir/SubjectID/mprage_dir where each subject has a single directory
 mprage_dirs <- system(paste0("find $PWD -mindepth 2 -maxdepth 2 -iname \"", mprage_dirpattern, "\" -type d"), intern=TRUE)
+subids <- basename(dirname(mprage_dirs)) #subject ids are used for checking for multiple mprage scans per subject
+mprage_dirs_byid <- split(mprage_dirs, subids)
+mprage_dirs <- unlist(lapply(mprage_dirs_byid, function(subject) {
+  #making assumptions that series numbers fall either first or last and that the last series number should be preferred
+  if (length(subject) > 1L) {
+    message("Multiple mprage folders identified for a single subject. Will prefer the one with the highest series number")
+    print(subject, row.names=FALSE)
+    have_leading_digits <- grepl("^\\d+.*", subject, perl=TRUE)
+    have_trailing_digits <- grepl(".*[^\\d]+\\d+$", subject, perl=TRUE)
+    if (all(have_trailing_digits)) {
+      #require at least one preceding non-digit character to avoid .* greedy matching all but last digit
+      sernum <- as.numeric(sub(".*[^\\d]+(\\d+)$", "\\1", subject, perl=TRUE))
+    } else if (all(have_leading_digits)) {
+      sernum <- as.numeric(sub("^(\\d+).*", "\\1", subject, perl=TRUE))
+    } else { stop("Unable to parse series numbers from inputs: ", subject) }
+
+    return(subject[which.max(sernum)])
+  } else { return(subject) }
+}))
 
 ##find all renamed mprage directories for processing
 ##use beginning and end of line markers to force exact match
@@ -178,32 +231,48 @@ mprage_dirs <- system(paste0("find $PWD -mindepth 2 -maxdepth 2 -iname \"", mpra
 ##faster than above
 ##mprage_dirs <- system("find $PWD -mindepth 2 -maxdepth 2 -type d -iname mprage", intern=TRUE)
 
-registerDoMC(njobs) #setup number of jobs to fork
-
 ##figure out which mprage scans need to be processed
 ##then process in parallel below
 mprage_toprocess <- c()
 for (d in mprage_dirs) {
-    subid <- basename(dirname(d))
-    outdir <- file.path(loc_mrproc_root, subid)
-    #should probably just use short circuit || here instead of compound if elses
-    if (!file.exists(outdir)) {
-        ##create preprocessed folder if absent
-        dir.create(outdir, showWarnings=FALSE, recursive=TRUE)
-        mprage_toprocess <- c(mprage_toprocess, d)
-    } else if (!file.exists(file.path(outdir, "mprage"))) {
-        #output directory exists, but mprage subdirectory does not
-        mprage_toprocess <- c(mprage_toprocess, d)
-    } else if (!file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {
-        #mprage subdirectory exists, but complete file does not
-        mprage_toprocess <- c(mprage_toprocess, d)
-    }
+  subid <- basename(dirname(d))
+  outdir <- file.path(loc_mrproc_root, subid)
+  #should probably just use short circuit || here instead of compound if elses
+  if (!file.exists(outdir)) {
+    ##create preprocessed folder if absent
+    dir.create(outdir, showWarnings=FALSE, recursive=TRUE)
+    mprage_toprocess <- c(mprage_toprocess, d)
+  } else if (!file.exists(file.path(outdir, "mprage")) ||   #output directory exists, but mprage subdirectory does not
+               !file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {   #mprage subdirectory exists, but complete file does not
+    mprage_toprocess <- c(mprage_toprocess, d)
+  }
 }
 
-cat("Mprage directories to be processed:\n")
-print(mprage_toprocess)
+#setup location for script outputs
+if (use_job_array) {
+  registerDoSEQ() #force sequential
+  scratchdir <- paste0("/gpfs/scratch/", system("whoami", intern=TRUE))
+  qsubdir <- tempfile(pattern="preprocessAll_", tmpdir=ifelse(dir.exists(scratchdir), scratchdir, execdir))
+  cat("  Directory for PBS job array files:", qsubdir, "\n")
+  dir.create(qsubdir, showWarnings=FALSE)
+  preproc_one <- c(
+    "#!/bin/bash",
+    "source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash #setup environment"
+  )
+} else {
+  registerDoMC(njobs) #setup number of jobs to fork
+}
 
-f <- foreach(d=mprage_toprocess, .inorder=FALSE) %dopar% {
+
+mprage_jobid <- NULL #for job array tracking
+if (length(mprage_toprocess) > 0L) {
+  
+  cat("About to process the following mprage directories:\n")
+  print(mprage_toprocess)
+
+  #preprocess mprage directories
+  f <- foreach(i=1:length(mprage_toprocess), .inorder=FALSE) %dopar% {
+    d <- mprage_toprocess[i]
     subid <- basename(dirname(d))
     outdir <- file.path(loc_mrproc_root, subid)
     
@@ -212,69 +281,102 @@ f <- foreach(d=mprage_toprocess, .inorder=FALSE) %dopar% {
     
     #call preprocessmprage
     if (file.exists(".preprocessmprage_complete")) {
-        #this should never fire given logic above
-        return("complete") #skip completed mprage directories
+      #this would only fire if the _complete file is created after the initial queue setup (very unlikely)
+      return("complete")
     } else {
-        if (file.exists("mprage.nii.gz")) {
-            preprocessMprage_call = sub("-dicom\\s+\\S+\\s+", "", preprocessMprage_call, perl=TRUE) #strip out call to dicom
-            preprocessMprage_call <- paste(preprocessMprage_call, "-nifti mprage.nii.gz")
-        }
-        
+      if (file.exists("mprage.nii.gz")) {
+        preprocessMprage_call = sub("-dicom\\s+\\S+\\s+", "", preprocessMprage_call, perl=TRUE) #strip out call to dicom
+        preprocessMprage_call <- paste(preprocessMprage_call, "-nifti mprage.nii.gz")
+      }
+
+      if (use_job_array) {
+        #create preprocessing script for the ith dataset
+        output_script <- c(preproc_one,
+                           paste("cd", file.path(outdir, "mprage")),
+                           paste("preprocessMprage", preprocessMprage_call, ">preprocessMprage_stdout 2>preprocessMprage_stderr"))
+        cat(output_script, sep="\n", file=file.path(qsubdir, paste0("qsub_one_preprocessMprage_", i)))
+      } else {
         ret_code <- system2("preprocessMprage", preprocessMprage_call, stderr="preprocessMprage_stderr", stdout="preprocessMprage_stdout")
-        if (ret_code != 0) { stop("preprocessMprage failed in directory: ", file.path(outdir, "mprage")) }
+        if (ret_code != 0) { message("preprocessMprage failed in directory: ", file.path(outdir, "mprage")) }
+      }
 
-        #echo current date/time to .preprocessmprage_complete to denote completed preprocessing
-        #NB: newer versions of preprocessMprage (Nov2016 and beyond) handle this internally
-        if (!file.exists(".preprocessmprage_complete")) {
-            sink(".preprocessmprage_complete"); cat(as.character(Sys.time())); sink()
-        }
+      #echo current date/time to .preprocessmprage_complete to denote completed preprocessing
+      #NB: newer versions of preprocessMprage (Nov2016 and beyond) handle this internally
+      if (!file.exists(".preprocessmprage_complete")) {
+        sink(".preprocessmprage_complete"); cat(as.character(Sys.time())); sink()
+      }
 
-        if (file.exists("need_analyze")) { unlink("need_analyze") } #remove dummy file
-        if (file.exists("analyze")) { unlink("analyze") } #remove dummy file
-
+      if (file.exists("need_analyze")) { unlink("need_analyze") } #remove dummy file
+      if (file.exists("analyze")) { unlink("analyze") } #remove dummy file
     }
     return(d)
+  }
+
+  if (use_job_array) {
+    #execute mprage array job
+    mprage_jobid <- exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=length(mprage_toprocess), jobprefix="qsub_one_preprocessMprage_",
+                                   allscript="qsub_all_mprage.bash", qsubdir=qsubdir, job_array_preamble=job_array_preamble, walltime=mprage_walltime)
+  }
 }
 
+#handle FreeSurfer preprocessing
+freesurfer_jobid <- NULL
 if (proc_freesurfer) {
-    #look for which subjects are already complete
-    fs_toproc <- c()
-    ids_toproc <- c()
-    for (d in mprage_dirs) {
-        subid <- basename(dirname(d))
-        outdir <- file.path(loc_mrproc_root, subid)
-        
-        if (!file.exists(file.path(outdir, "mprage"))) {
-            message("Cannot locate processed mprage data for: ", outdir)
-        } else if (!file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {
-            message("Cannot locate .preprocessmprage_complete in: ", outdir)
-        } else if (file.exists(file.path(fs_subjects_dir, paste0(freesurfer_id_prefix, subid)))) {
-            message("Skipping FreeSurfer pipeline for subject: ", subid)
-        } else {
-            fs_toproc <- c(fs_toproc, file.path(outdir, "mprage"))
-            ids_toproc <- c(ids_toproc, paste0(freesurfer_id_prefix, subid))
-        }
+  #look for which subjects are already complete
+  fs_toprocess <- c()
+  ids_toproc <- c()
+  for (d in mprage_dirs) {
+    subid <- basename(dirname(d))
+    outdir <- file.path(loc_mrproc_root, subid)
+    
+    if (!file.exists(file.path(outdir, "mprage"))) {
+      message("Cannot locate processed mprage data for: ", outdir)
+    } else if (!file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {
+      message("Cannot locate .preprocessmprage_complete in: ", outdir)
+    } else if (file.exists(file.path(fs_subjects_dir, paste0(freesurfer_id_prefix, subid)))) {
+      message("Skipping FreeSurfer pipeline for subject: ", subid)
+    } else {
+      fs_toprocess <- c(fs_toprocess, file.path(outdir, "mprage"))
+      ids_toproc <- c(ids_toproc, paste0(freesurfer_id_prefix, subid))
+    }
+  }
+
+  if (length(fs_toprocess) > 0) {
+    message("About to run FreeSurfer pipeline on the following datasets:")
+    cat(fs_toprocess, sep="\n")
+    
+    f <- foreach(d=1:length(fs_toprocess), .inorder=FALSE) %dopar% {
+      setwd(fs_toprocess[d])
+      #use the gradient distortion-corrected files if available
+      t1 <- ifelse(file.exists("mprage_biascorr_postgdc.nii.gz"), "mprage_biascorr_postgdc.nii.gz", "mprage_biascorr.nii.gz")
+      t1brain <- ifelse(file.exists("mprage_bet_postgdc.nii.gz"), "mprage_bet_postgdc.nii.gz", "mprage_bet.nii.gz")
+      freesurfer_call <- paste0("-T1 ", t1, " -T1brain ", t1brain, " -subject ", ids_toproc[d], " -subjectDir ", fs_subjects_dir)
+      if (use_job_array) {
+        #create preprocessing script for the ith dataset
+        output_script <- c(preproc_one,
+                           paste("cd", fs_toprocess[d]),
+                           paste("FreeSurferPipeline", freesurfer_call, ">FreeSurferPipeline_stdout 2>FreeSurferPipeline_stderr"))
+        cat(output_script, sep="\n", file=file.path(qsubdir, paste0("qsub_one_FreeSurferPipeline_", d)))
+      } else {              
+        ret_code <- system2("FreeSurferPipeline", args=freesurfer_call,
+                            stderr="FreeSurferPipeline_stderr", stdout="FreeSurferPipeline_stdout")
+        if (ret_code != 0) { stop("FreeSurferPipeline failed in directory: ", fs_toprocess[d]) }
+      }
     }
 
-    if (length(fs_toproc) > 0) {
-        message("About to run FreeSurfer pipeline on the following datasets:")
-        print(fs_toproc)
-        
-        f <- foreach(d=1:length(fs_toproc), .inorder=FALSE) %dopar% {
-            setwd(fs_toproc[d])
-            #use the gradient distortion-corrected files if available
-            t1 <- ifelse(file.exists("mprage_biascorr_postgdc.nii.gz"), "mprage_biascorr_postgdc.nii.gz", "mprage_biascorr.nii.gz")
-            t1brain <- ifelse(file.exists("mprage_bet_postgdc.nii.gz"), "mprage_bet_postgdc.nii.gz", "mprage_bet.nii.gz")
-            ret_code <- system2("FreeSurferPipeline", paste0("-T1 ", t1, " -T1brain ", t1brain, " -subject ", ids_toproc[d], " -subjectDir ", fs_subjects_dir),
-                                stderr="FreeSurferPipeline_stderr", stdout="FreeSurferPipeline_stdout")
-            if (ret_code != 0) { stop("FreeSurferPipeline failed in directory: ", fs_toproc[d]) }            
-        }
+    if (use_job_array) {
+      #execute freesurfer array job
+      freesurfer_jobid <- exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=length(fs_toprocess), qsubdir=qsubdir,
+                                         jobprefix="qsub_one_FreeSurferPipeline_", allscript="qsub_all_freesurfer.bash",
+                                         waitfor=mprage_jobid, job_array_preamble=job_array_preamble, walltime=freesurfer_walltime)
     }
+  }
 }
+
 
 if (!proc_functional) {
-    cat("Ending preprocessAll.R because proc_functional is FALSE (i.e., we are all done)\n\n")
-    quit(save="no", status=0)
+  cat("Ending preprocessAll.R because proc_functional is FALSE (i.e., we are all done)\n\n")
+  quit(save="no", status=0)
 }
 
 #get list of subject directories in root directory
@@ -288,285 +390,329 @@ functional_src_queue <- c() #original run directories in MR_Raw to be copied
 functional_dest_queue <- c() #destination targets of raw data
 
 for (d in subj_dirs) {
-    cat("\n------\nProcessing subject: ", d, "\n")
-    setwd(d)
+  cat("\n------\nProcessing subject: ", d, "\n")
+  setwd(d)
 
-    subid <- basename(d)
+  subid <- basename(d)
 
-    ##define root directory for subject's processed data
-    if (loc_mrproc_root == "") {
-        ##assume that we should create a subdirectory relative to the subject directory
-        outdir <- file.path(d, preprocessed_dirname) #e.g., /gpfs/group/mnh5174/default/MMClock/MR_Raw/10637/MBclock_recon
-    } else {
-        outdir <- file.path(loc_mrproc_root, subid, preprocessed_dirname) #e.g., /gpfs/group/mnh5174/default/MMClock/MR_Proc/10637/native_nosmooth
+  ##define root directory for subject's processed data
+  if (loc_mrproc_root == "") {
+    ##assume that we should create a subdirectory relative to the subject directory
+    outdir <- file.path(d, preprocessed_dirname) #e.g., /gpfs/group/mnh5174/default/MMClock/MR_Raw/10637/MBclock_recon
+  } else {
+    outdir <- file.path(loc_mrproc_root, subid, preprocessed_dirname) #e.g., /gpfs/group/mnh5174/default/MMClock/MR_Proc/10637/native_nosmooth
+  }
+
+  #determine directories for fieldmap if using
+  fmdirs <- NULL
+  magdir <- phasedir <- NA_character_ #reduce risk of accidentally carrying over fieldmap from one subject to next in loop
+  if (useGREFieldmap) {
+    ##determine phase versus magnitude directories for fieldmap
+    ##in runs so far, magnitude comes first. preprocessFunctional should handle properly if we screw this up...
+    fmdirs <- sort(normalizePath(Sys.glob(file.path(d, gre_fieldmap_dirpattern))))
+    if (length(fmdirs) == 2L) {
+      apply_fieldmap <- TRUE
+      magdir <- file.path(loc_mrproc_root, subid, "fieldmap_magnitude")
+      phasedir <- file.path(loc_mrproc_root, subid, "fieldmap_phase")
+      if (!file.exists(magdir)) { system(paste("cp -Rp", fmdirs[1], magdir)) } #copy untouched magdir to processed directory
+      if (!file.exists(phasedir)) { system(paste("cp -Rp", fmdirs[2], phasedir)) } #copy untouched phasedir to processed directory
+      magdir <- file.path(magdir, "MR*") #add dicom pattern at end to be picked up by preprocessFunctional
+      phasedir <- file.path(phasedir, "MR*")
+    } else { stop("In ", d, ", number of fieldmap dirs is not 2: ", paste0(fmdirs, collapse=", ")) }
+  }
+
+  posdir <- negdir <- NA_character_ #reduce risk of accidentally carrying over fieldmap from one subject to next in loop
+  if (useSEFieldmap) {
+    fmdirspos <- sort(normalizePath(Sys.glob(file.path(d, se_phasepos_dirpattern))))
+    fmdirsneg <- sort(normalizePath(Sys.glob(file.path(d, se_phaseneg_dirpattern)))) 
+    if (length(fmdirspos)==1L && length(fmdirsneg)==1L) {
+      apply_fieldmap <- TRUE
+      posdir <- file.path(loc_mrproc_root, subid, "positive_spinecho")
+      negdir <- file.path(loc_mrproc_root, subid, "negative_spinecho")
+      if (!file.exists(posdir)) { system(paste("cp -Rp", fmdirspos[1], posdir)) }
+      if (!file.exists(negdir)) { system(paste("cp -Rp", fmdirsneg[1], negdir)) }
+      posdir <- file.path(posdir, se_phasepos_dicompattern)
+      negdir <- file.path(negdir, se_phaseneg_dicompattern)
+    } else { stop("In ", d, ", number of SE dirs is not 2: ", paste0(fmdirspos, fmdirsneg, collapse=", ")) }
+  }
+  
+  mpragedir <- file.path(loc_mrproc_root, subid, "mprage")
+  if (file.exists(mpragedir)) {
+    if (! (file.exists(file.path(mpragedir, paste0("mprage_warpcoef", gradunwarpsuffix, ".nii.gz"))) && file.exists(file.path(mpragedir, "mprage_bet.nii.gz")) ) ) {
+      stop("Unable to locate required mprage files in dir: ", mpragedir)
+    }
+  } else {
+    stop ("Unable to locate mprage directory: ", mpragedir)
+  }
+  
+  ##create paradigm_run1-paradigm_run<N> folder structure and copy raw data
+  if (!file.exists(outdir)) { #create preprocessed root folder if absent
+    dir.create(outdir, showWarnings=FALSE, recursive=TRUE)
+  } else {
+    ##preprocessed folder exists, check for .preprocessfunctional_complete files
+    extant_funcrundirs <- list.dirs(path=outdir, pattern=paste0("^", paradigm_name,"[0-9]+$"), full.names=TRUE, recursive=FALSE)
+    if (length(extant_funcrundirs) > 0L &&
+          length(extant_funcrundirs) >= n_expected_funcruns &&
+          all(sapply(extant_funcrundirs, function(x) { file.exists(file.path(x, ".preprocessfunctional_complete")) }))) {
+      cat("   preprocessing already complete for all functional run directories in: ", outdir, "\n\n")
+      next
+    }
+  }
+
+  #Handle the use of offline-reconstructed hdr/img files as the starting point of preprocessFunctional (Tae Kim Pittsburgh data)
+  if (useOfflineMB) {
+    ##identify original reconstructed flies for this subject
+    mbraw_dirs <- list.dirs(path=MB_src, recursive = FALSE, full.names=FALSE) #all original recon directories, leave off full names for grep
+
+    message("Searching for offline-reconstructed MB images")
+
+    ##approximate grep is leading to problems with near matches!!
+    ##example: 11263_20140307; WPC5640_11253_20140308
+    ##srcmatch <- agrep(subid, mbraw_dirs, max.distance = 0.1, ignore.case = TRUE)[1L] #approximate id match in MRRC directory
+
+    srcmatch <- grep(subid, mbraw_dirs, ignore.case = TRUE)[1L] #id match in MRRC directory
+    
+    if (is.na(srcmatch)) {
+      warning("Unable to identify reconstructed images for id: ", subid, " in MB source directory: ", MB_src)
+      next #skip this subject
     }
 
-    #determine directories for fieldmap if using
-    fmdirs <- NULL
-    magdir <- phasedir <- NA_character_ #reduce risk of accidentally carrying over fieldmap from one subject to next in loop
-    if (useGREFieldmap) {
-        ##determine phase versus magnitude directories for fieldmap
-        ##in runs so far, magnitude comes first. preprocessFunctional should handle properly if we screw this up...
-        fmdirs <- sort(normalizePath(Sys.glob(file.path(d, gre_fieldmap_dirpattern))))
-        if (length(fmdirs) == 2L) {
-            apply_fieldmap <- TRUE
-            magdir <- file.path(loc_mrproc_root, subid, "fieldmap_magnitude")
-            phasedir <- file.path(loc_mrproc_root, subid, "fieldmap_phase")
-            if (!file.exists(magdir)) { system(paste("cp -Rp", fmdirs[1], magdir)) } #copy untouched magdir to processed directory
-            if (!file.exists(phasedir)) { system(paste("cp -Rp", fmdirs[2], phasedir)) } #copy untouched phasedir to processed directory
-            magdir <- file.path(magdir, "MR*") #add dicom pattern at end to be picked up by preprocessFunctional
-            phasedir <- file.path(phasedir, "MR*")
-        } else { stop("In ", d, ", number of fieldmap dirs is not 2: ", paste0(fmdirs, collapse=", ")) }
-    }
+    srcdir <- file.path(MB_src, mbraw_dirs[srcmatch])
+    cat("Matched with MB src directory: ", srcdir, "\n")
+    mbfiles <- list.files(path=srcdir, pattern=mb_filepattern, full.names = TRUE) #images to copy
 
-    posdir <- negdir <- NA_character_ #reduce risk of accidentally carrying over fieldmap from one subject to next in loop
-    if (useSEFieldmap) {
-       fmdirspos <- sort(normalizePath(Sys.glob(file.path(d, se_phasepos_dirpattern))))
-       fmdirsneg <- sort(normalizePath(Sys.glob(file.path(d, se_phaseneg_dirpattern)))) 
-       if (length(fmdirspos)==1L && length(fmdirsneg)==1L) {
-           apply_fieldmap <- TRUE
-           posdir <- file.path(loc_mrproc_root, subid, "positive_spinecho")
-           negdir <- file.path(loc_mrproc_root, subid, "negative_spinecho")
-           if (!file.exists(posdir)) { system(paste("cp -Rp", fmdirspos[1], posdir)) }
-           if (!file.exists(negdir)) { system(paste("cp -Rp", fmdirsneg[1], negdir)) }
-           posdir <- file.path(posdir, se_phasepos_dicompattern)
-           negdir <- file.path(negdir, se_phaseneg_dicompattern)
-       } else { stop("In ", d, ", number of SE dirs is not 2: ", paste0(fmdirspos, fmdirsneg, collapse=", ")) }
+    if (length(mbfiles) == 0L) {
+      warning("No multiband reconstructed data for: ", subid, " in MB source directory: ", MB_src)
+      next #skip this subject
     }
     
-    mpragedir <- file.path(loc_mrproc_root, subid, "mprage")
-    if (file.exists(mpragedir)) {
-        if (! (file.exists(file.path(mpragedir, paste0("mprage_warpcoef", gradunwarpsuffix, ".nii.gz"))) && file.exists(file.path(mpragedir, "mprage_bet.nii.gz")) ) ) {
-            stop("Unable to locate required mprage files in dir: ", mpragedir)
-        }
-    } else {
-        stop ("Unable to locate mprage directory: ", mpragedir)
-    }
-    
-    ##create paradigm_run1-paradigm_run<N> folder structure and copy raw data
-    if (!file.exists(outdir)) { #create preprocessed root folder if absent
-        dir.create(outdir, showWarnings=FALSE, recursive=TRUE)
-    } else {
-        ##preprocessed folder exists, check for .preprocessfunctional_complete files
-        extant_funcrundirs <- list.dirs(path=outdir, pattern=paste0("^", paradigm_name,"[0-9]+$"), full.names=TRUE, recursive=FALSE)
-        if (length(extant_funcrundirs) > 0L &&
-            length(extant_funcrundirs) >= n_expected_funcruns &&
-            all(sapply(extant_funcrundirs, function(x) { file.exists(file.path(x, ".preprocessfunctional_complete")) }))) {
-            cat("   preprocessing already complete for all functional run directories in: ", outdir, "\n\n")
-            next
-        }
-    }
+    refimgs <- sub("_MB.hdr", "_ref.hdr", mbfiles, fixed=TRUE)
+    ##figure out run numbers based on file names
+    ##there is some variability in how files are named.
+    ## v1: ep2d_MB_clock1_MB.hdr
+    ## v2: ep2d_MB_clock1_8_MB.hdr (ambiguous!)
+    ## v3: ep2d_MB_clock_1_MB.hdr
+    ## occasionally "Eclock"?
 
-    #Handle the use of offline-reconstructed hdr/img files as the starting point of preprocessFunctional (Tae Kim Pittsburgh data)
-    if (useOfflineMB) {
-        ##identify original reconstructed flies for this subject
-        mbraw_dirs <- list.dirs(path=MB_src, recursive = FALSE, full.names=FALSE) #all original recon directories, leave off full names for grep
+    ##Note that this is only working for files with clock in the name and with the naming scheme below
+    ##Should probably move this to cfg file for generality, but no motivation at the moment.
+    if (grepl("clock", mb_filepattern, fixed=TRUE)) {
+      
+      runnums <- sub("^.*ep2d_MB_E?clock(\\d?)_?(\\d?)_?(_FID)*.*_MB.hdr$",
+                     "\\1 \\2", mbfiles, perl=TRUE, ignore.case = TRUE)
 
-	message("Searching for offline-reconstructed MB images")
+      run_split <- strsplit(runnums, "\\s+", perl=TRUE)
+      run_lens <- sapply(run_split, length)
 
-        ##approximate grep is leading to problems with near matches!!
-        ##example: 11263_20140307; WPC5640_11253_20140308
-        ##srcmatch <- agrep(subid, mbraw_dirs, max.distance = 0.1, ignore.case = TRUE)[1L] #approximate id match in MRRC directory
+      if (any(run_lens > 1L)) {
+        ##at least one file name contains two potential run numbers
+        ##if any file has just one run number, duplicate it for comparison
+        run_split <- lapply(run_split, function(x) { if(length(x) == 1L) { c(x,x) } else { x } } )
 
-        srcmatch <- grep(subid, mbraw_dirs, ignore.case = TRUE)[1L] #id match in MRRC directory
-        
-        if (is.na(srcmatch)) {
-            warning("Unable to identify reconstructed images for id: ", subid, " in MB source directory: ", MB_src)
-            next #skip this subject
-        }
+        ##determine which potential run number contains unique information
+        R1 <- unique(sapply(run_split, "[[", 1))
+        R2 <- unique(sapply(run_split, "[[", 2))
 
-        srcdir <- file.path(MB_src, mbraw_dirs[srcmatch])
-        cat("Matched with MB src directory: ", srcdir, "\n")
-        mbfiles <- list.files(path=srcdir, pattern=mb_filepattern, full.names = TRUE) #images to copy
-
-        if (length(mbfiles) == 0L) {
-            warning("No multiband reconstructed data for: ", subid, " in MB source directory: ", MB_src)
-            next #skip this subject
-        }
-        
-        refimgs <- sub("_MB.hdr", "_ref.hdr", mbfiles, fixed=TRUE)
-        ##figure out run numbers based on file names
-        ##there is some variability in how files are named.
-        ## v1: ep2d_MB_clock1_MB.hdr
-        ## v2: ep2d_MB_clock1_8_MB.hdr (ambiguous!)
-        ## v3: ep2d_MB_clock_1_MB.hdr
-        ## occasionally "Eclock"?
-
-        ##Note that this is only working for files with clock in the name and with the naming scheme below
-        ##Should probably move this to cfg file for generality, but no motivation at the moment.
-        if (grepl("clock", mb_filepattern, fixed=TRUE)) {
-            
-            runnums <- sub("^.*ep2d_MB_E?clock(\\d?)_?(\\d?)_?(_FID)*.*_MB.hdr$",
-                           "\\1 \\2", mbfiles, perl=TRUE, ignore.case = TRUE)
-
-            run_split <- strsplit(runnums, "\\s+", perl=TRUE)
-            run_lens <- sapply(run_split, length)
-
-            if (any(run_lens > 1L)) {
-                ##at least one file name contains two potential run numbers
-                ##if any file has just one run number, duplicate it for comparison
-                run_split <- lapply(run_split, function(x) { if(length(x) == 1L) { c(x,x) } else { x } } )
-
-                ##determine which potential run number contains unique information
-                R1 <- unique(sapply(run_split, "[[", 1))
-                R2 <- unique(sapply(run_split, "[[", 2))
-
-                if (length(unique(R1)) > length(unique(R2))) {
-                    runnums <- R1
-                } else {
-                    runnums <- R2
-                }            
-            }
-            
-            if (length(runnums) > length(unique(runnums))) {
-                print(mbfiles)
-                stop("Duplicate run numbers detected.")
-            }
-
+        if (length(unique(R1)) > length(unique(R2))) {
+          runnums <- R1
         } else {
-            runnums <- 1 #single run for rest (bit of a hack here)
-        }
-        
-        runnums <- as.numeric(runnums)
-        if (any(is.na(runnums))) { stop ("Unable to determine run numbers:", runnums) }
-
-        cat("Detected run numbers, MB Files:\n")
-        print(cbind(runnum=runnums, mbfile=mbfiles))
-        
-        ##loop over files and setup run directories in preprocessed_dirname
-        for (m in 1:length(mbfiles)) {
-            ##only copy data if folder does not exist
-            if (!file.exists(file.path(outdir, paste0(paradigm_name, runnums[m])))) {
-                dir.create(file.path(outdir, paste0(paradigm_name, runnums[m])))
-                
-                ##Check for existence of unprocessed MB reconstructed NIfTI. If doesn't exist, add to copy queue
-                expectedNIfTI <- file.path(outdir, paste0(paradigm_name, runnums[m]), paste0(paradigm_name, runnums[m], ".nii.gz"))
-		cat("Searching for file: ", expectedNIfTI, "\n")
-                if (!file.exists(expectedNIfTI)) {
-                    mb_src_queue <- c(mb_src_queue, mbfiles[m])
-                    mb_dest_queue <- c(mb_dest_queue, expectedNIfTI)
-                }
-            }
-        }
-
-        ##add all functional runs, along with mprage and fmap info, as a data.frame to the list
-        all_funcrun_dirs[[d]] <- data.frame(funcdir=list.dirs(pattern=paste0(paradigm_name, "[0-9]+$"), path=outdir, recursive = FALSE),
-                                        refimgs=refimgs, magdir=magdir, phasedir=phasedir, posdir=posdir, negdir=negdir, mpragedir=mpragedir, stringsAsFactors=FALSE)
+          runnums <- R2
+        }            
+      }
+      
+      if (length(runnums) > length(unique(runnums))) {
+        print(mbfiles)
+        stop("Duplicate run numbers detected.")
+      }
 
     } else {
-        ##check for existing run directories and setup copy queue as needed
-
-        funcdirs <- sort(normalizePath(Sys.glob(file.path(d, functional_dirpattern))))
-
-        if (length(funcdirs) == 0L) {
-            message("Cannot find any functional runs directories in ", d, " for pattern ", functional_dirpattern)
-            message("Skipping participant for now")
-            next
-        } else if (length(funcdirs) != n_expected_funcruns) {
-            message("Cannot find the expected number of functional run directories in ", d, " for pattern ", functional_dirpattern)
-            message("Skipping participant for now")
-            next
-        }
-
-        rundirs <- c()
-        for (r in 1:n_expected_funcruns) {
-            rundir <- file.path(outdir, paste0(paradigm_name, r))
-            rundirs <- c(rundirs, rundir)
-            if (!file.exists(rundir)) {
-                ##for now, the script only handles the case where the whole directory is missing
-                ##below is some scaffolding for a more sophisticated variant that checks for the unprocessed NIfTI etc.
-                ##but not going to put in time to perfect it right now
-
-                ##expectedNIfTI <- file.path(outdir, paste0(paradigm_name, r), paste0(paradigm_name, r, ".nii.gz"))
-		##cat("Searching for file: ", expectedNIfTI, "\n")
-                ##if (!file.exists(expectedNIfTI)) {
-                ##    ##Check for existence of at least one matching DICOM file in folder (in case DICOM->NIfTI hasn't run yet)
-                ##    ndicoms <- list.files(path=file.path(outdir, paste0(paradigm_name, r)), pattern=functional_dicompattern, full.names = TRUE)
-                ##    if (length(ndicoms==0L)) {
-                ##        message("Cannot find matching DICOMs in directory", 
-                ##    }
-
-                ##add raw DICOM directory to copy queue
-                ##dir.create(rundir) #create empty run directory for now
-                functional_src_queue <- c(functional_src_queue, funcdirs[r])
-                functional_dest_queue <- c(functional_dest_queue, rundir)
-            }
-        }
-
-        if (detect_refimg) {
-            refimgs <- d #pass forward subject's raw directory to preprocessFunctional to have refimg detected
-        } else  {
-            refimgs <- NA #need to handle Prisma CMRR MB data here where reference images are placed in separate directory
-            ##because of the unsophisticated cp -rp approach for dicoms, we cannot do the dir.create step above and then
-            ##list.dirs below. This works in the MB case because of the more careful checks on number of runs etc.
-        }
-        
-        all_funcrun_dirs[[d]] <- data.frame(funcdir=rundirs, refimgs=refimgs, magdir=magdir, phasedir=phasedir, posdir=posdir, negdir=negdir, mpragedir=mpragedir, stringsAsFactors=FALSE)
-
+      runnums <- 1 #single run for rest (bit of a hack here)
     }
     
+    runnums <- as.numeric(runnums)
+    if (any(is.na(runnums))) { stop ("Unable to determine run numbers:", runnums) }
+
+    cat("Detected run numbers, MB Files:\n")
+    print(cbind(runnum=runnums, mbfile=mbfiles))
+
+    subjdf <- c()
+    ##loop over files and setup run directories in preprocessed_dirname
+    for (m in 1:length(mbfiles)) {
+      ##only copy data if folder does not exist
+      funcdir <- file.path(outdir, paste0(paradigm_name, runnums[m]))
+      funcnifti <- paste0(paradigm_name, runnums[m], ".nii.gz")
+      expectedNIfTI <- file.path(funcdir, funcnifti)
+      
+      if (!file.exists(funcdir)) {
+        dir.create(funcdir)
+        
+        ##Check for existence of unprocessed MB reconstructed NIfTI. If doesn't exist, add to copy queue
+
+        cat("Searching for file: ", expectedNIfTI, "\n")
+        if (!file.exists(expectedNIfTI)) {
+          mb_src_queue <- c(mb_src_queue, mbfiles[m])
+          mb_dest_queue <- c(mb_dest_queue, expectedNIfTI)
+        }
+      }
+
+      subjdf <- rbind(subjdf, data.frame(funcdir=funcdir, funcnifti=funcnifti, refimgs=refimgs, magdir=magdir, phasedir=phasedir, posdir=posdir, negdir=negdir, mpragedir=mpragedir, stringsAsFactors=FALSE))
+    }
+
+    ##add all functional runs, along with mprage and fmap info, as a data.frame to the list
+    all_funcrun_dirs[[d]] <- subjdf
+
+  } else {
+    ##check for existing run directories and setup copy queue as needed
+    funcdirs <- sort(normalizePath(Sys.glob(file.path(d, functional_dirpattern))))
+
+    if (length(funcdirs) == 0L) {
+      message("Cannot find any functional runs directories in ", d, " for pattern ", functional_dirpattern)
+      message("Skipping participant for now")
+      next
+    } else if (length(funcdirs) != n_expected_funcruns) {
+      message("Cannot find the expected number of functional run directories in ", d, " for pattern ", functional_dirpattern)
+      message("Skipping participant for now")
+      next
+    }
+
+    if (detect_refimg) {
+      refimgs <- d #pass forward subject's raw directory to preprocessFunctional to have refimg detected
+    } else  {
+      refimgs <- NA #need to handle Prisma CMRR MB data here where reference images are placed in separate directory
+      ##because of the unsophisticated cp -rp approach for dicoms, we cannot do the dir.create step above and then
+      ##list.dirs below. This works in the MB case because of the more careful checks on number of runs etc.
+    }
+    
+    subjdf <- c()
+    for (r in 1:n_expected_funcruns) {
+
+      funcdir <- file.path(outdir, paste0(paradigm_name, r))
+      funcnifti <- paste0(paradigm_name, r, ".nii.gz")
+      expectedNIfTI <- file.path(funcdir, funcnifti)
+      
+      if (!file.exists(funcdir)) {
+        ##for now, the script only handles the case where the whole directory is missing
+        ##below is some scaffolding for a more sophisticated variant that checks for the unprocessed NIfTI etc.
+        ##but not going to put in time to perfect it right now
+
+        ##expectedNIfTI <- file.path(outdir, paste0(paradigm_name, r), paste0(paradigm_name, r, ".nii.gz"))
+        ##cat("Searching for file: ", expectedNIfTI, "\n")
+        ##if (!file.exists(expectedNIfTI)) {
+        ##    ##Check for existence of at least one matching DICOM file in folder (in case DICOM->NIfTI hasn't run yet)
+        ##    ndicoms <- list.files(path=file.path(outdir, paste0(paradigm_name, r)), pattern=functional_dicompattern, full.names = TRUE)
+        ##    if (length(ndicoms==0L)) {
+        ##        message("Cannot find matching DICOMs in directory", 
+        ##    }
+
+        ##add raw DICOM directory to copy queue
+        ##dir.create(funcdir) #create empty run directory for now
+        functional_src_queue <- c(functional_src_queue, funcdirs[r])
+        functional_dest_queue <- c(functional_dest_queue, funcdir)
+      }
+
+      subjdf <- rbind(subjdf, data.frame(funcdir=funcdir, funcnifti=funcnifti, refimgs=refimgs, magdir=magdir, phasedir=phasedir, posdir=posdir, negdir=negdir, mpragedir=mpragedir, stringsAsFactors=FALSE))
+    }
+    
+    all_funcrun_dirs[[d]] <- subjdf
+  }  
 }
 
-if (useOfflineMB) {    
-    message("Copy destination queue")
-    print(mb_dest_queue)
+#handle functional file i/o before initiating preprocessFunctional
+queue_copy_jobid <- NULL
+if (useOfflineMB) {
+  ##copy any needed MB reconstructed NIfTIs into place
 
-    ##copy any needed MB reconstructed NIfTIs into place
-    ##for now, arbitrarily copy 12 at a time for a reasonable level of disk I/O
-    if (length(mb_src_queue) > 0L) {
-        registerDoMC(12) #setup number of jobs to fork
-        message("Copying MB reconstructed files into place.")
-        print(data.frame(src=mb_src_queue, dest=mb_dest_queue), row.names=FALSE)
-        f <- foreach(fnum=1:length(mb_src_queue), .inorder=FALSE) %dopar% {
-            ##use 3dcopy to copy dataset as .nii.gz
-            system(paste0("3dcopy \"", mb_src_queue[fnum], "\" \"", mb_dest_queue[fnum], "\""), wait=TRUE)     
-        }
-    }
+  if (length(mb_src_queue) > 0L) {
+    message("Copying MB reconstructed files into place.")
+    print(data.frame(src=mb_src_queue, dest=mb_dest_queue), row.names=FALSE)
+
+    if (use_job_array) {
+      queue_copy_jobid <- exec_pbs_iojob(mb_src_queue, mb_dest_queue, cpcmd="3dcopy", njobs=12, qsubdir=qsubdir)
+    } else {
+      ##for now, arbitrarily copy 12 at a time for a reasonable level of disk I/O
+      registerDoMC(12) #setup number of jobs to fork
+      f <- foreach(fnum=1:length(mb_src_queue), .inorder=FALSE) %dopar% {
+        ##use 3dcopy to copy dataset as .nii.gz
+        system(paste0("3dcopy \"", mb_src_queue[fnum], "\" \"", mb_dest_queue[fnum], "\""), wait=TRUE)     
+      }
+    }   
+  }
 } else {
-    if (length(functional_src_queue) > 0L) {
-        registerDoMC(12)
-        message("Copying raw DICOM folders into place")
-        print(data.frame(src=functional_src_queue, dest=functional_dest_queue), row.names=FALSE)
-        f <- foreach(fnum=1:length(functional_src_queue), .inorder=FALSE) %dopar% {
-            system(paste0("cp -Rp \"", functional_src_queue[fnum], "\" \"", functional_dest_queue[fnum], "\""), wait=TRUE)     
-        }
+  if (length(functional_src_queue) > 0L) {
+    message("Copying raw DICOM folders into place")
+    print(data.frame(src=functional_src_queue, dest=functional_dest_queue), row.names=FALSE)
+
+    if (use_job_array) {
+      queue_copy_jobid <- exec_pbs_iojob(functional_src_queue, functional_dest_queue, cpcmd="cp -Rp", njobs=12, qsubdir=qsubdir)
+    } else {
+      registerDoMC(12)
+      f <- foreach(fnum=1:length(functional_src_queue), .inorder=FALSE) %dopar% {
+        system(paste0("cp -Rp \"", functional_src_queue[fnum], "\" \"", functional_dest_queue[fnum], "\""), wait=TRUE)     
+      }
     }
+  }
 }
 
 #rbind data frame together
 all_funcrun_dirs <- do.call(rbind, all_funcrun_dirs)
 row.names(all_funcrun_dirs) <- NULL
 
-registerDoMC(njobs) #setup number of jobs to fork
-#loop over directories to process
-##for (cd in all_funcrun_dirs) {
-f <- foreach(cd=iter(all_funcrun_dirs, by="row"), .inorder=FALSE) %dopar% {
+#re-register parallel backend since it was set to 12 just above (ideally, the copying should be outsourced to a function)
+if (use_job_array) {
+  registerDoSEQ() #force sequential
+} else {
+  registerDoMC(njobs) #setup number of jobs to fork
+}
+    
+if (nrow(all_funcrun_dirs) > 0L) {
+  #loop over directories to process
+  ##for (cd in all_funcrun_dirs) {
+  f <- foreach(i=1:nrow(all_funcrun_dirs), .inorder=FALSE) %dopar% {
+    cd <- all_funcrun_dirs[i,]
     setwd(cd$funcdir)
 
     resumepart <- funcpart <- mpragepart <- fmpart <- separt <- refimgpart <- ""
     if (file.exists(".preprocessfunctional_incomplete") && preproc_resume) {
-        resumepart <- "-resume"
-        preproc_call <- "" #clear other settings
+      resumepart <- "-resume"
+      preproc_call <- "" #clear other settings
     } else {
-        if (useOfflineMB) {
-            funcpart <- paste("-4d", Sys.glob(paste0(paradigm_name, "*.nii.gz")))
-        } else {
-            funcpart <- paste0("-dicom \"", functional_dicompattern, "\" -delete_dicom archive -output_basename ", basename(cd$funcdir)) #assuming archive here
-        }
-    
-        mpragepart <- paste("-mprage_bet", file.path(cd$mpragedir, "mprage_bet.nii.gz"), "-warpcoef", file.path(cd$mpragedir, paste0("mprage_warpcoef", gradunwarpsuffix, ".nii.gz")))
+      if (useOfflineMB) {
+        funcpart <- paste("-4d", cd$funcnifti)
+      } else {
+        funcpart <- paste0("-dicom \"", functional_dicompattern, "\" -delete_dicom archive -output_basename ", basename(cd$funcdir)) #assuming archive here
+      }
+      
+      mpragepart <- paste("-mprage_bet", file.path(cd$mpragedir, "mprage_bet.nii.gz"), "-warpcoef", file.path(cd$mpragedir, paste0("mprage_warpcoef", gradunwarpsuffix, ".nii.gz")))
 
-        if (!is.na(cd$magdir)) { fmpart <- paste0("-fm_phase \"", cd$phasedir, "\" -fm_magnitude \"", cd$magdir, "\" -fm_cfg ", fieldmap_cfg) }
+      if (!is.na(cd$magdir)) { fmpart <- paste0("-fm_phase \"", cd$phasedir, "\" -fm_magnitude \"", cd$magdir, "\" -fm_cfg ", fieldmap_cfg) }
 
-        #-epi_pedir and -epi_echospacing need to be specified in preproc_call of config file
-        if (!is.na(cd$posdir)) { separt <- paste0("-se_phasepos \"", cd$posdir, "\" -se_phaseneg \"", cd$negdir, "\"") }
-        
-        if (!is.na(cd$refimgs)) { refimgpart <- paste0("-func_refimg \"", cd$refimgs, "\" ") }
+      #-epi_pedir and -epi_echospacing need to be specified in preproc_call of config file
+      if (!is.na(cd$posdir)) { separt <- paste0("-se_phasepos \"", cd$posdir, "\" -se_phaseneg \"", cd$negdir, "\"") }
+      
+      if (!is.na(cd$refimgs)) { refimgpart <- paste0("-func_refimg \"", cd$refimgs, "\" ") }
     }
 
     ##run preprocessFunctional
     args <- paste(resumepart, funcpart, mpragepart, fmpart, separt, refimgpart, preproc_call)
-    
-    ret_code <- system2("preprocessFunctional", args, stderr="preprocessFunctional_stderr", stdout="preprocessFunctional_stdout")
-    if (ret_code != 0) { stop("preprocessFunctional failed in directory: ", cd$funcdir) }
+
+    if (use_job_array) {
+      output_script <- c(preproc_one,
+                         paste("cd", cd$funcdir),
+                         paste("preprocessFunctional", args, ">preprocessFunctional_stdout 2>preprocessFunctional_stderr"))
+      cat(output_script, sep="\n", file=file.path(qsubdir, paste0("qsub_one_preprocessFunctional_", i)))
+    } else {
+      ret_code <- system2("preprocessFunctional", args, stderr="preprocessFunctional_stderr", stdout="preprocessFunctional_stdout")
+      if (ret_code != 0) { stop("preprocessFunctional failed in directory: ", cd$funcdir) }
+    }   
+  }
+
+  if (use_job_array) {
+    save(all_funcrun_dirs, file=file.path(qsubdir, "funcdata_toprocess.RData"))
+    #execute functional array job
+    #funcwaitfor <- ifelse(proc_freesurfer, freesurfer_jobid, mprage_jobid) #at the moment, we don't have a need to wait for freesurfer to complete
+    #ifelse throws a weird error when one of the values to return is NULL
+    funcwaitfor <- if (!is.null(queue_copy_jobid)) { queue_copy_jobid } else { mprage_jobid } #wait for functional copying to complete, if needed
+    functional_jobid <- exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=nrow(all_funcrun_dirs), jobprefix="qsub_one_preprocessFunctional_", qsubdir=qsubdir,
+                                       allscript="qsub_all_functional.bash", waitfor=funcwaitfor, job_array_preamble=job_array_preamble, walltime=functional_walltime)
+  }
 }
