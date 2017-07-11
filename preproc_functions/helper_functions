@@ -203,10 +203,10 @@ function cleanup_preprocessMprage {
 	${T1}_initfast_restore ${T1}_initfast_seg ${T1}_fast_bias_vol2 \
 	${T1}_fast_bias_vol32 template_to_subject_warpcoef template_to_subject_warpcoef_gdistort ${T1}_fast_bias_idxmask \
 	${T1}_fast_bias ${T1}_fast_bias_init ${T1}_fast_restore ${T1}_fast_seg \
-	${T1}_bet_initbias ${T1}_bet_initial ${T1}_biascorr_brain_mask ${T1}_bet_fast_restore \
+	${T1}_bet_initbias ${T1}_skullstrip ${T1}_biascorr_brain_mask ${T1}_bet_fast_restore \
 	${T1}_bet_fast_bias fullWarp_abs gdc_inv_warpfield gdc_warpfield \
 	${T1}_initial_brain ${T1}_initial_brain_mask ${T1}_initial_brain_mask_dil1x \
-	${T1}_bet_initial_postgdc ${outputFile}_twostepinterp ${T1}_biascorr_gdc_orig ${T1}_biascorr_mask"
+	${T1}_skullstrip_postgdc ${outputFile}_twostepinterp ${T1}_biascorr_gdc_orig ${T1}_biascorr_mask"
 
     [ $( imtest mprage_warpcoef_withgdc ) -eq 1 ] && rel "imrm mprage_warpcoef"
     

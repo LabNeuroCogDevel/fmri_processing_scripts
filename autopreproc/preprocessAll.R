@@ -151,6 +151,20 @@ se_phaseneg_dicompattern = Sys.getenv("se_phaseneg_dicompattern")
 useGREFieldmap = ifelse(nchar(gre_fieldmap_dirpattern) > 0, TRUE, FALSE) #whether to include GRE fieldmaps in processing
 useSEFieldmap = ifelse(nchar(se_phasepos_dirpattern) > 0, TRUE, FALSE) #whether to include SE fieldmaps in processing
 
+#setup location for script outputs
+if (use_job_array) {
+  registerDoSEQ() #force sequential
+  scratchdir <- paste0("/gpfs/scratch/", system("whoami", intern=TRUE))
+  qsubdir <- tempfile(pattern="preprocessAll_", tmpdir=ifelse(dir.exists(scratchdir), scratchdir, execdir))
+  dir.create(qsubdir, showWarnings=FALSE)
+  preproc_one <- c(
+    "#!/bin/bash",
+    "source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash #setup environment"
+  )
+} else {
+  registerDoMC(njobs) #setup number of jobs to fork
+}
+
 ##All of the above environment variables must be in place for script to work properly.
 if (any(c(mprage_dirpattern, preprocessed_dirname, paradigm_name, n_expected_funcruns, preproc_call) == "")) {
   stop("Script expects system environment to contain the following variables: mprage_dirpattern, preprocessed_dirname, paradigm_name, n_expected_funcruns, preproc_call")
@@ -186,6 +200,7 @@ if (useSEFieldmap) {
 }
 if (use_job_array) {
   cat("  Using a PBS array approach to queue preprocessing\n")
+  cat("  Directory for PBS job array files:", qsubdir, "\n")
   cat("  Maximum number of concurrent jobs:", njobs, "\n")
   cat("  Walltime for single preprocessMprage:", mprage_walltime, "\n")
   if (proc_freesurfer) { cat("  Walltime for freesurfer:", freesurfer_walltime, "\n") }
@@ -248,35 +263,34 @@ for (d in mprage_dirs) {
   }
 }
 
-#setup location for script outputs
-if (use_job_array) {
-  registerDoSEQ() #force sequential
-  scratchdir <- paste0("/gpfs/scratch/", system("whoami", intern=TRUE))
-  qsubdir <- tempfile(pattern="preprocessAll_", tmpdir=ifelse(dir.exists(scratchdir), scratchdir, execdir))
-  cat("  Directory for PBS job array files:", qsubdir, "\n")
-  dir.create(qsubdir, showWarnings=FALSE)
-  preproc_one <- c(
-    "#!/bin/bash",
-    "source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash #setup environment"
-  )
-} else {
-  registerDoMC(njobs) #setup number of jobs to fork
-}
-
-
-mprage_jobid <- NULL #for job array tracking
+mprage_jobid <- NULL #for job array tracking of preprocessMprage
+mprage_copy_jobid <- NULL #for job array tracking of mprage file copy
 if (length(mprage_toprocess) > 0L) {
-  
   cat("About to process the following mprage directories:\n")
   print(mprage_toprocess)
 
+  #copy mprage files for processing
+  if (use_job_array) {
+    mprage_dest_queue <- file.path(loc_mrproc_root, basename(dirname(mprage_toprocess)), "mprage") #assume that output structure is MR_Proc/<SUBID>/mprage
+    have_dest <- dir.exists(dest_queue)
+    mprage_src_queue <- mprage_toprocess[!have_dest] #only copy directories that don't already exist
+    mprage_dest_queue <- mprage_dest_queue[!have_dest]
+    mprage_copy_jobid <- exec_pbs_iojob(mprage_src_queue, mprage_dest_queue, cpcmd="cp -Rp", njobs=24, qsubdir=qsubdir, jobname="qsub_mpragecopy")
+  } else {
+    for (i in 1:length(mprage_toprocess)) {
+      d <- mprage_toprocess[i]
+      subid <- basename(dirname(d))
+      outdir <- file.path(loc_mrproc_root, subid)
+      if (!file.exists(file.path(outdir, "mprage"))) { system(paste("cp -Rp", d, file.path(outdir, "mprage"))) } #copy untouched mprage to processed directory
+    }
+  }
+  
   #preprocess mprage directories
   f <- foreach(i=1:length(mprage_toprocess), .inorder=FALSE) %dopar% {
     d <- mprage_toprocess[i]
     subid <- basename(dirname(d))
     outdir <- file.path(loc_mrproc_root, subid)
-    
-    if (!file.exists(file.path(outdir, "mprage"))) { system(paste("cp -Rp", d, file.path(outdir, "mprage"))) } #copy untouched mprage to processed directory
+
     setwd(file.path(outdir, "mprage"))
     
     #call preprocessmprage
@@ -314,7 +328,7 @@ if (length(mprage_toprocess) > 0L) {
   if (use_job_array) {
     #execute mprage array job
     mprage_jobid <- exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=length(mprage_toprocess), jobprefix="qsub_one_preprocessMprage_",
-                                   allscript="qsub_all_mprage.bash", qsubdir=qsubdir, job_array_preamble=job_array_preamble, walltime=mprage_walltime)
+                                   allscript="qsub_all_mprage.bash", qsubdir=qsubdir, job_array_preamble=job_array_preamble, walltime=mprage_walltime, waitfor=mprage_copy_jobid)
   }
 }
 
@@ -642,7 +656,7 @@ if (useOfflineMB) {
     print(data.frame(src=mb_src_queue, dest=mb_dest_queue), row.names=FALSE)
 
     if (use_job_array) {
-      queue_copy_jobid <- exec_pbs_iojob(mb_src_queue, mb_dest_queue, cpcmd="3dcopy", njobs=12, qsubdir=qsubdir)
+      queue_copy_jobid <- exec_pbs_iojob(mb_src_queue, mb_dest_queue, cpcmd="3dcopy", njobs=24, qsubdir=qsubdir)
     } else {
       ##for now, arbitrarily copy 12 at a time for a reasonable level of disk I/O
       registerDoMC(12) #setup number of jobs to fork
@@ -658,7 +672,7 @@ if (useOfflineMB) {
     print(data.frame(src=functional_src_queue, dest=functional_dest_queue), row.names=FALSE)
 
     if (use_job_array) {
-      queue_copy_jobid <- exec_pbs_iojob(functional_src_queue, functional_dest_queue, cpcmd="cp -Rp", njobs=12, qsubdir=qsubdir)
+      queue_copy_jobid <- exec_pbs_iojob(functional_src_queue, functional_dest_queue, cpcmd="cp -Rp", njobs=24, qsubdir=qsubdir)
     } else {
       registerDoMC(12)
       f <- foreach(fnum=1:length(functional_src_queue), .inorder=FALSE) %dopar% {

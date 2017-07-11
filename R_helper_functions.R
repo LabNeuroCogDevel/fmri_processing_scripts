@@ -81,7 +81,7 @@ list.dirs <- function(...) {
   return(dlist) #will be null if no matches
 }
 
-exec_pbs_iojob <- function(srclist, destlist, cpcmd="cp -Rp", njobs=12, qsubdir=getwd(), walltime="10:00:00") {
+exec_pbs_iojob <- function(srclist, destlist, cpcmd="cp -Rp", njobs=12, qsubdir=getwd(), walltime="10:00:00", jobname="qsub_iojob") {
   stopifnot(length(srclist)==length(destlist))
   output_script <- c("#!/usr/bin/env sh",
   "",
@@ -109,7 +109,7 @@ exec_pbs_iojob <- function(srclist, destlist, cpcmd="cp -Rp", njobs=12, qsubdir=
   "done",
   "wait")
   
-  tosubmit <- file.path(qsubdir, "qsub_iojob")
+  tosubmit <- file.path(qsubdir, jobname)
   cat(output_script, sep="\n", file=tosubmit)
   
   qsubstdout <- paste0(tools::file_path_sans_ext(tosubmit), "_stdout")

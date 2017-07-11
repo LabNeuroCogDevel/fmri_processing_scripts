@@ -251,6 +251,11 @@ if [ -n "${logFile}" ]; then
     [ -n "$override_string" ] && echo "## Override from .preproc_override: $override_string" >> "${logFile}"
 fi
 
+#setup qa_images directory
+mpragedir=$(pwd)
+[ ! -d "${mpragedir}/qa_images" ] && mkdir "${mpragedir}/qa_images"
+qa_imgdir="${mpragedir}/qa_images"
+
 #if .mprage_nifti file exists, then DICOM -> NIFTI conversion completed and we should read nifti from file
 if [[ -z "$nifti" && -f .mprage_nifti ]]; then
     read nifti < .mprage_nifti
@@ -392,6 +397,8 @@ type=1 # For FAST: 1 = T1w, 2 = T2w, 3 = PD
 rel "bet ${T1} ${T1}_initial_brain -m -f 0.1 -R"
 rel "fslmaths ${T1}_initial_brain_mask -dilF ${T1}_initial_brain_mask_dil1x" #dilate 1x to be inclusive
 
+qa_image "${T1}" "${T1}_initial_brain" mprage_initial_brain.png "Unprocessed mprage overlaid with initial skull strip (bet -f 0.1 -R)"
+
 #Adapted from fsl_anat
 #### BIAS FIELD CORRECTION (main work, although also refined later on if segmentation run)
 # required input: ${T1}
@@ -466,18 +473,20 @@ rel "fslmaths ${T1}_biascorr -mas ${T1}_biascorr_mask ${T1}_biascorr"
 rel "Running brain extraction" c
 if [ $ssmethod = bet ]; then
     [ -z "$betOpts" ] && betOpts="-R -f 0.5 -v" #default bet options if not set manually
-    rel "bet ${T1}_biascorr ${T1}_bet_initial ${betOpts}"
+    rel "bet ${T1}_biascorr ${T1}_skullstrip ${betOpts}"
 elif [ -n "${brainmask}" ]; then
     if [ ! -f "${brainmask}${ext}" ]; then
 	echo "Cannot locate -custom_brainmask: ${brainmask}${ext}"
 	exit 1
     fi
-    rel "fslmaths ${T1}_biascorr -mas $brainmask ${T1}_bet_initial" #apply custom brainmask
+    rel "fslmaths ${T1}_biascorr -mas $brainmask ${T1}_skullstrip" #apply custom brainmask
     ssmethod=custom #override ssmethod so that fnirt-inv doesn't fire below
 else
     [ -z "$betOpts" ] && betOpts="-touchup -orig_vol" #default 3dss options
-    rel "3dSkullStrip -input ${T1}_biascorr${ext} -prefix ${T1}_bet_initial${ext} ${betOpts}" #default option for initial strip
+    rel "3dSkullStrip -input ${T1}_biascorr${ext} -prefix ${T1}_skullstrip${ext} ${betOpts}" #default option for initial strip
 fi
+
+qa_image "${T1}_biascorr" "${T1}_skullstrip" mprage_skullstrip.png "Bias-corrected mprage overlaid with skull strip: $ssmethod"
 
 #Handle gradient nonlinearity correction
 #NB: relative to HCP pipeline, this step is executed after initial bias field correction.
@@ -514,16 +523,16 @@ if [ -n "$gcoeffs" ]; then
     #fslmaths gdc_jacobian -Tmean gdc_jacobian #omitting because jacobian is unused in the unwarping process    
     warpsuffix=_postgdc
     rel "applywarp --rel --interp=spline -i \"${T1}_biascorr\" -r \"${T1}_biascorr\" -w gdc_warpfield -o \"${T1}_biascorr${warpsuffix}\""
-    rel "applywarp --rel --interp=spline -i \"${T1}_bet_initial\" -r \"${T1}_bet_initial\" -w gdc_warpfield -o \"${T1}_bet_initial${warpsuffix}\""
+    rel "applywarp --rel --interp=spline -i \"${T1}_skullstrip\" -r \"${T1}_skullstrip\" -w gdc_warpfield -o \"${T1}_skullstrip${warpsuffix}\""
 
     #correct any negatives from GDC procedure
     fix_negatives "${T1}_biascorr${warpsuffix}"
-    fix_negatives "${T1}_bet_initial${warpsuffix}"
+    fix_negatives "${T1}_skullstrip${warpsuffix}"
 
     rel "remask after GDC to zero out non-tissue voxels" c
-    rel "fslmaths ${T1}_bet_initial -bin -dilF ${T1}_bet_initial_mask_dil1x"
-    rel "fslmaths ${T1}_bet_initial${warpsuffix} -mas ${T1}_bet_initial_mask_dil1x ${T1}_bet_initial${warpsuffix}"
-    rel "imrm ${T1}_bet_initial_mask_dil1x"
+    rel "fslmaths ${T1}_skullstrip -bin -dilF ${T1}_skullstrip_mask_dil1x"
+    rel "fslmaths ${T1}_skullstrip${warpsuffix} -mas ${T1}_skullstrip_mask_dil1x ${T1}_skullstrip${warpsuffix}"
+    rel "imrm ${T1}_skullstrip_mask_dil1x"
     rel "fslmaths ${T1}_biascorr${warpsuffix} -mas ${T1}_biascorr_mask ${T1}_biascorr${warpsuffix}"
 fi
 
@@ -537,7 +546,7 @@ flirtAffCoef="${T1}_to_${reference}_affine.mat"
 #use the postgdc files, if available, so that the flirt and fnirt steps are on postgdc files, then we convertwarp to bring together GDC + MNI warps
 #if [ $( imtest "${T1}_warp_linear" ) -eq 0 ]; then
 rel "Running affine (linear) transformation for structural -> template" c
-rel "flirt -in ${T1}_bet_initial${warpsuffix} -ref $bettedRefBrain -omat ${flirtAffCoef} -out ${T1}\"_warp_linear\" -dof 12 -interp spline"
+rel "flirt -in ${T1}_skullstrip${warpsuffix} -ref $bettedRefBrain -omat ${flirtAffCoef} -out ${T1}\"_warp_linear\" -dof 12 -interp spline"
 #fi
 
 ###############
@@ -587,10 +596,12 @@ if [ $ssmethod = fnirt-inv ]; then
     rel "fslmaths ${T1}_biascorr_brain_mask -fillh ${T1}_biascorr_brain_mask"
     rel "fslmaths ${T1}_biascorr -mas ${T1}_biascorr_brain_mask ${T1}_bet"
 else
-    rel "fslmaths ${T1}_bet_initial ${T1}_bet" #straight copy
-    rel "fslmaths ${T1}_bet_initial -bin ${T1}_biascorr_brain_mask -odt char" #create brainmask from non-zero voxels of betted image
+    rel "fslmaths ${T1}_skullstrip ${T1}_bet" #straight copy
+    rel "fslmaths ${T1}_skullstrip -bin ${T1}_biascorr_brain_mask -odt char" #create brainmask from non-zero voxels of betted image
 fi
-    
+
+qa_image "${T1}_biascorr" "${T1}_bet" mprage_brain.png "Bias-corrected mprage overlaid with final skull strip: $ssmethod"
+
 if [[ -f "${bettedRefBrain}.nii" && ! -h ./template_brain.nii ]]; then
     ln -s "${bettedRefBrain}.nii" ./template_brain.nii
     tbrain=template_brain.nii
@@ -681,7 +692,7 @@ mv ${dotfile}_incomplete ${dotfile}_complete
 rel "" c
 rel "QA suggestions (from least to most important):" c
 rel "Initial skull strip. Primarily a worry if large parts of brain tissue are missing (e.g., cerebellum)." c
-rel "   fslview ${T1}${ext} ${T1}_bet_initial${ext}" c
+rel "   fslview ${T1}${ext} ${T1}_skullstrip${ext}" c
 rel "Linear (affine) alignment of skull-stripped subject brain onto template." c
 rel "This will be negatively affected if skull strip is poor. But you should only expect overall global alignment" c
 rel "   fslview $tbrain ${T1}_warp_linear${ext}" c

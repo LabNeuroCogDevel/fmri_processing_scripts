@@ -223,7 +223,7 @@ function prepare_se_fieldmap {
 		rel "Converting -se_phasepos to NIfTI" c
 		if [ $have_dcm2niix -eq 1 ]; then
 		    [ -r se_phasepos.nii.gz ] && rm -f se_phasepos.nii.gz
-		    dcm2niix -f se_phasepos -o ./ $( dirname "${se_phasepos}" )
+		    dcm2niix -z y -f se_phasepos -o ./ $( dirname "${se_phasepos}" )
 		else
 		    rel "Using Dimon to convert se_phasepos to NIfTI. Warning: this may result in inconsistent unwarping behavior due to bad image headers. Prefer dcm2niix!" c
 		    dimon "${se_phasepos}" "se_phasepos"
@@ -247,7 +247,7 @@ function prepare_se_fieldmap {
 		rel "Converting -se_phaseneg to NIfTI" c
 		if [ $have_dcm2niix -eq 1 ]; then
 		    [ -r se_phaseneg.nii.gz ] && rm -f se_phaseneg.nii.gz
-		    dcm2niix -f se_phaseneg -o ./ $(dirname "${se_phaseneg}" )
+		    dcm2niix -z y -f se_phaseneg -o ./ $(dirname "${se_phaseneg}" )
 		else
 		    rel "Using Dimon to convert se_phaseneg to NIfTI. Warning: this may result in inconsistent unwarping behavior due to bad image headers. Prefer dcm2niix!" c
 		    dimon "${se_phaseneg}" "se_phaseneg"
