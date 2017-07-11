@@ -198,6 +198,11 @@ function prepare_fieldmap {
     fi
 	
     preproc_fieldmap #refine fieldmap and align to functional and structural images
+
+    rel "date > .prepare_fieldmap_complete"
+
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
 }
 
 #this function is responsible for running TOPUP on the phase+ and phase- images
@@ -293,7 +298,9 @@ function prepare_se_fieldmap {
     rel "fslmaths ../topup_undistort/SE_Magnitude       FM_UD_fmap_mag"
     rel "fslmaths ../topup_undistort/SE_TopupField      FM_UD_fmap"
         
-    rel "date > .prepare_fieldmap_complete"
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+
     
 }
 
@@ -585,6 +592,9 @@ function prepare_gre_fieldmap {
     [ -f "${fm_phasedir}/.fmphase_inprogress" ] && rm -f "${fm_phasedir}/.fmphase_inprogress"
     [ -f "${fm_magnitudedir}/.fmmagnitude_inprogress" ] && rm -f "${fm_magnitudedir}/.fmmagnitude_inprogress"
 
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+    
 }
 
 #preprocess fieldmap by creating masks, warping to structural, etc.
@@ -935,8 +945,10 @@ function preproc_fieldmap {
     #This seems like overkill for the moment, esp. since I prefer sliceMotion4d which already does the MC interpolation.
 
     cd $funcdir
-    rel "date > .prepare_fieldmap_complete"
 
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+    
 }
 
 find_and_source_config(){

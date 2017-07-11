@@ -570,7 +570,7 @@ for (d in subj_dirs) {
         }
       }
 
-      subjdf <- rbind(subjdf, data.frame(funcdir=funcdir, funcnifti=funcnifti, refimgs=refimgs, magdir=magdir, phasedir=phasedir, posdir=posdir, negdir=negdir, mpragedir=mpragedir, stringsAsFactors=FALSE))
+      subjdf <- rbind(subjdf, data.frame(funcdir=funcdir, funcnifti=funcnifti, refimgs=refimgs[m], magdir=magdir, phasedir=phasedir, posdir=posdir, negdir=negdir, mpragedir=mpragedir, stringsAsFactors=FALSE))
     }
 
     ##add all functional runs, along with mprage and fmap info, as a data.frame to the list
