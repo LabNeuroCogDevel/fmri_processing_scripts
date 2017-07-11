@@ -136,7 +136,7 @@ function check_requirements {
 		rel "Converting -func_refimg to NIfTI" c
 		if [ $have_dcm2niix -eq 1 ]; then
 		    [ -r epiref.nii.gz ] && rm -f epiref.nii.gz
-		    dcm2niix -f epiref -o ./ $( dirname "${funcRefimg}" )
+		    dcm2niix -z y -f epiref -o ./ $( dirname "${funcRefimg}" )
 		else
 		    rel "Using to3d to convert epiref to NIfTI. Warning: this will occasionally result in inconsistent unwarping behavior due to bad image headers. Prefer dcm2niix!" c
 		    rel "to3d -overwrite -prefix epiref.nii.gz -ushort2float \"$funcRefimg\""

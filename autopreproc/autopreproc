@@ -10,9 +10,6 @@ env
 if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then
     #setup DEPENd lab environment and programs
     source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash
-
-    PATH="$HOME/fmri_processing_scripts:$HOME/fmri_processing_scripts/autopreproc:${PATH}"
-    #export FSLDIR
 else
     ##Explicit MATLAB location
     PATH=/Applications/MATLAB_R2014b.app/bin:${PATH}
@@ -45,6 +42,7 @@ function resetcfg {
     remote_mb_root=
     remote_subid_regex=
     remote_folder_filter=
+    remote_folder_depth=1
     loc_root=
     loc_mrraw_root=
     loc_mrproc_root=
@@ -60,12 +58,17 @@ function resetcfg {
     preproc_call=
     gre_fieldmap_dirpattern=
     fieldmap_cfg=
+    se_phasepos_dirpattern=
+    se_phaseneg_dirpattern=
+    se_phasepos_dicompattern=
+    se_phaseneg_dicompattern=
     proc_freesurfer=0
     proc_functional=0
     preproc_resume=0 #whether to prefer preprocessFunctional -resume
     functional_dirpattern=
     functional_dicompattern=
     detect_refimg=0
+    use_job_array=0 #whether to use PBS job array    
 }
 
 njobs=8 #default to 8 parallel jobs

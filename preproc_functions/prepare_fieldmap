@@ -193,17 +193,22 @@ function prepare_fieldmap {
     if [ $flip_topup_pedir -eq 1 ]; then
 	case $unwarpdir in
 	    x)     unwarpdir=-x  ;;
-	    -x|x-) bbr_pedir=x ;;
-	    y)     bbr_pedir=-y  ;;
-	    -y|y-) bbr_pedir=y ;; 
-	    z)     bbr_pedir=-z  ;;
-	    -z|z-) bbr_pedir=z ;;
+	    -x|x-) unwarpdir=x ;;
+	    y)     unwarpdir=-y  ;;
+	    -y|y-) unwarpdir=y ;; 
+	    z)     unwarpdir=-z  ;;
+	    -z|z-) unwarpdir=z ;;
 	    *)     echo "Unable to determine unwarping direction from '$unwarpdir'"
 		   exit 1 ;;
 	esac
     fi
 	
     preproc_fieldmap #refine fieldmap and align to functional and structural images
+
+    rel "date > .prepare_fieldmap_complete"
+
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
 }
 
 # give the name and either a nifti or a dicom directory
@@ -261,11 +266,12 @@ convert_or_use_nii() {
 #then exporting the rad/s TopupField to the unwarp directory for preprocessing using the typical steps (preproc_fieldmap)
 function prepare_se_fieldmap {
 
+    #TODO/FIX: will use se_phase* if it exsits regardless of what input ($se_phaspos) is given
     convert_or_use_nii se_phasepos "$se_phasepos"
     [ $(imtest se_phasepos ) -eq 1 ] && se_phasepos=se_phasepos
 
     convert_or_use_nii se_phaseneg "$se_phaseneg"
-    [ $(imtest se_phaseneg ) -eq 1 ] && se_phasepos=se_phaseneg
+    [ $(imtest se_phaseneg ) -eq 1 ] && se_phaseneg=se_phaseneg
 
     #topup works from data before skull-stripping
     #determine which is the target for distortion correction
@@ -305,7 +311,9 @@ function prepare_se_fieldmap {
     rel "fslmaths ../topup_undistort/SE_Magnitude       FM_UD_fmap_mag"
     rel "fslmaths ../topup_undistort/SE_TopupField      FM_UD_fmap"
         
-    rel "date > .prepare_fieldmap_complete"
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+
     
 }
 
@@ -572,6 +580,9 @@ function prepare_gre_fieldmap {
     [ -f "${fm_phasedir}/.fmphase_inprogress" ] && rm -f "${fm_phasedir}/.fmphase_inprogress"
     [ -f "${fm_magnitudedir}/.fmmagnitude_inprogress" ] && rm -f "${fm_magnitudedir}/.fmmagnitude_inprogress"
 
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+    
 }
 
 #preprocess fieldmap by creating masks, warping to structural, etc.
@@ -922,8 +933,10 @@ function preproc_fieldmap {
     #This seems like overkill for the moment, esp. since I prefer sliceMotion4d which already does the MC interpolation.
 
     cd $funcdir
-    rel "date > .prepare_fieldmap_complete"
 
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+    
 }
 
 find_and_source_config(){
