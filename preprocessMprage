@@ -52,8 +52,9 @@ Command line options:
         fnirt-inv: uses the template brain mask warped onto the subject's brain to define brain mask
 	bet: uses the bet program (FSL) to skull strip (also respects -bet_opts).
 	3dSkullStrip: uses the 3dSkullStrip program (can pass additional parameters using -bet_opts).
+  -strong_bias: used for images with very strong bias fields
   -w -warpres: resolution of warp basis (nonlinear neighborhood size) in mm. Default is 8 mm.
-  -weakbias: used for images with little and/or smooth bias fields (cf. fsl_anat).
+  -weak_bias: used for images with little and/or smooth bias fields (cf. fsl_anat). This is the default.
 
 Example call: preprocessMprage -r MNI_2mm -b "-R -f 0.5 -g 0.2" -d a -o mprage_final.nii.gz -w 6
 ----------------------------------------------
@@ -63,9 +64,12 @@ EndOfHelp
 
 #Author: Michael Hallquist
 #Written: 5/2/2010
-#Last updated: 11/14/2016
+#Last updated: 7/11/2017
 #
 #Changelog:
+#7/11/2017 (MH)
+# - Add more QA images and create qa_images folder
+# - Default to weak bias field correction. Strong was harming fnirt in some datasets and fsl_anat has also switched to weak by default
 #11/14/2016
 # - Added robustfov into pipeline to help with neck cleanup on larger structural scans
 # - Allow bet or 3dSkullStrip to carry forward as brain-extracted image for subsequent processing (-ss_method)
@@ -129,7 +133,7 @@ fi
 cleanup=0
 cleanup_only=0
 biasCorrect=1
-strongBias=1 #0 for minimal bias correction, 1 for strong bias
+strongBias=0 #0 for weak bias correction, 1 for strong bias
 dicomPattern="MR*"
 logFile="preprocessMprage.log"
 reference="MNI_2mm"
@@ -672,8 +676,8 @@ qa_image subject_to_template_brain "$bettedRefBrain" highres2standard1.png "Subj
 qa_image "$bettedRefBrain" subject_to_template_brain highres2standard2.png "Template with subject brain outline overlaid"
 
 #combine into one image
-pngappend highres2standard1.png - highres2standard2.png struct_to_template.png; 
-rm -f highres2standard2.png  highres2standard1.png
+rel "pngappend ${qa_imgdir}/highres2standard1.png - ${qa_imgdir}/highres2standard2.png ${qa_imgdir}/struct_to_template.png"
+rel "rm -f highres2standard2.png  highres2standard1.png"
 rel "imrm subject_to_template_brain"
 
 #generate symbolic link to skull-stripped mprage file for compatibility with FSL tools

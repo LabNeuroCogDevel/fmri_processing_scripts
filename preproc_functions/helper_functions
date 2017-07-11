@@ -462,7 +462,6 @@ function cleanup_preprocessFunctional {
     deleteFile epiref_to_struct_nounwarp${ext}
     deleteFile epiref_brain_bias${ext}
     deleteFile epiref_brain_restore${ext}
-    deleteFile func_to_epiref${ext}
     #deleteFile mc_target_brain_bias${ext}
     #deleteFile mc_target_brain_restore${ext}
 

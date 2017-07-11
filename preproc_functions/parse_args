@@ -614,6 +614,9 @@ function parse_mprage_args() {
 	elif [[ $1 = -ss_method ]]; then
 	    ssmethod="${2}"
 	    shift 2
+	elif [[ $1 = -strongbias || $1 = -strong_bias ]]; then
+	    strongBias=1
+	    shift 1
 	elif [[ $1 = -warpres || $1 = -w ]]; then
 	    wr="${2}"
 	    if [[ ! ${wr} =~ ^[0-9]+$ ]]; then
@@ -621,7 +624,7 @@ function parse_mprage_args() {
 		exit 1
 	    fi
 	    shift 2
-	elif [[ $1 = -weakbias ]]; then
+	elif [[ $1 = -weakbias || $1 = -weak_bias ]]; then
 	    strongBias=0
 	    shift 1
 	else
