@@ -533,14 +533,10 @@ function parse_args {
     [ $no_smooth -eq 0 ] && smoothing_suffix="_${smoothing_kernel}" || smoothing_suffix=
     
     if [ -n "${logFile}" ]; then
-	if [ -f "${logFile}" ]; then
-	    #stat and date are not portable across Linux and BSD...
-            [ $( uname ) = Darwin ] && mtime=$( stat -f "%Sm" -t "%Y%m%d_%H%M" "${logFile}" ) || mtime=$( date -r "${logFile}" +%Y%m%d_%H%M )
-	    mv "${logFile}" "${logFile}_${mtime}"
-	fi
+	archive_file "${logFile}" #move any existing files out of the way
 	
         #add absolute path to log file location
-	logFile="$(pwd)/$( basename $logFile )" ##TODO: make path handling more robust to non-local directories
+	logFile="${funcdir}/$( basename $logFile )" ##TODO: make path handling more robust to non-local directories
 	
 	echo "#!/bin/bash" > "${logFile}"
 	echo "## Log of preprocessFunctional commands" >> "${logFile}"

@@ -3,7 +3,8 @@
 # wrap bad exit in info message
 originalargs="$@"
 originalcwd="$(pwd)"
-trap '[ $? -ne 0 ] && echo -e "[$(date +%F\ %H:%M) $originalcwd] ERROR exiting $0\n\t$originalargs"' EXIT
+#trap '[ $? -ne 0 ] && echo -e "[$(date +%F\ %H:%M) $originalcwd] ERROR exiting $0\n\t$originalargs"' EXIT
+trap 'traperror $? $LINENO $BASH_LINENO "$BASH_COMMAND" $(printf "::%s" ${FUNCNAME[@]:-})' ERR
 
 function printHelp() {
 
@@ -344,11 +345,12 @@ if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then
 fi
 
 set -e #exit if any error occurs (stop processing)
+set -o errtrace # inherits trap on ERR in function and subshell
 
 datefmt='+%F+%I:%M'
 #grab command, arguments, script version (date), and start time
 thiscommandinfo="$0 $@ \n# preprocessFunctional v$(perl -ne 'print $1 if /^#Last updated: (.*)/' $0) \n# Run started $(date $datefmt) "
-dotfile=.preprocessfunctional
+dotfile="${funcdir}/.preprocessfunctional"
 
 #exit script if processing complete
 if [[ -f "${dotfile}_complete" && "$@" != *-startover* && "$@" != *-cleanup_only* && "$@" != *-help* ]]; then
@@ -554,6 +556,18 @@ if [ $cleanup -eq 1 ]; then
     cleanup_preprocessFunctional
 fi
 
+#move registration-related images to qa_images
+if [ -n "$qa_imgdir" ]; then
+    rel "Moving registration-related NIfTIs to $qa_imgdir" c
+    [ $(imtest epiref_to_template) -eq 1 ] && rel "immv epiref_to_template $qa_imgdir"
+    [ $(imtest epiref_to_struct) -eq 1 ] && rel "immv epiref_to_struct $qa_imgdir"
+    [ $(imtest func_to_epiref) -eq 1 ] && rel "immv func_to_epiref $qa_imgdir"
+    [ $(imtest func_to_struct) -eq 1 ] && rel "immv func_to_struct $qa_imgdir"
+fi
+
 # write finish time, mv incomplete to complete
 echo "# finished $(date $datefmt)" >> ${dotfile}_incomplete
 mv ${dotfile}_incomplete ${dotfile}_complete
+
+#ensure that any previous crash is cleared since we've completed processing
+[ -r "${dotfile}_crash" ] && rm -f "${dotfile}_crash"

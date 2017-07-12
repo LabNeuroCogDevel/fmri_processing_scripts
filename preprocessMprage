@@ -478,6 +478,7 @@ rel "Running brain extraction" c
 if [ $ssmethod = bet ]; then
     [ -z "$betOpts" ] && betOpts="-R -f 0.5 -v" #default bet options if not set manually
     rel "bet ${T1}_biascorr ${T1}_skullstrip ${betOpts}"
+    initstrip="bet"
 elif [ -n "${brainmask}" ]; then
     if [ ! -f "${brainmask}${ext}" ]; then
 	echo "Cannot locate -custom_brainmask: ${brainmask}${ext}"
@@ -485,12 +486,14 @@ elif [ -n "${brainmask}" ]; then
     fi
     rel "fslmaths ${T1}_biascorr -mas $brainmask ${T1}_skullstrip" #apply custom brainmask
     ssmethod=custom #override ssmethod so that fnirt-inv doesn't fire below
+    initstrip="$brainmask"
 else
     [ -z "$betOpts" ] && betOpts="-touchup -orig_vol" #default 3dss options
     rel "3dSkullStrip -input ${T1}_biascorr${ext} -prefix ${T1}_skullstrip${ext} ${betOpts}" #default option for initial strip
+    initstrip="3dSkullStrip"
 fi
 
-qa_image "${T1}_biascorr" "${T1}_skullstrip" mprage_skullstrip.png "Bias-corrected mprage overlaid with skull strip: $ssmethod"
+qa_image "${T1}_biascorr" "${T1}_skullstrip" mprage_skullstrip.png "Bias-corrected mprage overlaid with skull strip: $initstrip"
 
 #Handle gradient nonlinearity correction
 #NB: relative to HCP pipeline, this step is executed after initial bias field correction.

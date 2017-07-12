@@ -272,7 +272,7 @@ if (length(mprage_toprocess) > 0L) {
   #copy mprage files for processing
   if (use_job_array) {
     mprage_dest_queue <- file.path(loc_mrproc_root, basename(dirname(mprage_toprocess)), "mprage") #assume that output structure is MR_Proc/<SUBID>/mprage
-    have_dest <- dir.exists(dest_queue)
+    have_dest <- dir.exists(mprage_dest_queue)
     mprage_src_queue <- mprage_toprocess[!have_dest] #only copy directories that don't already exist
     mprage_dest_queue <- mprage_dest_queue[!have_dest]
     mprage_copy_jobid <- exec_pbs_iojob(mprage_src_queue, mprage_dest_queue, cpcmd="cp -Rp", njobs=24, qsubdir=qsubdir, jobname="qsub_mpragecopy")
@@ -289,38 +289,36 @@ if (length(mprage_toprocess) > 0L) {
   f <- foreach(i=1:length(mprage_toprocess), .inorder=FALSE) %dopar% {
     d <- mprage_toprocess[i]
     subid <- basename(dirname(d))
-    outdir <- file.path(loc_mrproc_root, subid)
+    mpragedir <- file.path(loc_mrproc_root, subid)
 
-    setwd(file.path(outdir, "mprage"))
-    
     #call preprocessmprage
-    if (file.exists(".preprocessmprage_complete")) {
+    if (dir.exists(mpragedir) && file.exists(file.path(mpragedir, ".preprocessmprage_complete"))) {
       #this would only fire if the _complete file is created after the initial queue setup (very unlikely)
       return("complete")
     } else {
-      if (file.exists("mprage.nii.gz")) {
+      if (dir.exists(mpragedir) && file.exists(file.path(mpragedir, "mprage.nii.gz"))) {
         preprocessMprage_call = sub("-dicom\\s+\\S+\\s+", "", preprocessMprage_call, perl=TRUE) #strip out call to dicom
         preprocessMprage_call <- paste(preprocessMprage_call, "-nifti mprage.nii.gz")
       }
-
+      
       if (use_job_array) {
         #create preprocessing script for the ith dataset
         output_script <- c(preproc_one,
-                           paste("cd", file.path(outdir, "mprage")),
+                           paste("cd", mpragedir),
                            paste("preprocessMprage", preprocessMprage_call, ">preprocessMprage_stdout 2>preprocessMprage_stderr"))
         cat(output_script, sep="\n", file=file.path(qsubdir, paste0("qsub_one_preprocessMprage_", i)))
       } else {
+        setwd(mpragedir)
         ret_code <- system2("preprocessMprage", preprocessMprage_call, stderr="preprocessMprage_stderr", stdout="preprocessMprage_stdout")
-        if (ret_code != 0) { message("preprocessMprage failed in directory: ", file.path(outdir, "mprage")) }
+        if (ret_code != 0) { message("preprocessMprage failed in directory: ", mpragedir) }
         #echo current date/time to .preprocessmprage_complete to denote completed preprocessing
         #NB: newer versions of preprocessMprage (Nov2016 and beyond) handle this internally
         if (!file.exists(".preprocessmprage_complete")) {
           sink(".preprocessmprage_complete"); cat(as.character(Sys.time())); sink()
         }
+        if (file.exists("need_analyze")) { unlink("need_analyze") } #remove dummy file
+        if (file.exists("analyze")) { unlink("analyze") } #remove dummy file
       }
-
-      if (file.exists("need_analyze")) { unlink("need_analyze") } #remove dummy file
-      if (file.exists("analyze")) { unlink("analyze") } #remove dummy file
     }
     return(d)
   }
@@ -342,7 +340,7 @@ if (proc_freesurfer) {
     subid <- basename(dirname(d))
     outdir <- file.path(loc_mrproc_root, subid)
     
-    if (!file.exists(file.path(outdir, "mprage"))) {
+    if (!use_job_array && !file.exists(file.path(outdir, "mprage"))) {
       message("Cannot locate processed mprage data for: ", outdir)
     } else if (!use_job_array && !file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {
       message("Cannot locate .preprocessmprage_complete in: ", outdir)
@@ -359,18 +357,21 @@ if (proc_freesurfer) {
     cat(fs_toprocess, sep="\n")
     
     f <- foreach(d=1:length(fs_toprocess), .inorder=FALSE) %dopar% {
-      setwd(fs_toprocess[d])
+
       #use the gradient distortion-corrected files if available
-      t1 <- ifelse(file.exists("mprage_biascorr_postgdc.nii.gz"), "mprage_biascorr_postgdc.nii.gz", "mprage_biascorr.nii.gz")
-      t1brain <- ifelse(file.exists("mprage_bet_postgdc.nii.gz"), "mprage_bet_postgdc.nii.gz", "mprage_bet.nii.gz")
-      freesurfer_call <- paste0("-T1 ", t1, " -T1brain ", t1brain, " -subject ", ids_toproc[d], " -subjectDir ", fs_subjects_dir)
       if (use_job_array) {
         #create preprocessing script for the ith dataset
         output_script <- c(preproc_one,
                            paste("cd", fs_toprocess[d]),
-                           paste("FreeSurferPipeline", freesurfer_call, ">FreeSurferPipeline_stdout 2>FreeSurferPipeline_stderr"))
+                           "[ -r \"mprage_biascorr_postgdc.nii.gz\" ] && t1=mprage_biascorr_postgdc.nii.gz || t1=mprage_biascorr.nii.gz",
+                           "[ -r \"mprage_bet_postgdc.nii.gz\" ] && t1brain=mprage_bet_postgdc.nii.gz || t1brain=mprage_bet.nii.gz",
+                           paste("FreeSurferPipeline -subject", ids_toproc[d], "-subjectDir", fs_subjects_dir, "-T1 $t1 -T1brain $t1brain >FreeSurferPipeline_stdout 2>FreeSurferPipeline_stderr"))
         cat(output_script, sep="\n", file=file.path(qsubdir, paste0("qsub_one_FreeSurferPipeline_", d)))
-      } else {              
+      } else {
+        setwd(fs_toprocess[d])
+        t1 <- ifelse(file.exists("mprage_biascorr_postgdc.nii.gz"), "mprage_biascorr_postgdc.nii.gz", "mprage_biascorr.nii.gz")
+        t1brain <- ifelse(file.exists("mprage_bet_postgdc.nii.gz"), "mprage_bet_postgdc.nii.gz", "mprage_bet.nii.gz")
+        freesurfer_call <- paste0("-T1 ", t1, " -T1brain ", t1brain, " -subject ", ids_toproc[d], " -subjectDir ", fs_subjects_dir)
         ret_code <- system2("FreeSurferPipeline", args=freesurfer_call,
                             stderr="FreeSurferPipeline_stderr", stdout="FreeSurferPipeline_stdout")
         if (ret_code != 0) { message("FreeSurferPipeline failed in directory: ", fs_toprocess[d]) }
