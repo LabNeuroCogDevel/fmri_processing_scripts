@@ -35,7 +35,7 @@ exec_pbs_array <- function(max_concurrent_jobs, njobstorun, max_cores_per_node=4
   ppn <- ceiling(array_concurrent_jobs/nnodes)
 
   #do we need another PBS job to finish successfully before this executes?
-  if (!is.null(waitfor)) { job_array_preamble <- c(job_array_preamble, paste0("#PBS -W depend=afterok:", waitfor)) }
+  if (!is.null(waitfor)) { job_array_preamble <- c(job_array_preamble, paste0("#PBS -W depend=afterok:", paste(waitfor, collapse=":"))) } #waitfor can be a vector, which is then a colon-separated list of jobs to wait for
   qsub_all <- c(job_array_preamble,
                 paste0("#PBS -t 1-", njobstorun, "%", array_concurrent_jobs), #number of total datasets and number of concurrent jobs
                 ##paste0("#PBS -l nodes=", nnodes, ":ppn=", ppn, ":himem"), #this is a misunderstanding of the use of job arrays. we need to request resources *per job* as below

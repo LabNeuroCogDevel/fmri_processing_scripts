@@ -289,7 +289,7 @@ if (length(mprage_toprocess) > 0L) {
   f <- foreach(i=1:length(mprage_toprocess), .inorder=FALSE) %dopar% {
     d <- mprage_toprocess[i]
     subid <- basename(dirname(d))
-    mpragedir <- file.path(loc_mrproc_root, subid)
+    mpragedir <- file.path(loc_mrproc_root, subid, "mprage")
 
     #call preprocessmprage
     if (dir.exists(mpragedir) && file.exists(file.path(mpragedir, ".preprocessmprage_complete"))) {
@@ -739,10 +739,7 @@ if (!is.null(all_funcrun_dirs) && nrow(all_funcrun_dirs) > 0L) {
   if (use_job_array) {
     save(all_funcrun_dirs, file=file.path(qsubdir, "funcdata_toprocess.RData"))
     #execute functional array job
-    #funcwaitfor <- ifelse(proc_freesurfer, freesurfer_jobid, mprage_jobid) #at the moment, we don't have a need to wait for freesurfer to complete
-    #ifelse throws a weird error when one of the values to return is NULL
-    funcwaitfor <- if (!is.null(queue_copy_jobid)) { queue_copy_jobid } else { mprage_jobid } #wait for functional copying to complete, if needed
     functional_jobid <- exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=nrow(all_funcrun_dirs), jobprefix="qsub_one_preprocessFunctional_", qsubdir=qsubdir,
-                                       allscript="qsub_all_functional.bash", waitfor=funcwaitfor, job_array_preamble=job_array_preamble, walltime=functional_walltime)
+                                       allscript="qsub_all_functional.bash", waitfor=c(queue_copy_jobid, mprage_jobid), job_array_preamble=job_array_preamble, walltime=functional_walltime)
   }
 }
