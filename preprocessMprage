@@ -52,6 +52,7 @@ Command line options:
         fnirt-inv: uses the template brain mask warped onto the subject's brain to define brain mask
 	bet: uses the bet program (FSL) to skull strip (also respects -bet_opts).
 	3dSkullStrip: uses the 3dSkullStrip program (can pass additional parameters using -bet_opts).
+	ROBEX: uses the ROBEX program (which doesn't accept any parameters).
   -strong_bias: used for images with very strong bias fields
   -w -warpres: resolution of warp basis (nonlinear neighborhood size) in mm. Default is 8 mm.
   -weak_bias: used for images with little and/or smooth bias fields (cf. fsl_anat). This is the default.
@@ -70,6 +71,7 @@ EndOfHelp
 #7/11/2017 (MH)
 # - Add more QA images and create qa_images folder
 # - Default to weak bias field correction. Strong was harming fnirt in some datasets and fsl_anat has also switched to weak by default
+# - Support ROBEX for brain extraction (outperforms bet and 3dSkullStrip in general)
 #11/14/2016
 # - Added robustfov into pipeline to help with neck cleanup on larger structural scans
 # - Allow bet or 3dSkullStrip to carry forward as brain-extracted image for subsequent processing (-ss_method)
@@ -472,6 +474,8 @@ thresh=$( echo "scale=5; $p_2 + ($p_98 - $p_2)/10" | bc )
 rel "fslmaths ${T1}_biascorr -thr $thresh -bin -fillh -dilF ${T1}_biascorr_mask"
 rel "fslmaths ${T1}_biascorr -mas ${T1}_biascorr_mask ${T1}_biascorr"
 
+command -v runROBEX.sh >/dev/null 2>&1 && init_ss_program=runROBEX.sh || init_ss_program=3dSkullStrip #use ROBEX by default if available
+
 ###############
 #initial structural brain extraction for FLIRT
 rel "Running brain extraction" c
@@ -487,10 +491,20 @@ elif [ -n "${brainmask}" ]; then
     rel "fslmaths ${T1}_biascorr -mas $brainmask ${T1}_skullstrip" #apply custom brainmask
     ssmethod=custom #override ssmethod so that fnirt-inv doesn't fire below
     initstrip="$brainmask"
-else
+elif [ $ssmethod = 3dSkullStrip ]; then
     [ -z "$betOpts" ] && betOpts="-touchup -orig_vol" #default 3dss options
     rel "3dSkullStrip -input ${T1}_biascorr${ext} -prefix ${T1}_skullstrip${ext} ${betOpts}" #default option for initial strip
     initstrip="3dSkullStrip"
+else
+    if [ $init_ss_program = runROBEX.sh ]; then
+	rel "runROBEX.sh ${T1}_biascorr${ext} ${T1}_skullstrip${ext}"
+	initstrip="ROBEX"
+    elif [ $init_ss_program = 3dSkullStrip ]; then
+	#TODO: is there a less redundant way of using 3dSkullStrip in this circumstance versus the above?
+	[ -z "$betOpts" ] && betOpts="-touchup -orig_vol" #default 3dss options
+	rel "3dSkullStrip -input ${T1}_biascorr${ext} -prefix ${T1}_skullstrip${ext} ${betOpts}" #default option for initial strip
+	initstrip="3dSkullStrip"
+    fi
 fi
 
 qa_image "${T1}_biascorr" "${T1}_skullstrip" mprage_skullstrip.png "Bias-corrected mprage overlaid with skull strip: $initstrip"
