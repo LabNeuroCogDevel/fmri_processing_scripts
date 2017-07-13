@@ -44,15 +44,17 @@ Command line options:
         Example: -n mprage.nii.gz (will complete bet, flirt, and
         fnirt, but skip DICOM -> NIFTI conversion).
   -no_bias: skip bias field correction.
+  -no_robustfov: skip robustfov neck cleanup
   -o -output: output file name. The filename for the final warped mprage image.
         Defaults to mprage_nonlinear_warp_<referenceName>.nii.gz
   -p -dicom: file pattern for dicom MR files. Defaults to "MR*". Please enclose the pattern in quotes or it may not function properly
   -r -template_brain: reference brain. Currently supports "MNI_2mm", "MNI_FSL_2mm", "SPM_2mm", and "Tal_2mm". Default is "MNI_2mm".
   -ss_method: skull-stripping method used to create final brain-extracted data. Default is fnirt-inv. Options:
         fnirt-inv: uses the template brain mask warped onto the subject's brain to define brain mask
-	bet: uses the bet program (FSL) to skull strip (also respects -bet_opts).
-	3dSkullStrip: uses the 3dSkullStrip program (can pass additional parameters using -bet_opts).
-	ROBEX: uses the ROBEX program (which doesn't accept any parameters).
+        bet: uses the bet program (FSL) to skull strip (also respects -bet_opts).
+        3dSkullStrip: uses the 3dSkullStrip program (can pass additional parameters using -bet_opts).
+        noisy: use @NoisySkullStrip
+        ROBEX: uses the ROBEX program (which doesn't accept any parameters).
   -strong_bias: used for images with very strong bias fields
   -w -warpres: resolution of warp basis (nonlinear neighborhood size) in mm. Default is 8 mm.
   -weak_bias: used for images with little and/or smooth bias fields (cf. fsl_anat). This is the default.
@@ -186,6 +188,10 @@ case "$reference" in
 	unbettedRefBrain=${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm;
 	refMask=${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_2mm_brain_mask_dil;
 	fnirtConfig=${stddir}/fnirtTalairachSettings.cnf;;
+    MNI_1mm) bettedRefBrain=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain;
+	unbettedRefBrain=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c;
+	refMask=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_dil; #Jul2017: 3dmask_tool dil of brian mask
+	fnirtConfig=${stddir}/fnirtMNI1mm.cnf;; # DONT TRUST THIS FILE # TODO: check/fix
     MNI_2mm) bettedRefBrain=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm;
 	unbettedRefBrain=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_2mm;
 	refMask=${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2mm_dil; #Nov2016: this is now a 1x dil, matching fsl_anat
@@ -491,6 +497,10 @@ elif [ -n "${brainmask}" ]; then
     rel "fslmaths ${T1}_biascorr -mas $brainmask ${T1}_skullstrip" #apply custom brainmask
     ssmethod=custom #override ssmethod so that fnirt-inv doesn't fire below
     initstrip="$brainmask"
+elif [ $ssmethod = noisy ]; then
+    rel "@NoisySkullStrip -input ${T1}_biascorr${ext}"
+    rel "3dcopy ${T1}_biascorr${ext}.ns+orig. ${T1}_bet_initial${ext}" #default option for initial strip
+    initstrip="@NoisySkullStrip"
 elif [ $ssmethod = 3dSkullStrip ]; then
     [ -z "$betOpts" ] && betOpts="-touchup -orig_vol" #default 3dss options
     rel "3dSkullStrip -input ${T1}_biascorr${ext} -prefix ${T1}_skullstrip${ext} ${betOpts}" #default option for initial strip
@@ -721,3 +731,5 @@ rel "Nonlinear warp of template brain onto subject (inverse warp). Check especia
 rel "   fslview ${T1}_bet${ext} template_to_subject_brain${ext}" c
 rel "Nonlinear warp of subject brain onto template. Look for alignment of sulci, especially along midline." c
 rel "   fslview $tbrain $( remove_ext ${outputFile} )_bet${ext}" c
+
+# vim: set tabstop=7:

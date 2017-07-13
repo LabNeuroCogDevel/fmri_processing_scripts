@@ -62,8 +62,8 @@ teardown() {
   nuisance_regression  
 
   # check that the prefix was added
-  [ $prefix = "ab_" ]
-  # and the file was created: ab_test_5.nii.gz
+  [ $prefix = "Ab_" ]
+  # and the file was created: Ab_test_5.nii.gz
   [ -r "${prefix}test${smoothing_suffix}.nii.gz" ]
 
 }
@@ -90,7 +90,7 @@ teardown() {
   nuisance_regression  
   
   # check that the prefix was added
-  [ $prefix = "abr_" ]
+  [ $prefix = "Abr_" ]
   # and the file was created
   [ -r "${prefix}test${smoothing_suffix}.nii.gz" ]
 
@@ -123,7 +123,7 @@ teardown() {
   nuisance_regression  
   
   # check that the prefix was added
-  [ $prefix = "ab_" ]
+  [ $prefix = "Ab_" ]
   # and the file was created
   [ -r "${prefix}test${smoothing_suffix}.nii.gz" ]
 

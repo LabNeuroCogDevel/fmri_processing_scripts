@@ -4,6 +4,12 @@
 #else savetemps=yes; pics=yes;
 #fi
 
+# waitforlock is in it's own file (same dir as this file)
+# this is sourced in ../preprocessFunctional. but again here just to be safe
+waitforlockfile=$(dirname ${BASH_SOURCE[0]})/waitforlock
+[ -r $waitforlock ] && source $waitforlockfile
+
+
 #function to convert fieldmap to radians per second
 function fieldmap_make_rads_per_sec() {
 
@@ -210,60 +216,67 @@ function prepare_fieldmap {
     return 0
 }
 
+# give the name and either a nifti or a dicom directory
+convert_or_use_nii() {
+   local name="$1"; shift
+   local input="$1"
+   local inputdir=$(dirname "$input")
+   #convert SE images to NIfTI if needed
+   #determine if the image already exists
+
+   # maybe we've already converted. if we have, set the input to name 
+   # and well return out of this on the next line
+   # [ $( imtest $name ) -eq 1 ] && input=$name
+
+   # if we have the input, we're all set. dont need to do anything
+   # N.B. imtest fails on symlinks!?
+   [ $( imtest $input ) -eq 1 ] && return 0
+
+   # if no files match the input string, that's an error
+   if [ $( ls $input | wc -l ) -eq 0 ]; then
+      rel "Could not find any images matching $name specification ('$input')." c && exit 1
+   fi
+
+
+   # make sure we are looking at a dicom
+   first_dicom=$( ls $input | head -n 1 )
+   dicom_hdr "$first_dicom" 2>&1 | grep -q "ERROR: can't open.*as a DICOM file" && isdicom=0 || isdicom=1 # 0 exit status from grep indicates a match
+   if [ $isdicom -eq 0 ]; then
+      rel "Cannot recognize $first_dicom (from '$input') as DICOM or NIfTI" c
+      exit 1
+   fi
+
+   rel "Converting $name to NIfTI" c
+
+   # lock here so we dont run dicom2nii twice while parallel processing multiple protocols that share this FM
+   local lockfile="${inputdir}/.${name}_inprogress"
+   waitforlock $lockfile
+   makelockfile $lockfile
+
+   # TODO: allow reuse 
+   # save nifti in the dicom directory?
+
+   # convert dicoms to nifti called $name in working directory (functional preprocess directory)
+   if [ $have_dcm2niix -eq 1 ]; then
+      [ -r $name.nii.gz ] && rm -f $name.nii.gz
+      dcm2niix -f $name -o ./ $inputdir
+   else
+      rel "Using Dimon to convert $name to NIfTI. Warning: this may result in inconsistent unwarping behavior due to bad image headers. Prefer dcm2niix!" c
+      dimon "${input}" "$name"
+   fi
+   rmlockfile $lockfile
+}
+
 #this function is responsible for running TOPUP on the phase+ and phase- images
 #then exporting the rad/s TopupField to the unwarp directory for preprocessing using the typical steps (preproc_fieldmap)
 function prepare_se_fieldmap {
-    #TODO: use lock files as in GRE fieldmap to prevent collisions
 
-    #convert SE images to NIfTI if needed
-    #determine if the image already exists
-    if [ $( imtest $se_phasepos ) -eq 0 ]; then
-	if [ $( ls $se_phasepos | wc -l ) -eq 0 ]; then
-	    rel "Could not find any images matching -se_phasepos specification." c && exit 1
-	else
-	    first_dicom=$( ls $se_phasepos | head -n 1 )
-	    dicom_hdr "$first_dicom" 2>&1 | grep -q "ERROR: can't open.*as a DICOM file" && isdicom=0 || isdicom=1 # 0 exit status from grep indicates a match
-	
-	    if [ $isdicom -eq 1 ]; then
-		rel "Converting -se_phasepos to NIfTI" c
-		if [ $have_dcm2niix -eq 1 ]; then
-		    [ -r se_phasepos.nii.gz ] && rm -f se_phasepos.nii.gz
-		    dcm2niix -z y -f se_phasepos -o ./ $( dirname "${se_phasepos}" )
-		else
-		    rel "Using Dimon to convert se_phasepos to NIfTI. Warning: this may result in inconsistent unwarping behavior due to bad image headers. Prefer dcm2niix!" c
-		    dimon "${se_phasepos}" "se_phasepos"
-		fi
-		se_phasepos=se_phasepos
-	    else
-		rel "Cannot recognize $first_dicom as DICOM or NIfTI" c
-		exit 1
-	    fi
-	fi	
-    fi
+    #TODO/FIX: will use se_phase* if it exsits regardless of what input ($se_phaspos) is given
+    convert_or_use_nii se_phasepos "$se_phasepos"
+    [ $(imtest se_phasepos ) -eq 1 ] && se_phasepos=se_phasepos
 
-    if [ $( imtest $se_phaseneg ) -eq 0 ]; then
-	if [ $( ls $se_phaseneg | wc -l ) -eq 0 ]; then
-	    rel "Could not find any images matching -se_phaseneg specification." c && exit 1
-	else
-	    first_dicom=$( ls $se_phaseneg | head -n 1 )
-	    dicom_hdr "$first_dicom" 2>&1 | grep -q "ERROR: can't open.*as a DICOM file" && isdicom=0 || isdicom=1 # 0 exit status from grep indicates a match
-	    
-	    if [ $isdicom -eq 1 ]; then
-		rel "Converting -se_phaseneg to NIfTI" c
-		if [ $have_dcm2niix -eq 1 ]; then
-		    [ -r se_phaseneg.nii.gz ] && rm -f se_phaseneg.nii.gz
-		    dcm2niix -z y -f se_phaseneg -o ./ $(dirname "${se_phaseneg}" )
-		else
-		    rel "Using Dimon to convert se_phaseneg to NIfTI. Warning: this may result in inconsistent unwarping behavior due to bad image headers. Prefer dcm2niix!" c
-		    dimon "${se_phaseneg}" "se_phaseneg"
-		fi
-		se_phaseneg=se_phaseneg #variable now refers to converted NIfTI
-	    else
-		rel "Cannot recognize $first_dicom as DICOM or NIfTI" c
-		exit 1
-	    fi
-	fi
-    fi
+    convert_or_use_nii se_phaseneg "$se_phaseneg"
+    [ $(imtest se_phaseneg ) -eq 1 ] && se_phaseneg=se_phaseneg
 
     #topup works from data before skull-stripping
     #determine which is the target for distortion correction
@@ -333,31 +346,6 @@ function prepare_gre_fieldmap {
     #Still, for 2 seconds, I'll keep it.
     sleep $(echo "scale=9; $RANDOM/32767*2"|bc)s
 
-    #Collision occurs among multiple preprocessFunctional calls trying to perform the fieldmap preparation simultaneously
-    #because the fieldmap files are shared. Use a lock file with a wait command to get around this problem (I hope).
-    # WF 20150318: if we killed the script controlling the lock file, we might hang. give warning
-    #              also add timestamp to lock so we can check time since locking
-    function waitforlock {
-      # lock file should contain only a unix time stamp
-      # we can use that to see how long the lock file has existed 
-      # (safer than stat ?)
-      local lockfile="$1"
-      # return if we dont have a lock file
-      [ ! -f "$lockfile" ] && return 0
-
-      local now=$(date +%s)
-      local ctime=$(cat $lockfile)
-      [[ ! $ctime =~ [0-9]? ]] && rel "Warning: malformed lock file $lockfile" c
-
-      [ "$((( $now-$ctime )))" -gt "$(((1*60*60)))" ] && rel "Waiting on $lockfile for over 1 hour. Assuming this is in error and unlocking the pipeline." c && rm -f "$lockfile"
-
-      echo "waiting for another preprocessFunctional to finish (lock: $lockfile)"
-      while [ -f "$lockfile" ]; do
-          sleep 1
-      done
-
-      return 0
-    }
 
     #check for existence of phase file specified in .fieldmap_phase
     #remove this file before proceeding to reset check
