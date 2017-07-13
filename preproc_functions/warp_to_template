@@ -32,9 +32,9 @@ function warp_to_template {
 	    #setup mask files for warping
 
 	    #transform threshold / skull strip mask from prior step into template space.
-	    #rel "flirt -in ${threshMask} -applyxfm -init func_to_struct.mat -out ${threshMask}_2struct -paddingsize 0.0 -interp nearestneighbour -ref $mprageBet" #mask in struct space
+	    #rel "flirt -in ${threshMask} -applyxfm -init $funcdir/transforms/func_to_struct.mat -out ${threshMask}_2struct -paddingsize 0.0 -interp nearestneighbour -ref $mprageBet" #mask in struct space
 	    rel "applywarp --ref=${templateBrain} --in=${threshMask} --out=w${threshMask} \
-	    --interp=nn --premat=func_to_struct.mat --warp=${warpCoef} --paddingsize=0" #mask in standard space
+	    --interp=nn --premat=$funcdir/transforms/func_to_struct.mat --warp=${warpCoef} --paddingsize=0" #mask in standard space
 
 	    #warning: sinc interpolation is most precise, but if the mask used below does not precisely match the subject's
 	    #structural scan (e.g., greater cerebellar coverage for anat relative to functional), then sinc is prone to extending

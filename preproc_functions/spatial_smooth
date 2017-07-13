@@ -22,8 +22,6 @@ function spatial_smooth {
 	if [ $smoother = "susan" ]; then
 	    dimensionality=3 #smooth in two or three dimensions
 	    susan_thresh=$( echo "scale=5; ($median_intensity - $p_2) * 0.75" | bc )
-           # curerntly in parse_args
-           #sigma=$( echo "scale=5; $smoothing_kernel/2.355" | bc )
 	    
             #recompute mean functional, which is used for susan
 	    rel "fslmaths \"${preSmooth}\" -Tmean \"${preSmooth}_tmean\""

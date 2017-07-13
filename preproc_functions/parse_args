@@ -20,13 +20,16 @@ function parse_args {
     detectSiemens=0
     dicomPattern=
     dte=
+    dwelltime=     #effective echo spacing. set by -epi_echospacing or by fmcfg file
+    epiTE=
+    flip_topup_pedir=0
     fm_phase=
     fm_magnitude=
     fm_cfg=
     funcRefimg=
     funcStructFlirtDOF="bbr" #boundary-based registration in FSL 5.0+
     funcWarpInterp="spline"
-    hpFilter=80 #default to 80 TR high-pass filter
+    hpFilter=120s #default to 120s hp filter
     ica_aroma=0 #whether to run smoothed data through ICA-AROMA
     logFile="preprocessFunctional.log"
     mc_first= #default to empty and choose at stage of motion + slice timing depending on user specification and slice acquisition order
@@ -47,6 +50,9 @@ function parse_args {
     MATLAB_single_thread=
     ref_vol=  #don't set a motion correction reference volume by default
     rescalingMethod="10000_globalmedian" #scale whole brain 4D by single constant to normalize median to 10000.
+    se_phasepos=
+    se_phaseneg=
+    signallossthresh=0.9 # Areas with 90% or more signal loss in fieldmap are masked out. Will be overridden by an fmcfg file if specified
     sliceAcquisition= #never assume slice acquistion order. Force definition or use auto-detect from DICOM.
     sliceMotion4D=0
     sliceTimesFile=
@@ -56,6 +62,8 @@ function parse_args {
     tr= #never assume a TR. Force definition or use auto-detect from DICOM.
     templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" #default to new 2009 MNI
     templateName=MNI_3mm
+    topup_direct=1 #hidden at the moment. Tells func -> struct to use WarpField from topup directly, rather than the TopupField pushed through preproc_fieldmap
+    unwarpdir= #set by -epi_pedir or by fmcfg file
     waveletDespike=0
     waveletM1000=0
     waveletThreshold=10
@@ -231,6 +239,18 @@ function parse_args {
 	elif [ $1 = -dicom ]; then
 	    dicomPattern="${2}"
 	    shift 2
+	elif [ $1 = -epi_echospacing ]; then
+	    dwelltime="${2}"
+	    shift 2
+	elif [ $1 = -epi_pedir ]; then
+	    unwarpdir="${2}" #should be x/-x/y/-y/z/-z
+	    shift 2
+	elif [ $1 = -epi_te ]; then #echo time of EPI data
+	    epiTE=$( echo "($2)/1000" | bc -l ) # convert TE into seconds for sigloss
+	    shift 2
+	elif [ $1 = -flip_topup_pedir ]; then
+	    flip_topup_pedir=1
+	    shift 1
 	elif [ $1 = -fm_phase ]; then
 	    fm_phase="${2}"
 	    shift 2
@@ -344,6 +364,12 @@ function parse_args {
 	    sliceMotion4D=1
 	    mc_program="sliceMotion4d"
 	    shift 1
+	elif [ $1 = -se_phaseneg ]; then
+	    se_phaseneg="${2}"
+	    shift 2
+	elif [ $1 = -se_phasepos ]; then
+	    se_phasepos="${2}"
+	    shift 2
 	elif [ $1 = -siemens ]; then
 	    detectSiemens=1
 	    shift 1
@@ -478,6 +504,12 @@ function parse_args {
 	exit 1
     fi
 
+    #whether to use a fieldmap, either GRE or TOPUP
+    use_fm=0
+    if [[ -n "$fm_phase" || -n "$se_phasepos" ]]; then
+	use_fm=1
+    fi
+    
     #determine whether flirt version is new enough to handle BBR coregistration
     #if we have v6.0+, then incorporate fieldmap unwarping into BBR func2struct
     #and use resulting unwarping information for EPI -> unwarp -> struct -> MNI transform.
@@ -496,11 +528,10 @@ function parse_args {
     #we divide the FWHM value provided by $smoothing_kernel by 2.355 (approximately 8*log(2).
 
     sigma=$( echo "scale=5; $smoothing_kernel/2.355" | bc )
-    #echo "sigma is: $sigma"
 
     #smoothed files include the FHWM as a sufix
     [ $no_smooth -eq 0 ] && smoothing_suffix="_${smoothing_kernel}" || smoothing_suffix=
-
+    
     if [ -n "${logFile}" ]; then
 	if [ -f "${logFile}" ]; then
 	    #stat and date are not portable across Linux and BSD...

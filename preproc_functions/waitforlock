@@ -1,0 +1,51 @@
+#!/bin/bash
+
+#Collision occurs among multiple preprocessFunctional calls trying to perform the fieldmap preparation simultaneously
+#because the fieldmap files are shared. Use a lock file with a wait command to get around this problem (I hope).
+# WF 20150318: if we killed the script controlling the lock file, we might hang. give warning
+#              also add timestamp to lock so we can check time since locking
+# WF 20170706: use anywhere
+fileislocked() {
+   local lockfile="$1"
+   # if we dont have the file, file is not locked
+   [ ! -f "$lockfile" ] && return 1
+ 
+   local now=$(date +%s)
+   local ctime=$(cat $lockfile)
+   [[ ! $ctime =~ ^[0-9]+$ ]] && rel "Warning: malformed lock file $lockfile" c
+   # if we've been locked for a long time, file is not locked
+   [ "$((( $now-$ctime )))" -gt "$(((1*60*60)))" ] && return 1
+   
+   # file is locked
+   return 0
+}
+
+waitforlock() {
+   # lock file should contain only a unix time stamp
+   # we can use that to see how long the lock file has existed 
+   # (safer than stat ?)
+   local lockfile="$1"
+   # return if we dont have a lock file
+   if fileislocked "$lockfile" ; then
+       rel "Waiting on $lockfile for over 1 hour. Assuming this is in error and unlocking the pipeline." c 
+       rm -f "$lockfile"
+   fi
+ 
+   echo "waiting for another preprocessFunctional to finish (lock: $lockfile)"
+   while [ -f "$lockfile" ]; do
+       sleep 1
+   done
+ 
+   return 0
+}
+makelockfile() {
+   local lockfile="$1"
+   [ -z "$lockfile" ] && echo "no lockfile provided to $FUNC_NAME in ${BASH_SOURCE[@]}" >&2 && return 1
+   date +%s > $lockfile
+}
+rmlockfile() {
+   local lockfile="$1"
+   [ -n "$lockfile" -a -r "$lockfile" ] && rm $lockfile
+   return 0
+}
+# vim: set tabstop=7:
