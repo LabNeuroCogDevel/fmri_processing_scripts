@@ -181,6 +181,11 @@ function prepare_fieldmap {
     [ -d $tempsdir ] && rm -r $tempsdir
     mkdir $tempsdir
 
+    # we need to do this before testing if complete
+    # because we use the warpdir sourced from the file
+    # later (one-step warp)
+    [ -n "$fm_cfg" ] && { find_and_source_config "$fm_cfg" || return 1; }
+    
     if [[ ( -n "${fm_phase}" || -n "se_phasepos" ) && -f ".prepare_fieldmap_complete" ]]; then
 	return 0 #preparefieldmap already completed
     elif [ -n "$fm_phase" ]; then
@@ -318,11 +323,6 @@ function prepare_se_fieldmap {
 }
 
 function prepare_gre_fieldmap {
-    # we need to do this before testing if complete
-    # because we use the warpdir sourced from the file
-    # later (one-step warp)
-    find_and_source_config "$fm_cfg" || return 1
-
     # check that all required variables exist (defined in cfg)
     for inputName in mcMats fm_phase fm_magnitude epiTE dwelltime unwarpdir TEdiff signallossthresh scanner; do
 	inputVal=${!inputName}
@@ -816,28 +816,28 @@ function preproc_fieldmap {
     rel "Coregister fieldmap files into EPI space (mc_target)" c
 
     #use of refweight was leading to gross mis-registration in some subjects (esp. when fmap and epi did not have the same grid and voxel size).
-    #the epi2fmap.mat matrix is only used internally here, but does lead EF_D_mc_target and EF_UD_mc_target to look quite ugly.
+    #the epi_to_fmap.mat matrix is only used internally here, but does lead EF_D_mc_target and EF_UD_mc_target to look quite ugly.
     # -refweight FM_D_fmap_sigloss
 
-    rel "flirt -in EF_D_mc_target -ref FM_D_fmap_mag_brain_siglossed -omat $funcdir/transforms/epi2fmap.mat -o grot -dof 6"
-    qa_image FM_D_fmap_mag_brain_siglossed grot mc_target_to_fmap_mag_brain_siglossed.png "Distorted fm magnitude overlaid with distorted mc_target"
+    rel "flirt -in EF_D_mc_target -ref FM_D_fmap_mag_brain_siglossed -omat $funcdir/transforms/epi_to_fmap.mat -o grot -dof 6"
+    qa_image FM_D_fmap_mag_brain_siglossed grot func_to_fmap_mag_brain_siglossed.png "Distorted fm magnitude overlaid with distorted mc_target"
     
     if [ -n "$funcRefimg" ]; then
-	rel "flirt -in ER_D_epiref -ref FM_D_fmap_mag_brain_siglossed -omat $funcdir/transforms/ref2fmap.mat -o grot -dof 6"
+	rel "flirt -in ER_D_epiref -ref FM_D_fmap_mag_brain_siglossed -omat $funcdir/transforms/ref_to_fmap.mat -o grot -dof 6"
 	qa_image FM_D_fmap_mag_brain_siglossed grot epiref_to_fmap_mag_brain_siglossed.png "Distorted fm magnitude overlaid with distorted epiref"
     fi
 	
-    _picture grot "align FM (mag,sigloss in) to epi (ref) (make epi2fmap.mat, use this image for thumbnail)"
+    _picture grot "align FM (mag,sigloss in) to epi (ref) (make epi_to_fmap.mat, use this image for thumbnail)"
    
     # reverse  EF->FM  to get FM->EF (to put all fieldmap stuff in epi space)
-    rel "convert_xfm -omat $funcdir/transforms/fmap2epi.mat -inverse $funcdir/transforms/epi2fmap.mat"
-    [ -n "$funcRefimg" ] && rel "convert_xfm -omat $funcdir/transforms/fmap2ref.mat -inverse $funcdir/transforms/ref2fmap.mat"
+    rel "convert_xfm -omat $funcdir/transforms/fmap_to_epi.mat -inverse $funcdir/transforms/epi_to_fmap.mat"
+    [ -n "$funcRefimg" ] && rel "convert_xfm -omat $funcdir/transforms/fmap_to_ref.mat -inverse $funcdir/transforms/ref_to_fmap.mat"
 
     # transform all the fieldmap images into EPI space (mc_target),  FM_UDs become EF_UDs
     for file in "FM_UD_fmap" "FM_UD_fmap_mag_brain" "FM_UD_fmap_mag_brain_mask" "FM_UD_fmap_sigloss"; do
-	rel "flirt -in $file -ref EF_D_mc_target -init $funcdir/transforms/fmap2epi.mat -applyxfm -out ${file/FM_/EF_} -interp spline"
+	rel "flirt -in $file -ref EF_D_mc_target -init $funcdir/transforms/fmap_to_epi.mat -applyxfm -out ${file/FM_/EF_} -interp spline"
 	#creates "EF_UD_fmap" "EF_UD_fmap_mag_brain" "EF_UD_fmap_mag_brain_mask" "EF_UD_fmap_sigloss"
-	_picture ${file/FM_/EF_}  "align FM (mag,sigloss in) to epi (ref) (make epi2fmap.mat)"
+	_picture ${file/FM_/EF_}  "align FM (mag,sigloss in) to epi (ref) (make epi_to_fmap.mat)"
     done
 
     #threshold warped mask file to maintain same approximate size (alternative to nn interp)
@@ -891,20 +891,20 @@ function preproc_fieldmap {
     #adapted from epi_reg
     rel "Coregister the fieldmap to the structural image for use in func2struct alignment with BBR cost function." c
 
-    rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -dof 6 -omat $funcdir/transforms/fmap2struct.mat -out fmap2struct -interp spline" #magnitude to structural
+    rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -dof 6 -omat $funcdir/transforms/fmap_to_struct.mat -out fmap_to_struct -interp spline" #magnitude to structural
     #note that epi_reg requests unbetted MPRAGE and runs an additional flirt on the unbetted magnitude and MPRAGE images.
 
-    qa_image "$mprageBet" fmap2struct fmap_mag_to_struct.png "Structural image overlaid with 6dof-coregistered undistorted fmap mag"
+    qa_image "$mprageBet" fmap_to_struct fmap_mag_to_struct.png "Structural image overlaid with 6dof-coregistered undistorted fmap mag"
     
     #further testing indicates that BBR makes substantial improvements in (magnitude) -> struct coregistration for some subjects
     if [[ $bbrCapable -eq 1 && $funcStructFlirtDOF = "bbr" ]]; then
 	local mprageBet_base=$( remove_ext ${mprageBet} ) #skull-stripped mprage image basename
-	rel "immv fmap2struct fmap2struct_init"
-	rel "mv $funcdir/transforms/fmap2struct.mat $funcdir/transforms/fmap2struct_init.mat"
-	rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -out fmap2struct -omat $funcdir/transforms/fmap2struct.mat -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
-	        -cost bbr -init $funcdir/transforms/fmap2struct_init.mat -dof 6 -schedule ${FSLDIR}/etc/flirtsch/bbr.sch $bbrfmap"
+	rel "immv fmap_to_struct fmap_to_struct_init"
+	rel "mv $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/fmap_to_struct_init.mat"
+	rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -out fmap_to_struct -omat $funcdir/transforms/fmap_to_struct.mat -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
+	        -cost bbr -init $funcdir/transforms/fmap_to_struct_init.mat -dof 6 -schedule ${FSLDIR}/etc/flirtsch/bbr.sch $bbrfmap"
 
-	qa_image "$mprageBet" fmap2struct fmap_mag_to_struct_bbr.png "Structural image overlaid with bbr-coregistered undistorted fmap mag"
+	qa_image "$mprageBet" fmap_to_struct fmap_mag_to_struct_bbr.png "Structural image overlaid with bbr-coregistered undistorted fmap mag"
     fi
     
     # unmask the fieldmap (necessary to avoid edge effects)
@@ -914,18 +914,18 @@ function preproc_fieldmap {
     rel "fugue --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mask --unmaskfmap --savefmap=FM_UD_fmap_unmasked --unwarpdir=$fugue_unwarpdir"
 
     # the following is a NEW HACK to fix extrapolation when fieldmap is too small
-    rel "applywarp -i FM_UD_fmap_unmasked -r $mprageBet --premat=$funcdir/transforms/fmap2struct.mat -o FM_UD_fmap2struct_pad0"
-    rel "fslmaths FM_UD_fmap2struct_pad0 -abs -bin FM_UD_fmap2struct_pad0_innermask"
-    rel "fugue --loadfmap=FM_UD_fmap2struct_pad0 --mask=FM_UD_fmap2struct_pad0_innermask --unmaskfmap --unwarpdir=${fugue_unwarpdir} --savefmap=FM_UD_fmap2struct_dilated"
-    rel "fslmaths FM_UD_fmap2struct_dilated fmapForBBR" #create the fieldmap to be used for BBR func -> struct coregistration
+    rel "applywarp -i FM_UD_fmap_unmasked -r $mprageBet --premat=$funcdir/transforms/fmap_to_struct.mat -o FM_UD_fmap_to_struct_pad0"
+    rel "fslmaths FM_UD_fmap_to_struct_pad0 -abs -bin FM_UD_fmap_to_struct_pad0_innermask"
+    rel "fugue --loadfmap=FM_UD_fmap_to_struct_pad0 --mask=FM_UD_fmap_to_struct_pad0_innermask --unmaskfmap --unwarpdir=${fugue_unwarpdir} --savefmap=FM_UD_fmap_to_struct_dilated"
+    rel "fslmaths FM_UD_fmap_to_struct_dilated fmapForBBR" #create the fieldmap to be used for BBR func -> struct coregistration
 
     #cleanup
-    mv FM_UD_fmap2struct_pad0* FM_UD_fmap2struct_dilated* $tempsdir
+    mv FM_UD_fmap_to_struct_pad0* FM_UD_fmap_to_struct_dilated* $tempsdir
     imrm grot
 
     ###
     #Conclusion: We have now created the FM_UD_fmap FM_UD_fmap_mag and FM_UD_fmap_mag_brain files.
-    #We also have the fmap2struct image, which is the fieldmap aligned to the structural.
+    #We also have the fmap_to_struct image, which is the fieldmap aligned to the structural.
     #For now, I am only going to support application of the unwarping step at the applywarp -> MNI phase of preprocessing.
     #This will result in a func -> Struct + Unwarp -> MNI interpolation (pretty good, I think).
     #If we wanted to, when slice timing falls between motion correction and warping to template, we could
@@ -936,7 +936,7 @@ function preproc_fieldmap {
 
     #explicit return code needed to avoid implicit status of prior command
     return 0
-    
+   
 }
 
 find_and_source_config(){

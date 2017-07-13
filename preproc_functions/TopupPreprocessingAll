@@ -53,7 +53,7 @@ Usage() {
 
 # Output images (in $WD): 
 #          BothPhases      (input to topup - combines both pe direction data, plus masking)
-#          epiref2PhaseNeg_gdc.mat epiref2PhaseNeg_gdc   (linear registration result)
+#          epiref_to_PhaseNeg_gdc.mat epiref_to_PhaseNeg_gdc   (linear registration result)
 #          PhaseNeg_gdc  PhasePos_gdc
 #          PhaseNeg_gdc_dc  PhaseNeg_gdc_dc_jac  PhasePos_gdc_dc  PhasePos_gdc_dc_jac
 #          SE_UD_epiref (undistorted epiref in SE space)       SE_UD_epiref_jac (with Jacobian intensity correction)
@@ -367,32 +367,32 @@ fi
 #register epiref to SE image of the same phase
 if [[ $have_ants -eq 1 && $have_c3d -eq 1 ]]; then
     rel "fslroi ${WD}/${setarget} ${WD}/${setarget}_vol1 0 1" #ants blows up on 4d targets
-    rel "antsRegistrationSyN.sh -d 3 -f ${WD}/${setarget}_vol1${ext} -m ${WD}/epiref${ext} -t r -o ${WD}/epiref2${setarget}" #rigid transformation
+    rel "antsRegistrationSyN.sh -d 3 -f ${WD}/${setarget}_vol1${ext} -m ${WD}/epiref${ext} -t r -o ${WD}/epiref_to_${setarget}" #rigid transformation
     #convert to FSL-compatible transformation
-    rel "c3d_affine_tool -ref ${WD}/${setarget}_vol1${ext} -src ${WD}/epiref${ext} -itk ${WD}/epiref2${setarget}0GenericAffine.mat -ras2fsl -o transforms/epiref2${setarget}.mat"
-    rel "immv ${WD}/epiref2${setarget}Warped ${WD}/epiref2${setarget}"
-    rel "mv ${WD}/epiref2${setarget}0GenericAffine.mat transforms/epiref2${setarget}.itk"
-    rel "imrm ${WD}/epiref2${setarget}InverseWarped ${WD}/${setarget}_vol1" #not useful
+    rel "c3d_affine_tool -ref ${WD}/${setarget}_vol1${ext} -src ${WD}/epiref${ext} -itk ${WD}/epiref_to_${setarget}0GenericAffine.mat -ras2fsl -o transforms/epiref_to_${setarget}.mat"
+    rel "immv ${WD}/epiref_to_${setarget}Warped ${WD}/epiref_to_${setarget}"
+    rel "mv ${WD}/epiref_to_${setarget}0GenericAffine.mat transforms/epiref_to_${setarget}.itk"
+    rel "imrm ${WD}/epiref_to_${setarget}InverseWarped ${WD}/${setarget}_vol1" #not useful
 else
     # further testing suggests that flirt coregistration is somewhat improved using skull-stripped images
     # register scout to SE input + combine motion and distortion correction
     rel "3dSkullStrip -overwrite -input ${WD}/epiref${ext} -prefix ${WD}/epiref_brain${ext} -touchup"
     rel "3dSkullStrip -overwrite -input ${WD}/${setarget}${ext} -prefix ${WD}/${setarget}_brain${ext} -touchup"    
-    #rel "flirt -dof 6 -interp spline -in ${WD}/epiref -ref ${WD}/${setarget} -omat transforms/epiref2${setarget}.mat -out ${WD}/epiref2${setarget}"
-    rel "flirt -dof 6 -interp spline -in ${WD}/epiref_brain -ref ${WD}/${setarget}_brain -omat transforms/epiref2${setarget}.mat -out ${WD}/epiref2${setarget}"    
+    #rel "flirt -dof 6 -interp spline -in ${WD}/epiref -ref ${WD}/${setarget} -omat transforms/epiref_to_${setarget}.mat -out ${WD}/epiref_to_${setarget}"
+    rel "flirt -dof 6 -interp spline -in ${WD}/epiref_brain -ref ${WD}/${setarget}_brain -omat transforms/epiref_to_${setarget}.mat -out ${WD}/epiref_to_${setarget}"    
 fi
 
 #compute warpfield in SE_Magnitude space (from TOPUP) and epiref space
-rel "convert_xfm -omat transforms/epiref2sefmap.mat -concat ${WD}/MotionMatrix_${vnum}.mat transforms/epiref2${setarget}.mat"
-rel "convert_xfm -omat transforms/sefmap2epiref.mat -inverse transforms/epiref2sefmap.mat" #compute SE -> EpiRef
+rel "convert_xfm -omat transforms/epiref_to_sefmap.mat -concat ${WD}/MotionMatrix_${vnum}.mat transforms/epiref_to_${setarget}.mat"
+rel "convert_xfm -omat transforms/sefmap2epiref.mat -inverse transforms/epiref_to_sefmap.mat" #compute SE -> EpiRef
 
 #setup the relevant unwarping coefficients
 #removing the epiref -> sefmap transform from HCP pipeline
-#rel "convertwarp --relout --rel -r ${WD}/${setarget} --premat=transforms/epiref2sefmap.mat --warp1=${WD}/SE_WarpField_${vnum} --out=${WD}/SE_WarpField"
+#rel "convertwarp --relout --rel -r ${WD}/${setarget} --premat=transforms/epiref_to_sefmap.mat --warp1=${WD}/SE_WarpField_${vnum} --out=${WD}/SE_WarpField"
 rel "imcp ${WD}/SE_WarpField_${vnum} ${WD}/SE_WarpField"
 
 #epiref -> sefmap -> unwarp -> epiref transform (undistort images coregistered to epiref)
-rel "convertwarp --relout --rel -r ${WD}/epiref --premat=transforms/epiref2sefmap.mat --warp1=${WD}/SE_WarpField_${vnum} --postmat=transforms/sefmap2epiref.mat --out=${WD}/ER_WarpField"
+rel "convertwarp --relout --rel -r ${WD}/epiref --premat=transforms/epiref_to_sefmap.mat --warp1=${WD}/SE_WarpField_${vnum} --postmat=transforms/sefmap2epiref.mat --out=${WD}/ER_WarpField"
 
 rel "imcp ${WD}/SE_Jacobian_${vnum} ${WD}/SE_Jacobian"
 
@@ -412,7 +412,7 @@ rel "applywarp --rel --interp=spline -i ${WD}/PhaseNeg_gdc -r ${WD}/PhaseNeg_gdc
 rel "fslmaths ${WD}/PhaseNeg_gdc_dc -mul ${WD}/SE_Jacobian_${vnum} ${WD}/PhaseNeg_gdc_dc_jac"
 
 # Scout - warp and Jacobian modulate to get distortion corrected output
-rel "applywarp --rel --interp=spline -i ${WD}/epiref -r ${WD}/${setarget} --premat=transforms/epiref2sefmap.mat -w ${WD}/SE_WarpField -o ${WD}/SE_UD_epiref"
+rel "applywarp --rel --interp=spline -i ${WD}/epiref -r ${WD}/${setarget} --premat=transforms/epiref_to_sefmap.mat -w ${WD}/SE_WarpField -o ${WD}/SE_UD_epiref"
 rel "fslmaths ${WD}/SE_UD_epiref -mul ${WD}/SE_Jacobian.nii.gz ${WD}/SE_UD_epiref_jac"
 
 rel "applywarp --rel --interp=spline -i ${WD}/epiref -r ${WD}/epiref -w ${WD}/ER_WarpField -o ${WD}/ER_UD_epiref"
@@ -457,7 +457,7 @@ echo "fslview ${WD}/PhaseNeg ${WD}/PhaseNeg_gdc ${WD}/PhaseNeg_gdc_dc ${WD}/Phas
 echo "# Inspect results of various corrections (positive phase)" >> $WD/qa.txt
 echo "fslview ${WD}/PhasePos ${WD}/PhasePos_gdc ${WD}/PhasePos_gdc_dc ${WD}/PhasePos_gdc_dc_jac" >> $WD/qa.txt
 echo "# Check linear registration of Scout to SE EPI" >> $WD/qa.txt
-echo "fslview ${WD}/Phase${epirefPhase}_gdc ${WD}/epiref2Phase${epirefPhase}_gdc" >> $WD/qa.txt
+echo "fslview ${WD}/Phase${epirefPhase}_gdc ${WD}/epiref_to_Phase${epirefPhase}_gdc" >> $WD/qa.txt
 echo "# Inspect results of various corrections to scout" >> $WD/qa.txt
 echo "fslview ${WD}/epiref ${WD}/ER_UD_epiref ${WD}/ER_UD_epiref_jac" >> $WD/qa.txt
 echo "# Visual check of warpfield and Jacobian" >> $WD/qa.txt

@@ -213,5 +213,9 @@ function check_requirements {
 	    exit 1
 	fi
     fi
+
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+
 }
 # vim: set tabstop=7:
