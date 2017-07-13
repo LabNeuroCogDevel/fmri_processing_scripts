@@ -630,6 +630,10 @@ function parse_mprage_args() {
             exit 1
 	fi
     done
+
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+
 }
 
 # vim: set tabstop=7:

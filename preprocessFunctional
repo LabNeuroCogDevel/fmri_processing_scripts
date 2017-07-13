@@ -178,7 +178,7 @@ The major steps in the processing pipeline are, in order:
 
 Note that if the slice acquisition order is sequential, then the default is to appply motion correction before slice timing correction, whereas for
 interleaved acquisition, the default is slice timing first. The order of these steps can be explicitly specified using -st_first, -mc_first, or -no_st.
-Altnernatively, consider -4d_slice_motion, which performs both steps at once and is likely more effective than conventional methods.
+Alternatively, consider -4d_slice_motion, which performs both steps at once and is likely more effective than conventional methods.
 
 Characters are prepended as a prefix to the 4d filename, such that the final processed file will have a
 prefix such as nfswkmtd, indicating the sequence of processing steps, from right to left.
@@ -426,6 +426,7 @@ if [[ -z $st_first && -z $mc_first && $sliceMotion4D -eq 0 && $no_st -eq 0 ]]; t
 	st_first=0
     fi
 fi
+
 if [ $sliceMotion4D -eq 1 ]; then
     #Option 1: 4-D slice timing + motion correction
     correct_slice_motion_4d
@@ -448,6 +449,8 @@ elif [ $mc_first -eq 1 ]; then
     onestep_warp mc_target #apply MC + FM unwarping before slice timing correction
     correct_slice_timing
 fi
+
+
 
 #make plots (and optional movie) of head motion
 motion_plots

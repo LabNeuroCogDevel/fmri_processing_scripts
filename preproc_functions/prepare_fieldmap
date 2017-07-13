@@ -178,7 +178,7 @@ function prepare_fieldmap {
     # we need to do this before testing if complete
     # because we use the warpdir sourced from the file
     # later (one-step warp)
-    [ -n "$fm_cfg" ] && find_and_source_config "$fm_cfg" || return 1
+    [ -n "$fm_cfg" ] && { find_and_source_config "$fm_cfg" || return 1; }
     
     if [[ ( -n "${fm_phase}" || -n "se_phasepos" ) && -f ".prepare_fieldmap_complete" ]]; then
 	return 0 #preparefieldmap already completed
