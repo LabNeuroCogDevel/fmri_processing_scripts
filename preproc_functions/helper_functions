@@ -52,18 +52,22 @@ function traperror () {
     echo "$(date) $(hostname) $0: ERROR '$command' failed at line $line - exited with status: $err" | tee -a "${dotfile}_crash"
 
     if [ "$funcstack" != "::" ]; then
-	echo -n "$(date) $(hostname) $0: DEBUG Error in ${funcstack} " | tee -a "${dotfile}_crash"
+	echo -n "$0: DEBUG Error in ${funcstack} " | tee -a "${dotfile}_crash"
 	if [ "$linecallfunc" != "" ]; then
 	    echo "called at line $linecallfunc" | tee -a "${dotfile}_crash"
 	fi
     fi
+    [ -n "$originalcwd" ] && echo -en "Working directory:\n  $originalcwd\n" | tee -a "${dotfile}_crash"
+    [ -n "$originalargs" ] && echo -en "Arguments passed to script:\n  $originalargs\n\n" | tee -a "${dotfile}_crash"
 
-    echo -en "\n\nLast 10 lines of log file:\n\n" | tee -a "${dotfile}_crash" #add two newlines
-    [ -r "${logFile}" ] && tail -n 10 "${logFile}" >> "${dotfile}_crash"
+    if [ -r "${logFile}" ]; then
+	echo -en "\n\nLast 10 lines of log file:\n---------\n\n" | tee -a "${dotfile}_crash" #add two newlines
+	tail -n 10 "${logFile}" | tee -a "${dotfile}_crash"
+    fi
 
     if [ -r "preprocessFunctional_stderr" ]; then
-	echo -en "\n\nLast 10 lines of preprocessFunctional_stderr:\n\n"
-	tail -n 10 preprocessFunctional_stderr >> "${dotfile}_crash"
+	echo -en "\n\nLast 10 lines of preprocessFunctional_stderr:\n---------\n\n" | tee -a "${dotfile}_crash"
+	tail -n 10 preprocessFunctional_stderr | tee -a "${dotfile}_crash"
     fi
 }
 
