@@ -115,7 +115,7 @@ function register_func2struct {
     if [ $use_fm -eq 1 ]; then
 	#need to compute func_to_struct_init.mat via the concatentation of func -> fmap -> struct warps
 	if [ $target = "mc_target_brain_restore" ]; then
-	    rel "convert_xfm -omat $funcdir/transforms/func_to_struct_viafmap.mat -concat $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/epi_to_fmap.mat"
+	    rel "convert_xfm -omat $funcdir/transforms/func_to_struct_viafmap.mat -concat $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/func_to_fmap.mat"
 	    initMat=$funcdir/transforms/func_to_struct_viafmap.mat
 	else
 	    rel "convert_xfm -omat $funcdir/transforms/epiref_to_struct_viafmap.mat -concat $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/epiref_to_fmap.mat"

@@ -9,7 +9,6 @@
 waitforlockfile=$(dirname ${BASH_SOURCE[0]})/waitforlock
 [ -r $waitforlock ] && source $waitforlockfile
 
-
 #function to convert fieldmap to radians per second
 function fieldmap_make_rads_per_sec() {
 
@@ -237,7 +236,6 @@ convert_or_use_nii() {
       rel "Could not find any images matching $name specification ('$input')." c && exit 1
    fi
 
-
    # make sure we are looking at a dicom
    first_dicom=$( ls $input | head -n 1 )
    dicom_hdr "$first_dicom" 2>&1 | grep -q "ERROR: can't open.*as a DICOM file" && isdicom=0 || isdicom=1 # 0 exit status from grep indicates a match
@@ -259,7 +257,7 @@ convert_or_use_nii() {
    # convert dicoms to nifti called $name in working directory (functional preprocess directory)
    if [ $have_dcm2niix -eq 1 ]; then
       [ -r $name.nii.gz ] && rm -f $name.nii.gz
-      dcm2niix -f $name -o ./ $inputdir
+      dcm2niix -z y -f $name -o ./ $inputdir
    else
       rel "Using Dimon to convert $name to NIfTI. Warning: this may result in inconsistent unwarping behavior due to bad image headers. Prefer dcm2niix!" c
       dimon "${input}" "$name"
@@ -318,7 +316,6 @@ function prepare_se_fieldmap {
         
     #explicit return code needed to avoid implicit status of prior command
     return 0
-
     
 }
 
@@ -816,10 +813,10 @@ function preproc_fieldmap {
     rel "Coregister fieldmap files into EPI space (mc_target)" c
 
     #use of refweight was leading to gross mis-registration in some subjects (esp. when fmap and epi did not have the same grid and voxel size).
-    #the epi_to_fmap.mat matrix is only used internally here, but does lead EF_D_mc_target and EF_UD_mc_target to look quite ugly.
+    #the func_to_fmap.mat matrix is only used internally here, but does lead EF_D_mc_target and EF_UD_mc_target to look quite ugly.
     # -refweight FM_D_fmap_sigloss
 
-    rel "flirt -in EF_D_mc_target -ref FM_D_fmap_mag_brain_siglossed -omat $funcdir/transforms/epi_to_fmap.mat -o grot -dof 6"
+    rel "flirt -in EF_D_mc_target -ref FM_D_fmap_mag_brain_siglossed -omat $funcdir/transforms/func_to_fmap.mat -o grot -dof 6"
     qa_image FM_D_fmap_mag_brain_siglossed grot func_to_fmap_mag_brain_siglossed.png "Distorted fm magnitude overlaid with distorted mc_target"
     
     if [ -n "$funcRefimg" ]; then
@@ -827,17 +824,17 @@ function preproc_fieldmap {
 	qa_image FM_D_fmap_mag_brain_siglossed grot epiref_to_fmap_mag_brain_siglossed.png "Distorted fm magnitude overlaid with distorted epiref"
     fi
 	
-    _picture grot "align FM (mag,sigloss in) to epi (ref) (make epi_to_fmap.mat, use this image for thumbnail)"
+    _picture grot "align FM (mag,sigloss in) to epi (ref) (make func_to_fmap.mat, use this image for thumbnail)"
    
     # reverse  EF->FM  to get FM->EF (to put all fieldmap stuff in epi space)
-    rel "convert_xfm -omat $funcdir/transforms/fmap_to_epi.mat -inverse $funcdir/transforms/epi_to_fmap.mat"
+    rel "convert_xfm -omat $funcdir/transforms/fmap_to_epi.mat -inverse $funcdir/transforms/func_to_fmap.mat"
     [ -n "$funcRefimg" ] && rel "convert_xfm -omat $funcdir/transforms/fmap_to_ref.mat -inverse $funcdir/transforms/ref_to_fmap.mat"
 
     # transform all the fieldmap images into EPI space (mc_target),  FM_UDs become EF_UDs
     for file in "FM_UD_fmap" "FM_UD_fmap_mag_brain" "FM_UD_fmap_mag_brain_mask" "FM_UD_fmap_sigloss"; do
 	rel "flirt -in $file -ref EF_D_mc_target -init $funcdir/transforms/fmap_to_epi.mat -applyxfm -out ${file/FM_/EF_} -interp spline"
 	#creates "EF_UD_fmap" "EF_UD_fmap_mag_brain" "EF_UD_fmap_mag_brain_mask" "EF_UD_fmap_sigloss"
-	_picture ${file/FM_/EF_}  "align FM (mag,sigloss in) to epi (ref) (make epi_to_fmap.mat)"
+	_picture ${file/FM_/EF_}  "align FM (mag,sigloss in) to epi (ref) (make func_to_fmap.mat)"
     done
 
     #threshold warped mask file to maintain same approximate size (alternative to nn interp)
