@@ -552,6 +552,7 @@ function read_preproc_cmd {
    exit 1
  fi
 }
+warn() { echo -e "$@" >&2; }
 
 
 # given the NAME of an array that contains the names of other variables 
@@ -611,4 +612,59 @@ function qa_image {
     [ -n "$title" ] && rel "montage -label \"${title}\nunderlay:$( basename $underlay )\noverlay:$( basename $overlay )\" \"${qa_imgdir}/$fname\" -pointsize $fsize -geometry +0+0 \"${qa_imgdir}/$fname\""
 
     rm -f sl?.png #cleanup
+}
+
+#randomly sleep 0-2 seconds to avoid lock file collisision
+#Apr2014: I'm not really sure if this is necessary... problems may have emerged from running fslreorient2std simultaneously on originals...
+#Still, for 2 seconds, I'll keep it.
+randomsleep(){ sleep $(echo "scale=9; $RANDOM/32767*2"|bc)s; }
+
+# imtest but return w/exit status and can handle relative symlnks
+imtestln() { [ $( imtest $1 ) -eq 1 -o $(cd $(dirname $1); imtest $(abspath $(readlink $(basename $1)))) -eq 1 ]; }
+# is file one really file 2, returns 0 (true) if same
+a_is_b() { diff -q $1 $2; }
+# is the input a glob (e.g "MR*", "path/to/*dcm")
+isglob() { [[ "$1" =~ .*\*.* ]]; }
+# how many file in/match the first arg provided
+cnt() { ls $1 | wc -l; }
+
+find_and_source_fmconfig(){
+    local fm_cfg="$1"
+    [ -z "$fm_cfg" ] && echo "Want to correct with fieldmaps but dont have a config file!" >&2 && return 1
+
+    ## need to find fmcfgdir
+    # expect it to be in $0
+    local fmcfgdir=""
+    for pdirs in $0 $(dirname ${BASH_SOURCE[0]}){,/..}/preprocessFunctional; do
+       [ ! -r "$pdirs" ] && continue
+       pdir=$(cd $(dirname $pdirs); pwd)
+       _fmcfgdir=$pdir/fmcfg
+       [ -d $_fmcfgdir ] && fmcfgdir=$_fmcfgdir &&  break
+    done
+
+    [ -z "$fmcfgdir" -a ! -r "$fm_cfig" ] && echo "cannot find script directory root to find config file for '$fm_cfg'!" >&2 && return 1
+
+    # Allow --config to be a shorthand lookup, defined here, rather than a config file
+    local fm_cfg_file=$fmcfgdir/$fm_cfg.fmcfg
+    if [ -r $fm_cfg_file ]; then
+      fm_cfg=$fm_cfg_file
+    else
+      case $fm_cfg in
+         cogemo|multimodal|wpc5640 ) fm_cfg=$fmcfgdir/cogemo.fmcfg;;
+         clock|specc|wpc6290|p5 )    fm_cfg=$fmcfgdir/MB5_TR1.0_TE30_60slc.fmcfg;;
+         # dead code -- 20170224
+         trust )                     fm_cfg=$fmcfgdir/trust.fmcfg;;
+         bandit )                    fm_cfg=$fmcfgdir/bandit.fmcfg;;
+         pet    )                    fm_cfg=$fmcfgdir/pet.fmcfg;;
+      esac
+    fi
+    
+    # source config file or warn
+    if [ -n "$fm_cfg" -a -r "$fm_cfg" ]; then
+      rel "using '$fm_cfg' for fieldmap config" c
+      source $fm_cfg 
+    else
+      echo "ERROR: readable config file not provided or understood ($fm_cfg)" >&2
+      return 1
+    fi
 }
