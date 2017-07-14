@@ -386,6 +386,9 @@ fi
 rel "convert_xfm -omat transforms/epiref_to_sefmap.mat -concat ${WD}/MotionMatrix_${vnum}.mat transforms/epiref_to_${setarget}.mat"
 rel "convert_xfm -omat transforms/sefmap_to_epiref.mat -inverse transforms/epiref_to_sefmap.mat" #compute SE -> EpiRef
 
+#create epiref -> fmap image
+qa_image "${WD}/${setarget}" "${WD}/epiref_to_${setarget}" epiref_to_sefmap.png "SE Magnitude overlaid with co-registered epiref (in TopupPreprocessingAll)"
+
 #setup the relevant unwarping coefficients
 #removing the epiref -> sefmap transform from HCP pipeline
 #rel "convertwarp --relout --rel -r ${WD}/${setarget} --premat=transforms/epiref_to_sefmap.mat --warp1=${WD}/SE_WarpField_${vnum} --out=${WD}/SE_WarpField"
@@ -450,17 +453,19 @@ date > .topup_complete
 
 ########################################## QA STUFF ########################################## 
 
+command -v fsleyes >/dev/null 2>&1 && viewcmd=fsleyes || viewcmd=fslview
+
 if [ -e $WD/qa.txt ] ; then rm -f $WD/qa.txt ; fi
 echo "cd `pwd`" >> $WD/qa.txt
 echo "# Inspect results of various corrections (negative phase)" >> $WD/qa.txt
-echo "fslview ${WD}/PhaseNeg ${WD}/PhaseNeg_gdc ${WD}/PhaseNeg_gdc_dc ${WD}/PhaseNeg_gdc_dc_jac" >> $WD/qa.txt
+echo "$viewcmd ${WD}/PhaseNeg ${WD}/PhaseNeg_gdc ${WD}/PhaseNeg_gdc_dc ${WD}/PhaseNeg_gdc_dc_jac" >> $WD/qa.txt
 echo "# Inspect results of various corrections (positive phase)" >> $WD/qa.txt
-echo "fslview ${WD}/PhasePos ${WD}/PhasePos_gdc ${WD}/PhasePos_gdc_dc ${WD}/PhasePos_gdc_dc_jac" >> $WD/qa.txt
+echo "$viewcmd ${WD}/PhasePos ${WD}/PhasePos_gdc ${WD}/PhasePos_gdc_dc ${WD}/PhasePos_gdc_dc_jac" >> $WD/qa.txt
 echo "# Check linear registration of Scout to SE EPI" >> $WD/qa.txt
-echo "fslview ${WD}/Phase${epirefPhase}_gdc ${WD}/epiref_to_Phase${epirefPhase}_gdc" >> $WD/qa.txt
+echo "$viewcmd ${WD}/Phase${epirefPhase}_gdc ${WD}/epiref_to_Phase${epirefPhase}_gdc" >> $WD/qa.txt
 echo "# Inspect results of various corrections to scout" >> $WD/qa.txt
-echo "fslview ${WD}/epiref ${WD}/ER_UD_epiref ${WD}/ER_UD_epiref_jac" >> $WD/qa.txt
+echo "$viewcmd ${WD}/epiref ${WD}/ER_UD_epiref ${WD}/ER_UD_epiref_jac" >> $WD/qa.txt
 echo "# Visual check of warpfield and Jacobian" >> $WD/qa.txt
-echo "fslview ${WD}/SE_WarpField ${WD}/SE_Jacobian" >> $WD/qa.txt
+echo "$viewcmd ${WD}/SE_WarpField ${WD}/SE_Jacobian" >> $WD/qa.txt
 
 ##############################################################################################

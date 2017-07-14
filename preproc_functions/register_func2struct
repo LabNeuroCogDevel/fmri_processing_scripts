@@ -69,7 +69,7 @@ function register_func2struct {
 
 	    #compute sefmap -> func transform via epiref if available (TOPUP)
 	    if [ -f "$funcdir/transforms/sefmap_to_epiref.mat" ]; then
-		rel "convert_xfm -omat ${funcdir}/transforms/sefmap2func.mat -concat ${funcdir}/transforms/epiref_to_func.mat ${funcdir}/transforms/sefmap_to_epiref.mat"
+		rel "convert_xfm -omat ${funcdir}/transforms/sefmap_to_func.mat -concat ${funcdir}/transforms/epiref_to_func.mat ${funcdir}/transforms/sefmap_to_epiref.mat"
 	    fi
 
 	    rel "date > .t2star_coreg_complete"
@@ -98,8 +98,8 @@ function register_func2struct {
 
 	#compute func -> epiref -> se fmap transform
 	rel "convert_xfm -omat $funcdir/transforms/func_to_sefmap.mat -concat $funcdir/transforms/epiref_to_sefmap.mat $funcdir/transforms/func_to_epiref.mat"
-	rel "convert_xfm -omat $funcdir/transforms/sefmap2func.mat -inverse $funcdir/transforms/func_to_sefmap.mat" #compute SE -> func transform
-	rel "convertwarp --relout --rel -r mc_target --premat=$funcdir/transforms/func_to_sefmap.mat --warp1=topup_undistort/SE_WarpField --postmat=$funcdir/transforms/sefmap2func.mat --out=topup_undistort/EF_WarpField"
+	rel "convert_xfm -omat $funcdir/transforms/sefmap_to_func.mat -inverse $funcdir/transforms/func_to_sefmap.mat" #compute SE -> func transform
+	rel "convertwarp --relout --rel -r mc_target --premat=$funcdir/transforms/func_to_sefmap.mat --warp1=topup_undistort/SE_WarpField --postmat=$funcdir/transforms/sefmap_to_func.mat --out=topup_undistort/EF_WarpField"
 	
 	rel "Undistorting mc_target images" c
 	rel "applywarp -i mc_target -r mc_target -o mc_target_undistorted -w topup_undistort/EF_WarpField --rel --interp=spline"

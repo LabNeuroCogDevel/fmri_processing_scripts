@@ -102,13 +102,16 @@ list.dirs <- function(...) {
 
 exec_pbs_iojob <- function(srclist, destlist, cpcmd="cp -Rp", njobs=12, qsubdir=getwd(), walltime="10:00:00", jobname="qsub_iojob") {
   stopifnot(length(srclist)==length(destlist))
+
+  #remove email directives from PBS jobs
+  #"#PBS -M michael.hallquist@psu.edu",
+  #"#PBS -m abe"
+
   output_script <- c("#!/usr/bin/env sh",
   "",
   paste0("#PBS -l walltime=", walltime),
   "#PBS -A mnh5174_a_g_hc_default",
   "#PBS -j oe",
-  "#PBS -M michael.hallquist@psu.edu",
-  #"#PBS -m abe"
   paste0("#PBS -l nodes=1:ppn=",njobs,":himem"),
   "source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash #setup environment",
   paste0("src_queue=(\"", paste(srclist, collapse="\" \""), "\")"),
