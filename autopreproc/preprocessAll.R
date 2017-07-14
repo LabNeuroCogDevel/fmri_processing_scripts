@@ -362,9 +362,9 @@ if (proc_freesurfer) {
       if (use_job_array) {
         #create preprocessing script for the ith dataset
         output_script <- c(preproc_one,
-                           paste0("[ ! -d \"", fs_to_process[d], "\" ] && { echo \"Cannot find directory: ", fs_to_process[d], ". Aborting.\"; exit 0; }"),
-                           paste0("[ ! -r \"", file.path(fs_to_process[d], ".preprocessmprage_complete"),
-                                  "\" ] && { echo \"Cannot find .preprocessmprage_complete in: ", fs_to_process[d], ". Aborting.\"; exit 0; }"),
+                           paste0("[ ! -d \"", fs_toprocess[d], "\" ] && { echo \"Cannot find directory: ", fs_toprocess[d], ". Aborting.\"; exit 0; }"),
+                           paste0("[ ! -r \"", file.path(fs_toprocess[d], ".preprocessmprage_complete"),
+                                  "\" ] && { echo \"Cannot find .preprocessmprage_complete in: ", fs_toprocess[d], ". Aborting.\"; exit 0; }"),
                            paste("cd", fs_toprocess[d]),
                            "[ -r \"mprage_biascorr_postgdc.nii.gz\" ] && t1=mprage_biascorr_postgdc.nii.gz || t1=mprage_biascorr.nii.gz",
                            "[ -r \"mprage_bet_postgdc.nii.gz\" ] && t1brain=mprage_bet_postgdc.nii.gz || t1brain=mprage_bet.nii.gz",
