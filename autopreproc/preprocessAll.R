@@ -99,9 +99,9 @@ if (job_array_preamble=="") {
   "",
   "#PBS -A mnh5174_a_g_hc_default",
   "#PBS -j oe",
-  "#PBS -W group_list=mnh5174_collab" #default to having correct group
+  "#PBS -W group_list=mnh5174_collab", #default to having correct group
+  "#PBS -m n" #do not send emails related to job arrays
   #"#PBS -M michael.hallquist@psu.edu", #job arrays generate one email per worker!! Too much pain
-  #"#PBS -m abe"
   )
 }
 
@@ -362,6 +362,9 @@ if (proc_freesurfer) {
       if (use_job_array) {
         #create preprocessing script for the ith dataset
         output_script <- c(preproc_one,
+                           paste0("[ ! -d \"", fs_to_process[d], "\" ] && { echo \"Cannot find directory: ", fs_to_process[d], ". Aborting.\"; exit 0; }"),
+                           paste0("[ ! -r \"", file.path(fs_to_process[d], ".preprocessmprage_complete"),
+                                  "\" ] && { echo \"Cannot find .preprocessmprage_complete in: ", fs_to_process[d], ". Aborting.\"; exit 0; }"),
                            paste("cd", fs_toprocess[d]),
                            "[ -r \"mprage_biascorr_postgdc.nii.gz\" ] && t1=mprage_biascorr_postgdc.nii.gz || t1=mprage_biascorr.nii.gz",
                            "[ -r \"mprage_bet_postgdc.nii.gz\" ] && t1brain=mprage_bet_postgdc.nii.gz || t1brain=mprage_bet.nii.gz",
