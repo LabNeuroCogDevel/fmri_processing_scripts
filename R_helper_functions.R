@@ -28,31 +28,37 @@ runAFNICommand <- function(args, afnidir=NULL, stdout=NULL, stderr=NULL, ...) {
 ##https://docs.loni.org/wiki/PBS_Job_Chains_and_Dependencies
 exec_pbs_array <- function(max_concurrent_jobs, njobstorun, max_cores_per_node=40,
                            jobprefix="qsub_one_", allscript="qsub_all.bash", qsubdir=tempdir(),
-                           job_array_preamble=NULL, waitfor=NULL, walltime="24:00:00") {
+                           job_array_preamble=NULL, waitfor=NULL, walltime="24:00:00", use_moab=FALSE) {
   if (is.null(job_array_preamble)) { stop("Require job_array_preamble for exec_pbs_array") }
   array_concurrent_jobs <- min(max_concurrent_jobs, njobstorun) #don't request more than we need
   nnodes <- ceiling(array_concurrent_jobs/max_cores_per_node)
   ppn <- ceiling(array_concurrent_jobs/nnodes)
-    
+
   if (!is.null(waitfor)) {
     #do we need another PBS job to finish successfully before this executes?
-    #array have to be handled differently using afterokayarray signal (which indicates that all jobs in array have completed)
-    #http://arc-ts.umich.edu/software/torque/pbs-job-dependencies/
-    afterok_jobs <- c()
-    afterokarray_jobs <- c()
-    for (w in waitfor) {
-      if (grepl("^\\d+\\[\\].*", w, perl=TRUE)) { #jobid has <numbers>[] form, indicating array
-        afterokarray_jobs <- c(afterokarray_jobs, w)
-      } else {
-        afterok_jobs <- c(afterok_jobs, w)
-      }
-    }
-    waitfor_all <- c()
-    if (length(afterok_jobs) > 0L) { waitfor_all <- c(waitfor_all, paste0("afterok:", paste(afterok_jobs, collapse=":"))) }
-    if (length(afterokarray_jobs) > 0L) { waitfor_all <- c(waitfor_all, paste0("afterokarray:", paste(afterokarray_jobs, collapse=":"))) }
-    waitfor <- paste(waitfor_all, collapse=",") #add a comma between afterok and afterokarray directives, if needed
 
-    job_array_preamble <- c(job_array_preamble, paste0("#PBS -W depend=", waitfor)) #waitfor can be a vector, which is then a colon-separated list of jobs to wait for
+    if (use_moab) {
+      waitfor <- paste0("afterok:", paste(waitfor, collapse=":")) #moab does not use afterokarray signals, treats arrays and regular jobs the same
+      job_array_preamble <- c(job_array_preamble, paste0("#PBS -l depend=", waitfor)) #waitfor can be a vector, which is then a colon-separated list of jobs to wait for
+    } else {
+      #Under torque, arrays have to be handled differently using afterokayarray signal (which indicates that all jobs in array have completed)
+      #http://arc-ts.umich.edu/software/torque/pbs-job-dependencies/
+      afterok_jobs <- c()
+      afterokarray_jobs <- c()
+      for (w in waitfor) {
+        if (grepl("^\\d+\\[\\].*", w, perl=TRUE)) { #jobid has <numbers>[] form, indicating array
+          afterokarray_jobs <- c(afterokarray_jobs, w)
+        } else {
+          afterok_jobs <- c(afterok_jobs, w)
+        }
+      }
+      waitfor_all <- c()
+      if (length(afterok_jobs) > 0L) { waitfor_all <- c(waitfor_all, paste0("afterok:", paste(afterok_jobs, collapse=":"))) }
+      if (length(afterokarray_jobs) > 0L) { waitfor_all <- c(waitfor_all, paste0("afterokarray:", paste(afterokarray_jobs, collapse=":"))) }
+      waitfor <- paste(waitfor_all, collapse=",") #add a comma between afterok and afterokarray directives, if needed
+
+      job_array_preamble <- c(job_array_preamble, paste0("#PBS -W depend=", waitfor)) #waitfor can be a vector, which is then a colon-separated list of jobs to wait for
+    }
   }
 
   qsub_all <- c(job_array_preamble,
