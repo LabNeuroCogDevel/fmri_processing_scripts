@@ -384,7 +384,7 @@ fi
 
 #compute warpfield in SE_Magnitude space (from TOPUP) and epiref space
 rel "convert_xfm -omat transforms/epiref_to_sefmap.mat -concat ${WD}/MotionMatrix_${vnum}.mat transforms/epiref_to_${setarget}.mat"
-rel "convert_xfm -omat transforms/sefmap2epiref.mat -inverse transforms/epiref_to_sefmap.mat" #compute SE -> EpiRef
+rel "convert_xfm -omat transforms/sefmap_to_epiref.mat -inverse transforms/epiref_to_sefmap.mat" #compute SE -> EpiRef
 
 #setup the relevant unwarping coefficients
 #removing the epiref -> sefmap transform from HCP pipeline
@@ -392,12 +392,12 @@ rel "convert_xfm -omat transforms/sefmap2epiref.mat -inverse transforms/epiref_t
 rel "imcp ${WD}/SE_WarpField_${vnum} ${WD}/SE_WarpField"
 
 #epiref -> sefmap -> unwarp -> epiref transform (undistort images coregistered to epiref)
-rel "convertwarp --relout --rel -r ${WD}/epiref --premat=transforms/epiref_to_sefmap.mat --warp1=${WD}/SE_WarpField_${vnum} --postmat=transforms/sefmap2epiref.mat --out=${WD}/ER_WarpField"
+rel "convertwarp --relout --rel -r ${WD}/epiref --premat=transforms/epiref_to_sefmap.mat --warp1=${WD}/SE_WarpField_${vnum} --postmat=transforms/sefmap_to_epiref.mat --out=${WD}/ER_WarpField"
 
 rel "imcp ${WD}/SE_Jacobian_${vnum} ${WD}/SE_Jacobian"
 
 #Create a Jacobian in epiref space for general use in pipeline
-rel "applywarp -i ${WD}/SE_Jacobian -r ${WD}/epiref --premat=transforms/sefmap2epiref.mat -o ${WD}/ER_Jacobian --interp=spline --rel"
+rel "applywarp -i ${WD}/SE_Jacobian -r ${WD}/epiref --premat=transforms/sefmap_to_epiref.mat -o ${WD}/ER_Jacobian --interp=spline --rel"
 
 # PhasePos (first vol) - warp and Jacobian modulate to get distortion corrected output
 VolumeNumber=$(($dimtNeg + 1))

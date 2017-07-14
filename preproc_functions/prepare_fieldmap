@@ -820,7 +820,7 @@ function preproc_fieldmap {
     qa_image FM_D_fmap_mag_brain_siglossed grot func_to_fmap_mag_brain_siglossed.png "Distorted fm magnitude overlaid with distorted mc_target"
     
     if [ -n "$funcRefimg" ]; then
-	rel "flirt -in ER_D_epiref -ref FM_D_fmap_mag_brain_siglossed -omat $funcdir/transforms/ref_to_fmap.mat -o grot -dof 6"
+	rel "flirt -in ER_D_epiref -ref FM_D_fmap_mag_brain_siglossed -omat $funcdir/transforms/epiref_to_fmap.mat -o grot -dof 6"
 	qa_image FM_D_fmap_mag_brain_siglossed grot epiref_to_fmap_mag_brain_siglossed.png "Distorted fm magnitude overlaid with distorted epiref"
     fi
 	
@@ -828,7 +828,7 @@ function preproc_fieldmap {
    
     # reverse  EF->FM  to get FM->EF (to put all fieldmap stuff in epi space)
     rel "convert_xfm -omat $funcdir/transforms/fmap_to_epi.mat -inverse $funcdir/transforms/func_to_fmap.mat"
-    [ -n "$funcRefimg" ] && rel "convert_xfm -omat $funcdir/transforms/fmap_to_ref.mat -inverse $funcdir/transforms/ref_to_fmap.mat"
+    [ -n "$funcRefimg" ] && rel "convert_xfm -omat $funcdir/transforms/fmap_to_ref.mat -inverse $funcdir/transforms/epiref_to_fmap.mat"
 
     # transform all the fieldmap images into EPI space (mc_target),  FM_UDs become EF_UDs
     for file in "FM_UD_fmap" "FM_UD_fmap_mag_brain" "FM_UD_fmap_mag_brain_mask" "FM_UD_fmap_sigloss"; do
