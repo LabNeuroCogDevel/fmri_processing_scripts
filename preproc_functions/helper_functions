@@ -30,6 +30,47 @@ else
     fi
 fi
 
+function archive_file() {
+    fname="${1}"
+    if [ -f "${fname}" ]; then
+	#stat and date are not portable across Linux and BSD...
+        [ $( uname ) = Darwin ] && mtime=$( stat -f "%Sm" -t "%Y%m%d_%H%M" "${fname}" ) || mtime=$( date -r "${fname}" +%Y%m%d_%H%M )
+	mv "${fname}" "${fname}_${mtime}"
+    fi
+    return 0
+}
+
+#adapted from here: https://gist.github.com/aguy/2359833
+function traperror () {
+    local err=$1 # error status
+    local line=$2 # LINENO
+    local linecallfunc=$3
+    local command="$4"
+    local funcstack="$5"
+
+    archive_file "${dotfile}_crash" #move any existing crash file out of the way
+    echo "$(date) $(hostname) $0: ERROR '$command' failed at line $line - exited with status: $err" | tee -a "${dotfile}_crash"
+
+    if [ "$funcstack" != "::" ]; then
+	echo -n "$0: DEBUG Error in ${funcstack} " | tee -a "${dotfile}_crash"
+	if [ "$linecallfunc" != "" ]; then
+	    echo "called at line $linecallfunc" | tee -a "${dotfile}_crash"
+	fi
+    fi
+    [ -n "$originalcwd" ] && echo -en "Working directory:\n  $originalcwd\n" | tee -a "${dotfile}_crash"
+    [ -n "$originalargs" ] && echo -en "Arguments passed to script:\n  $originalargs\n\n" | tee -a "${dotfile}_crash"
+
+    if [ -r "${logFile}" ]; then
+	echo -en "\n\nLast 10 lines of log file:\n---------\n\n" | tee -a "${dotfile}_crash" #add two newlines
+	tail -n 10 "${logFile}" | tee -a "${dotfile}_crash"
+    fi
+
+    if [ -r "preprocessFunctional_stderr" ]; then
+	echo -en "\n\nLast 10 lines of preprocessFunctional_stderr:\n---------\n\n" | tee -a "${dotfile}_crash"
+	tail -n 10 preprocessFunctional_stderr | tee -a "${dotfile}_crash"
+    fi
+}
+
 #function for taking sequential processing pictures (used in FM unwarping for now)
 # Whether to take sequential pictures of processing steps
 [ -z "$pics" ] && pics=no #=yes, take
@@ -462,7 +503,6 @@ function cleanup_preprocessFunctional {
     deleteFile epiref_to_struct_nounwarp${ext}
     deleteFile epiref_brain_bias${ext}
     deleteFile epiref_brain_restore${ext}
-    deleteFile func_to_epiref${ext}
     #deleteFile mc_target_brain_bias${ext}
     #deleteFile mc_target_brain_restore${ext}
 

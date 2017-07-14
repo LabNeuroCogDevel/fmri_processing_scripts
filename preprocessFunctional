@@ -3,7 +3,8 @@
 # wrap bad exit in info message
 originalargs="$@"
 originalcwd="$(pwd)"
-trap '[ $? -ne 0 ] && echo -e "[$(date +%F\ %H:%M) $originalcwd] ERROR exiting $0\n\t$originalargs"' EXIT
+#trap '[ $? -ne 0 ] && echo -e "[$(date +%F\ %H:%M) $originalcwd] ERROR exiting $0\n\t$originalargs"' EXIT
+trap 'traperror $? $LINENO $BASH_LINENO "$BASH_COMMAND" $(printf "::%s" ${FUNCNAME[@]:-})' ERR
 
 function printHelp() {
 
@@ -177,7 +178,7 @@ The major steps in the processing pipeline are, in order:
 
 Note that if the slice acquisition order is sequential, then the default is to appply motion correction before slice timing correction, whereas for
 interleaved acquisition, the default is slice timing first. The order of these steps can be explicitly specified using -st_first, -mc_first, or -no_st.
-Altnernatively, consider -4d_slice_motion, which performs both steps at once and is likely more effective than conventional methods.
+Alternatively, consider -4d_slice_motion, which performs both steps at once and is likely more effective than conventional methods.
 
 Characters are prepended as a prefix to the 4d filename, such that the final processed file will have a
 prefix such as nfswkmtd, indicating the sequence of processing steps, from right to left.
@@ -345,11 +346,12 @@ if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then
 fi
 
 set -e #exit if any error occurs (stop processing)
+set -o errtrace # inherits trap on ERR in function and subshell
 
 datefmt='+%F+%I:%M'
 #grab command, arguments, script version (date), and start time
 thiscommandinfo="$0 $@ \n# preprocessFunctional v$(perl -ne 'print $1 if /^#Last updated: (.*)/' $0) \n# Run started $(date $datefmt) "
-dotfile=.preprocessfunctional
+dotfile="${funcdir}/.preprocessfunctional"
 
 #exit script if processing complete
 if [[ -f "${dotfile}_complete" && "$@" != *-startover* && "$@" != *-cleanup_only* && "$@" != *-help* ]]; then
@@ -425,6 +427,7 @@ if [[ -z $st_first && -z $mc_first && $sliceMotion4D -eq 0 && $no_st -eq 0 ]]; t
 	st_first=0
     fi
 fi
+
 if [ $sliceMotion4D -eq 1 ]; then
     #Option 1: 4-D slice timing + motion correction
     correct_slice_motion_4d
@@ -447,6 +450,8 @@ elif [ $mc_first -eq 1 ]; then
     onestep_warp mc_target #apply MC + FM unwarping before slice timing correction
     correct_slice_timing
 fi
+
+
 
 #make plots (and optional movie) of head motion
 motion_plots
@@ -555,6 +560,18 @@ if [ $cleanup -eq 1 ]; then
     cleanup_preprocessFunctional
 fi
 
+#move registration-related images to qa_images
+if [ -n "$qa_imgdir" ]; then
+    rel "Moving registration-related NIfTIs to $qa_imgdir" c
+    [ $(imtest epiref_to_template) -eq 1 ] && rel "immv epiref_to_template $qa_imgdir"
+    [ $(imtest epiref_to_struct) -eq 1 ] && rel "immv epiref_to_struct $qa_imgdir"
+    [ $(imtest func_to_epiref) -eq 1 ] && rel "immv func_to_epiref $qa_imgdir"
+    [ $(imtest func_to_struct) -eq 1 ] && rel "immv func_to_struct $qa_imgdir"
+fi
+
 # write finish time, mv incomplete to complete
 echo "# finished $(date $datefmt)" >> ${dotfile}_incomplete
 mv ${dotfile}_incomplete ${dotfile}_complete
+
+#ensure that any previous crash is cleared since we've completed processing
+[ -r "${dotfile}_crash" ] && rm -f "${dotfile}_crash"

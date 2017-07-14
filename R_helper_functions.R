@@ -33,9 +33,28 @@ exec_pbs_array <- function(max_concurrent_jobs, njobstorun, max_cores_per_node=4
   array_concurrent_jobs <- min(max_concurrent_jobs, njobstorun) #don't request more than we need
   nnodes <- ceiling(array_concurrent_jobs/max_cores_per_node)
   ppn <- ceiling(array_concurrent_jobs/nnodes)
+    
+  if (!is.null(waitfor)) {
+    #do we need another PBS job to finish successfully before this executes?
+    #array have to be handled differently using afterokayarray signal (which indicates that all jobs in array have completed)
+    #http://arc-ts.umich.edu/software/torque/pbs-job-dependencies/
+    afterok_jobs <- c()
+    afterokarray_jobs <- c()
+    for (w in waitfor) {
+      if (grepl("^\\d+\\[\\].*", w, perl=TRUE)) { #jobid has <numbers>[] form, indicating array
+        afterokarray_jobs <- c(afterokarray_jobs, w)
+      } else {
+        afterok_jobs <- c(afterok_jobs, w)
+      }
+    }
+    waitfor_all <- c()
+    if (length(afterok_jobs) > 0L) { waitfor_all <- c(waitfor_all, paste0("afterok:", paste(afterok_jobs, collapse=":"))) }
+    if (length(afterokarray_jobs) > 0L) { waitfor_all <- c(waitfor_all, paste0("afterokarray:", paste(afterokarray_jobs, collapse=":"))) }
+    waitfor <- paste(waitfor_all, collapse=",") #add a comma between afterok and afterokarray directives, if needed
 
-  #do we need another PBS job to finish successfully before this executes?
-  if (!is.null(waitfor)) { job_array_preamble <- c(job_array_preamble, paste0("#PBS -W depend=afterok:", waitfor)) }
+    job_array_preamble <- c(job_array_preamble, paste0("#PBS -W depend=", waitfor)) #waitfor can be a vector, which is then a colon-separated list of jobs to wait for
+  }
+
   qsub_all <- c(job_array_preamble,
                 paste0("#PBS -t 1-", njobstorun, "%", array_concurrent_jobs), #number of total datasets and number of concurrent jobs
                 ##paste0("#PBS -l nodes=", nnodes, ":ppn=", ppn, ":himem"), #this is a misunderstanding of the use of job arrays. we need to request resources *per job* as below
