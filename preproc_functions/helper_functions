@@ -521,8 +521,8 @@ function cleanup_preprocessFunctional {
     ## Files left over from Finn's pipeline
     #wktm_rest_1_98_2_mask_dil1x.nii.gz
     #wktm_rest_1_98_2_mask_dil1x_templateTrim.nii.gz
-    deleteFile ${wpre}k${upre}tm_${funcFile}_98_2_mask_dil1x${ext}
-    deleteFile ${wpre}k${upre}tm_${funcFile}_98_2_mask_dil1x_templateTrim${ext}
+    [[ -L subject_mask${ext} && $( readlink subject_mask${ext} ) != ${wpre}k${upre}tm_${funcFile}_98_2_mask_dil1x${ext} ]] && deleteFile ${wpre}k${upre}tm_${funcFile}_98_2_mask_dil1x${ext}
+    [[ -L subject_mask${ext} && $( readlink subject_mask${ext} ) != ${wpre}k${upre}tm_${funcFile}_98_2_mask_dil1x_templateTrim${ext} ]] && deleteFile ${wpre}k${upre}tm_${funcFile}_98_2_mask_dil1x_templateTrim${ext}
     ###
 
     if [ -n "$upre" ]; then
