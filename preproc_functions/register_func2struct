@@ -192,7 +192,7 @@ function register_func2struct {
 	    #create EF_UD_warp file used for one-step interpolation to MNI (potentially with MC, too)
 
 	    #invert func_to_struct.mat to generate struct_to_func transformation. Used to get fmap back into EPI space.
-	    rel "convert_xfm -omat $funcdir/transforms/fmap_to_epi_bbr.mat -concat $funcdir/transforms/struct_to_func.mat tranforms/fmap_to_struct.mat" #assemble fmap_to_epi via fm -> struct + struct -> epi
+	    rel "convert_xfm -omat $funcdir/transforms/fmap_to_epi_bbr.mat -concat $funcdir/transforms/struct_to_func.mat $funcdir/transforms/fmap_to_struct.mat" #assemble fmap_to_epi via fm -> struct + struct -> epi
 
 	    #warp fmap into EPI space using transform fmap_to_epi_bbr.mat
 	    rel "applywarp -i unwarp/FM_UD_fmap_unmasked -r mc_target --premat=$funcdir/transforms/fmap_to_epi_bbr.mat -o unwarp/EF_UD_fmap_bbr --interp=spline"

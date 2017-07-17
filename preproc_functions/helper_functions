@@ -57,8 +57,9 @@ function traperror () {
 	    echo "called at line $linecallfunc" | tee -a "${dotfile}_crash"
 	fi
     fi
-    [ -n "$originalcwd" ] && echo -en "Working directory:\n  $originalcwd\n" | tee -a "${dotfile}_crash"
-    [ -n "$originalargs" ] && echo -en "Arguments passed to script:\n  $originalargs\n\n" | tee -a "${dotfile}_crash"
+    [ -n "$originalcwd" ] && echo -en "Initial working directory:\n  $originalcwd\n" | tee -a "${dotfile}_crash"
+    echo -en "\nCurrent working directory:\n  $PWD\n" | tee -a "${dotfile}_crash"
+    [ -n "$originalargs" ] && echo -en "\nArguments passed to script:\n  $originalargs\n\n" | tee -a "${dotfile}_crash"
 
     if [ -r "${logFile}" ]; then
 	echo -en "\n\nLast 10 lines of log file:\n---------\n\n" | tee -a "${dotfile}_crash" #add two newlines
