@@ -87,7 +87,7 @@ function register_func2struct {
     #in facilitating func -> struct coregistration through the direct pipeline
     
     topupsuffix= #indicates whether to use undistorted EPI image for coregistration to struct (rather than via bbr fieldmap in flirt)
-    if [[ $topup_direct -eq 1 && -n "$se_phasepos" ]]; then
+    if [[ $topup_direct -eq 1 ]]; then
 	topupsuffix="_undistorted"
 	if [ -n "$funcRefimg" ]; then
      	    rel "Undistorting epiref image for func -> struct registration" c
