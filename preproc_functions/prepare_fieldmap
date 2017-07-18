@@ -155,6 +155,8 @@ function prepare_fieldmap {
     # UD = undistorted (in any space)
     # D  = distorted (in any space)
 
+    [ -z "$fm_phase" -a -z "$fm_magnitude" -a -z "$fm_cfg" ] && rel "not running fieldmap" c && return 0
+
     if [[ $bbrCapable -eq 1 && $funcStructFlirtDOF = "bbr" && -n "$fm_cfg" ]]; then
 	createBBRFmapWarp=1 #generate func -> struct warp that includes FM unwarping (via BBR -fieldmap)
     else
@@ -564,6 +566,7 @@ function prepare_gre_fieldmap {
     cd unwarp
 
     rel "fslmaths $fm_magnitude      FM_UD_fmap_mag"
+    rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
 
     #Convert fieldmap to rad/s
     if [ $( imtest "${fm_phasedir}/FM_UD_fmap" ) -eq 0 ]; then
@@ -593,10 +596,10 @@ function preproc_fieldmap {
     #Corresponded with Mark Jenkinson and he acknowledged the bug. This workaround assumes that the direction in the cfg file gives proper results for
     #convertwarp and flirt -bbr -pedir, but that the direction needs to be reversed for FUGUE. This workaround pertains to some CogEmo data using 
     #the Northwestern OFC and my K01 pilot data.
-    if [ $unwarpdir = x ]; then
+    if [ "$unwarpdir" = x ]; then
 	rel "Reversing phase encode direction for use in FUGUE. convertwarp and flirt -pedir will use x, whereas FUGUE will use x-" c
 	fugue_unwarpdir=x-
-    elif [ $unwarpdir = x- ]; then
+    elif [ "$unwarpdir" = x- ]; then
 	rel "Reversing phase encode direction for use in FUGUE. convertwarp and flirt -pedir will use x-, whereas FUGUE will use x" c
 	fugue_unwarpdir=x
     else
