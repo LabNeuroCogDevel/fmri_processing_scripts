@@ -1,6 +1,7 @@
 #!/bin/bash
 REGISTER_FUNC2STRUCT_GLOBALS=(mprageBet fm_phase unwarpdir bbr_pedir funcRefimg funcStructFlirtDOF bbrCapable createBBRFmapWarp)
 function register_func2struct {
+    [ -z "$createBBRFmapWarp" ] && createBBRFmapWarp=0
     print_vars_in REGISTER_FUNC2STRUCT_GLOBALS
     #Obtain a transformation matrix that co-registers the subject's
     #structural T1 scan with the functional T2* image used as the motion coregistration target (mc_target).
@@ -154,7 +155,7 @@ function register_func2struct {
 
 		qa_image $mprageBet ${oname}_to_struct "${oname}_to_struct.png" "Structural overlaid with bbr-coregistered ${oname}"
 
-		if [ $no_warp -eq 0 ]; then
+		if [ "$no_warp" -eq 0 ]; then
 		    rel "applywarp -i ${oname}_to_struct -r $templateBrain -w $warpCoef -o ${oname}_to_template --interp=spline --rel"
 		    qa_image $templateBrain ${oname}_to_template "${oname}_to_template.png" "Template overlaid with warped ${oname}"
 		    #rel "imrm ${oname}_to_template"
@@ -179,7 +180,7 @@ function register_func2struct {
 	    rel "convert_xfm -omat $funcdir/transforms/struct_to_func.mat -inverse $funcdir/transforms/func_to_struct.mat"
 	fi
 
-	if [ $createBBRFmapWarp -eq 1 ]; then
+	if [ "$createBBRFmapWarp" -eq 1 ]; then
 	    #also generate a func -> struct image without fmap unwarping in BBR to verify that fieldmap unwarping is helping with coregistration
 	    rel "applywarp -i $target -o ${oname}_to_struct_nounwarp --premat=$funcdir/transforms/${oname}_to_struct.mat --interp=spline -r \"$mprageBet\""
 	    qa_image "$mprageBet" ${oname}_to_struct_nounwarp ${oname}_to_struct_nounwarp.png "Structural image overlaid with bbr-coregistered distorted ${oname}"
