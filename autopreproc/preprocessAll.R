@@ -92,6 +92,16 @@ if (is.na(use_job_array)) {
   use_job_array <- FALSE #should I trap other possibilities here?    
 }
 
+use_moab <- as.numeric(Sys.getenv("use_moab")) #default is to use torque dependencies with -W. But can use moab with -l instead
+if (is.na(use_moab)) {
+  use_moab <- FALSE
+} else if (use_moab == 1) {
+  use_moab <- TRUE
+  cat("Using moab for PBS job dependency handling\n")
+} else {
+  use_moab <- FALSE #should I trap other possibilities here?    
+}
+
 job_array_preamble <- Sys.getenv("job_array_preamble")
 if (job_array_preamble=="") {
   job_array_preamble <- c(
@@ -99,9 +109,9 @@ if (job_array_preamble=="") {
   "",
   "#PBS -A mnh5174_a_g_hc_default",
   "#PBS -j oe",
-  "#PBS -W group_list=mnh5174_collab" #default to having correct group
+  "#PBS -W group_list=mnh5174_collab", #default to having correct group
+  "#PBS -m n" #do not send emails related to job arrays
   #"#PBS -M michael.hallquist@psu.edu", #job arrays generate one email per worker!! Too much pain
-  #"#PBS -m abe"
   )
 }
 
@@ -325,8 +335,8 @@ if (length(mprage_toprocess) > 0L) {
 
   if (use_job_array) {
     #execute mprage array job
-    mprage_jobid <- exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=length(mprage_toprocess), jobprefix="qsub_one_preprocessMprage_",
-                                   allscript="qsub_all_mprage.bash", qsubdir=qsubdir, job_array_preamble=job_array_preamble, walltime=mprage_walltime, waitfor=mprage_copy_jobid)
+      mprage_jobid <- exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=length(mprage_toprocess), jobprefix="qsub_one_preprocessMprage_", allscript="qsub_all_mprage.bash",
+                                     qsubdir=qsubdir, job_array_preamble=job_array_preamble, walltime=mprage_walltime, waitfor=mprage_copy_jobid, use_moab=use_moab)
   }
 }
 
@@ -362,6 +372,9 @@ if (proc_freesurfer) {
       if (use_job_array) {
         #create preprocessing script for the ith dataset
         output_script <- c(preproc_one,
+                           paste0("[ ! -d \"", fs_toprocess[d], "\" ] && { echo \"Cannot find directory: ", fs_toprocess[d], ". Aborting.\"; exit 0; }"),
+                           paste0("[ ! -r \"", file.path(fs_toprocess[d], ".preprocessmprage_complete"),
+                                  "\" ] && { echo \"Cannot find .preprocessmprage_complete in: ", fs_toprocess[d], ". Aborting.\"; exit 0; }"),
                            paste("cd", fs_toprocess[d]),
                            "[ -r \"mprage_biascorr_postgdc.nii.gz\" ] && t1=mprage_biascorr_postgdc.nii.gz || t1=mprage_biascorr.nii.gz",
                            "[ -r \"mprage_bet_postgdc.nii.gz\" ] && t1brain=mprage_bet_postgdc.nii.gz || t1brain=mprage_bet.nii.gz",
@@ -382,7 +395,7 @@ if (proc_freesurfer) {
       #execute freesurfer array job
       freesurfer_jobid <- exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=length(fs_toprocess), qsubdir=qsubdir,
                                          jobprefix="qsub_one_FreeSurferPipeline_", allscript="qsub_all_freesurfer.bash",
-                                         waitfor=mprage_jobid, job_array_preamble=job_array_preamble, walltime=freesurfer_walltime)
+                                         waitfor=mprage_jobid, job_array_preamble=job_array_preamble, walltime=freesurfer_walltime, use_moab=use_moab)
     }
   }
 }
@@ -740,6 +753,6 @@ if (!is.null(all_funcrun_dirs) && nrow(all_funcrun_dirs) > 0L) {
     save(all_funcrun_dirs, file=file.path(qsubdir, "funcdata_toprocess.RData"))
     #execute functional array job
     functional_jobid <- exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=nrow(all_funcrun_dirs), jobprefix="qsub_one_preprocessFunctional_", qsubdir=qsubdir,
-                                       allscript="qsub_all_functional.bash", waitfor=c(queue_copy_jobid, mprage_jobid), job_array_preamble=job_array_preamble, walltime=functional_walltime)
+                                       allscript="qsub_all_functional.bash", waitfor=c(queue_copy_jobid, mprage_jobid), job_array_preamble=job_array_preamble, walltime=functional_walltime, use_moab=use_moab)
   }
 }

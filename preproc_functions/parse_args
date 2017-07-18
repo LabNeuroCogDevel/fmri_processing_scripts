@@ -62,7 +62,6 @@ function parse_args {
     tr= #never assume a TR. Force definition or use auto-detect from DICOM.
     templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" #default to new 2009 MNI
     templateName=MNI_3mm
-    topup_direct=1 #hidden at the moment. Tells func -> struct to use WarpField from topup directly, rather than the TopupField pushed through preproc_fieldmap
     unwarpdir= #set by -epi_pedir or by fmcfg file
     waveletDespike=0
     waveletM1000=0
@@ -509,6 +508,10 @@ function parse_args {
     if [[ -n "$fm_phase" || -n "$se_phasepos" ]]; then
 	use_fm=1
     fi
+
+    #if using TOPUP (SE fieldmap approach), do we use the 'direct' pipeline (i.e., WarpField from TopupPreprocessingAll),
+    #or the indirect approach of the rad/s field pushed through the typical GRE fieldmap pipeline (incl. registration to structural)
+    [[ -n "$se_phasepos" ]] && topup_direct=1 || topup_direct=0 #hidden at the moment, perhaps expose option later
     
     #determine whether flirt version is new enough to handle BBR coregistration
     #if we have v6.0+, then incorporate fieldmap unwarping into BBR func2struct

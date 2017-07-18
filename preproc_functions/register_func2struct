@@ -70,7 +70,7 @@ function register_func2struct {
 
 	    #compute sefmap -> func transform via epiref if available (TOPUP)
 	    if [ -f "$funcdir/transforms/sefmap_to_epiref.mat" ]; then
-		rel "convert_xfm -omat ${funcdir}/transforms/sefmap2func.mat -concat ${funcdir}/transforms/epiref_to_func.mat ${funcdir}/transforms/sefmap_to_epiref.mat"
+		rel "convert_xfm -omat ${funcdir}/transforms/sefmap_to_func.mat -concat ${funcdir}/transforms/epiref_to_func.mat ${funcdir}/transforms/sefmap_to_epiref.mat"
 	    fi
 
 	    rel "date > .t2star_coreg_complete"
@@ -88,7 +88,7 @@ function register_func2struct {
     #in facilitating func -> struct coregistration through the direct pipeline
     
     topupsuffix= #indicates whether to use undistorted EPI image for coregistration to struct (rather than via bbr fieldmap in flirt)
-    if [[ $topup_direct -eq 1 && -n "$se_phasepos" ]]; then
+    if [[ $topup_direct -eq 1 ]]; then
 	topupsuffix="_undistorted"
 	if [ -n "$funcRefimg" ]; then
      	    rel "Undistorting epiref image for func -> struct registration" c
@@ -99,8 +99,8 @@ function register_func2struct {
 
 	#compute func -> epiref -> se fmap transform
 	rel "convert_xfm -omat $funcdir/transforms/func_to_sefmap.mat -concat $funcdir/transforms/epiref_to_sefmap.mat $funcdir/transforms/func_to_epiref.mat"
-	rel "convert_xfm -omat $funcdir/transforms/sefmap2func.mat -inverse $funcdir/transforms/func_to_sefmap.mat" #compute SE -> func transform
-	rel "convertwarp --relout --rel -r mc_target --premat=$funcdir/transforms/func_to_sefmap.mat --warp1=topup_undistort/SE_WarpField --postmat=$funcdir/transforms/sefmap2func.mat --out=topup_undistort/EF_WarpField"
+	rel "convert_xfm -omat $funcdir/transforms/sefmap_to_func.mat -inverse $funcdir/transforms/func_to_sefmap.mat" #compute SE -> func transform
+	rel "convertwarp --relout --rel -r mc_target --premat=$funcdir/transforms/func_to_sefmap.mat --warp1=topup_undistort/SE_WarpField --postmat=$funcdir/transforms/sefmap_to_func.mat --out=topup_undistort/EF_WarpField"
 	
 	rel "Undistorting mc_target images" c
 	rel "applywarp -i mc_target -r mc_target -o mc_target_undistorted -w topup_undistort/EF_WarpField --rel --interp=spline"
@@ -116,7 +116,7 @@ function register_func2struct {
     if [ "$use_fm" -eq 1 ]; then
 	#need to compute func_to_struct_init.mat via the concatentation of func -> fmap -> struct warps
 	if [ $target = "mc_target_brain_restore" ]; then
-	    rel "convert_xfm -omat $funcdir/transforms/func_to_struct_viafmap.mat -concat $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/epi_to_fmap.mat"
+	    rel "convert_xfm -omat $funcdir/transforms/func_to_struct_viafmap.mat -concat $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/func_to_fmap.mat"
 	    initMat=$funcdir/transforms/func_to_struct_viafmap.mat
 	else
 	    rel "convert_xfm -omat $funcdir/transforms/epiref_to_struct_viafmap.mat -concat $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/epiref_to_fmap.mat"
@@ -193,7 +193,7 @@ function register_func2struct {
 	    #create EF_UD_warp file used for one-step interpolation to MNI (potentially with MC, too)
 
 	    #invert func_to_struct.mat to generate struct_to_func transformation. Used to get fmap back into EPI space.
-	    rel "convert_xfm -omat $funcdir/transforms/fmap_to_epi_bbr.mat -concat $funcdir/transforms/struct_to_func.mat tranforms/fmap_to_struct.mat" #assemble fmap_to_epi via fm -> struct + struct -> epi
+	    rel "convert_xfm -omat $funcdir/transforms/fmap_to_epi_bbr.mat -concat $funcdir/transforms/struct_to_func.mat $funcdir/transforms/fmap_to_struct.mat" #assemble fmap_to_epi via fm -> struct + struct -> epi
 
 	    #warp fmap into EPI space using transform fmap_to_epi_bbr.mat
 	    rel "applywarp -i unwarp/FM_UD_fmap_unmasked -r mc_target --premat=$funcdir/transforms/fmap_to_epi_bbr.mat -o unwarp/EF_UD_fmap_bbr --interp=spline"

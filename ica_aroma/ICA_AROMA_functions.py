@@ -483,9 +483,7 @@ def classification(outDir, maxRPcorr, edgeFract, HFC, csfFract):
 
 	# Put the indices of motion-classified ICs in a text file
 	txt = open(os.path.join(outDir,'classified_motion_ICs.txt'),'w')
-        print(type(motionICs))
-        print(motionICs)
-	if motionICs.size > 1:  # and len(motionICs) != 0: if motionICs != None and 
+	if motionICs.size > 1:  # and len(motionICs) != 0: if motionICs is not None and 
 		txt.write(','.join(['%.0f' % num for num in (motionICs+1)]))
         elif motionICs.size==1:
 		txt.write('%.0f' % (motionICs+1))
