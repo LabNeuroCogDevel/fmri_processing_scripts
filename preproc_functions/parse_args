@@ -453,18 +453,34 @@ function parse_args {
 	fi
     done
 
+    #If we have previously converted to NIfTI (dicom_to_nifti function), then the name of the file (i.e., funcNifti) should be stored in .functional. If this exists, read it and use it.
+    if [ -f .functional ]; then
+	[ -n "$funcFile" ] && local fcache="$funcFile"
+	read funcNifti < .functional
+	funcFile=$( remove_ext $funcNifti )
+
+	if [[ -n "$fcache" && "$fcache" != "$funcFile" ]]; then
+	    rel "This is odd. You seem to have specified -4d, but I found a .functional file, which implies starting from DICOM. I will use $funcFile, not $fcache" c
+	fi
+	
+	if [ ! -r "$funcNifti" ]; then
+	    rel "Tried to use the 4d file $funcNifti as input, but failed to locate it." c
+	    exit 1
+	fi
+    fi
+
     #trim off file extension for functional file
     if [ -n "$funcFile" ]; then
 	if [ ! -r ${funcFile} ]; then
 	    #passed in parameter does not exist or does not have .nii or nii.gz extension. Need to test for file with added extension
 	    if [ -r "${funcFile}.nii" ]; then
 		funcNifti="${funcFile}.nii"
-		echo "Assuming that ${funcNifti} is the intended -4d input."
+		rel "Assuming that ${funcNifti} is the intended -4d input." c
 	    elif [ -r "${funcFile}.nii.gz" ]; then
 		funcNifti="${funcFile}.nii.gz"
-		echo "Assuming that ${funcNifti} is the intended -4d input."
+		rel "Assuming that ${funcNifti} is the intended -4d input." c
 	    else
-		echo -e "Raw functional 4d file: $funcFile does not exist.\nAttempted to look for ${funcFile}.nii and ${funcFile}.nii.gz to no avail.\nExiting.\n"
+		rel "Raw functional 4d file: $funcFile does not exist.\nAttempted to look for ${funcFile}.nii and ${funcFile}.nii.gz to no avail.\nExiting.\n" c
 		exit 1
 	    fi
 	fi

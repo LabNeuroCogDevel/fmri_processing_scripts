@@ -333,17 +333,8 @@ function cleanup_preprocessFunctional {
 	rm -rf ica_aroma/melodic.ica #work folder from ICA decomposition
     fi
     
-    if [ $no_warp -eq 0 ]; then
-	wpre="w"
-    else
-	wpre=""
-    fi
-
-    if [ -n "${fm_phase}" ]; then
-	upre="u"
-    else
-	upre=""
-    fi
+    [ $no_warp -eq 0 ] && wpre="w" || wpre=""
+    [ $use_fm -eq 1 ] && upre="u" || upre=""
 
     [ -z "$funcFile" ] && echo "ERROR: $FUNC_NAME does not have funcfile!" && exit 1
     #echo "func: $funcFile"
