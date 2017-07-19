@@ -12,7 +12,7 @@ fileislocked() {
  
    local now=$(date +%s)
    local ctime=$(cat $lockfile)
-   [[ ! $ctime =~ ^[0-9]+$ ]] && rel "Warning: malformed lock file $lockfile" c
+   [[ ! $ctime =~ ^[0-9]+$ ]] && rel "Warning: malformed lock file $lockfile" c && return 1
    # if we've been locked for a long time, file is not locked
    [ "$((( $now-$ctime )))" -gt "$(((1*60*60)))" ] && return 1
    
@@ -26,12 +26,12 @@ waitforlock() {
    # (safer than stat ?)
    local lockfile="$1"
    # return if we dont have a lock file
-   if fileislocked "$lockfile" ; then
-       rel "Waiting on $lockfile for over 1 hour. Assuming this is in error and unlocking the pipeline." c 
-       rm -f "$lockfile"
+   if ! fileislocked "$lockfile" &&  [ -r $lockfile ]; then
+      rel "Waiting on $lockfile for over 1 hour. Assuming this is in error and unlocking the pipeline." c 
+      rm -f "$lockfile"
    fi
  
-   echo "waiting for another preprocessFunctional to finish (lock: $lockfile)"
+   [ -r "$lockfile" ] && rel "Waiting for another preprocessFunctional to finish ($lockfile: $(cat $lockfile),now: $(date +%s))" c
    while [ -f "$lockfile" ]; do
        sleep 1
    done

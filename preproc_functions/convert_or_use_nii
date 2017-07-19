@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+
+# give the name of what we want to exist and either a nifti or a dicom directory
+# if 2nd arg is nifti, link to name : unless name exists, then check if its the same file (return success or exit in error)
+# if         is dir,  make into name
+# N.B. assumes if dir and name exists, do nothing (return success)
+convert_or_use_nii() {
+   local name="$1"; shift
+   local input="$1"
+   local inputdir=$input;
+   isglob "$input" && warn "$FUNCNAME does not take globs '$1' as input. wants a file or a directory only" && return 1
+
+   # if we were not given a directory, get the dir of input
+   [ ! -d "$inputdir" ] && inputdir=$(dirname "$input")
+   #convert SE images to NIfTI if needed
+   #determine if the image already exists
+
+   # lock here so we wait for any other runs dicom2nii to finish before checking
+   # and so we dont' run d2n twice while parallel processing multiple protocols that share this FM
+   local lockfile="${inputdir}/.${name}_inprogress"
+   waitforlock $lockfile
+
+   rel "Converting $name to NIfTI" c
+   makelockfile $lockfile
+
+
+   # maybe we've already converted. if we have, set the input to name 
+   # and well return out of this on the next line
+   imtestln "$input" &&  ! imtestln "$name" && imln $input $name
+
+   # if we have two nifts, make sure they're the same
+   if imtestln "$input" &&  imtestln "$name"; then
+      a_is_b $(imglob -extension $input) $(imglob -extension $name) && return 0
+      rel "[$(pwd) $name exists but we want it to be $input, they are not the same! rm $name to resume" c
+      rmlockfile $lockfile
+      exit 1
+   fi
+
+   # if we have the name, we're all set. dont need to do anything
+   # N.B. if we provided a directory, there is no check to see if dir would make the same nii
+   imtestln "$name" && rmlockfile $lockfile  && return 0
+
+   # if no files match the input string, that's an error
+   if [ $( ls $input 2>/dev/null | wc -l ) -eq 0 ]; then
+      rel "Could not find any images (in $(pwd), ls '$input') to make $name." c 
+      rmlockfile $lockfile
+      exit 1
+   fi
+
+
+   # make sure we are looking at a dicom
+   first_dicom=$( find $input -not -type d | sed 1q )
+   dicom_hdr "$first_dicom" 2>&1 | grep -q "ERROR: can't open.*as a DICOM file" && isdicom=0 || isdicom=1 # 0 exit status from grep indicates a match
+   if [ $isdicom -eq 0 ]; then
+      rel "Cannot recognize $first_dicom (from '$input') as DICOM or NIfTI" c
+      rmlockfile $lockfile
+      exit 1
+   fi
+
+
+   # convert dicoms to nifti called $name in working directory (functional preprocess directory)
+   if [ -n "$(which dcm2niix)" ]; then
+      [ -r $name.nii.gz ] && rm -f $name.nii.gz
+      cmd="dcm2niix -f '$name%%' -z y -b y -o ./ $inputdir"
+      rel "$cmd"
+
+      # we might get _e2 at the end, fix that
+      newname="$(find . -maxdepth 1 -type f -name "$name*.nii.gz" -ctime -2)"
+      [ -z "$newname" ] && rel "dcm2niix failed to make $name*.nii.gz" && return 1
+      [ -r "$newname"  -a "$newname" != "./$name.nii.gz" ] && mv "$newname" "$name.nii.gz"
+
+      output=$(imglob -extension $name) 
+      [ -z "$output" ] && rel "dcm2niix failed to produce $name!" && return 1
+      3dNotes -h "$cmd" "$output"
+   elif [ -n "$(which dcmstack)" ]; then
+      #create with json metadata
+      rel "Using dcmstack to convert $name to NIfTI. Warning: this is untested. Prefer dcm2niix!" c
+      cmd="dcmstack --include '.*' --file-ext 'MR*'  --embed-meta -o $name --dest-dir . $inputdir"
+      rel "$cmd"
+      3dNotes -h "$cmd" $(imglob -extension $name) 
+   else
+      rel "Using Dimon to convert $name to NIfTI. Warning: this may result in inconsistent unwarping behavior due to bad image headers. Prefer dcm2niix!" c
+      dimon "${input}" "$name"
+   fi
+   rmlockfile $lockfile
+}
+
+# vim: set tabstop=7:
