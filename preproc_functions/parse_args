@@ -577,6 +577,9 @@ function parse_mprage_args() {
 	if [[ $1 = -b || $1 = -bet_opts ]] ; then
 	    betOpts="${2}"
 	    shift 2
+	elif [[ $1 = -bright_skull ]] ; then
+	    bright_skull=1
+	    shift 1
 	elif [[ $1 = -cleanup ]]; then
 	    cleanup=1
 	    shift 1
@@ -601,6 +604,9 @@ function parse_mprage_args() {
 	    fi
 	elif [[ $1 = -p || $1 = -dicom ]]; then
 	    dicomPattern="${2}"
+	    shift 2
+	elif [[ $1 = -fnirt_mask ]]; then
+	    fnirt_mask="${2}"
 	    shift 2
 	elif [[ $1 = -grad_unwarp ]]; then
 	    gcoeffs="${2}"

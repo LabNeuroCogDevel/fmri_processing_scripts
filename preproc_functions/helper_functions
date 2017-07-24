@@ -136,7 +136,7 @@ function gradunwarp() {
     rel "imrm fullWarp_abs vol1"
 }
 
-# Function to fix negative range problems (negative values mess up bias field 
+# Function to fix negative range problems (negative values mess up bias field)
 # This commonly happens for gradient unwarping, where the the value transformation outside the brain shifts some zeros into the negative range
 function fix_negatives() {
     local im="$1"
@@ -145,7 +145,12 @@ function fix_negatives() {
     if [ X`echo "if ( $minval < 0 ) { 1 }" | bc -l` = X1 ] ; then
 	if [ X`echo "if ( $maxval > 0 ) { 1 }" | bc -l` = X1 ] ; then
 	    # if there are just some negative values among the positive ones then reset zero to the min value
-	    rel "fslmaths ${im} -sub $minval ${im} -odt float"
+	    #rel "fslmaths ${im} -sub $minval ${im} -odt float"
+
+	    #MNH 2017: The approach of setting the minimum to zero through addition leads to scenarios where we are adding hundreds of points to the image globally
+	    #even if only a tiny fraction of voxels are rather negative. This causes problems downstream. Switch to a much simpler approach of zeroing anything that is negative.
+	    #If there is important information in the negative values, this approach will be bad. But in examining gradient distortion outputs, this does not appear to be the case.
+	    rel "fslmaths ${im} -thr 0 ${im} -odt float"
 	else
 	    # if all values are negative then make them positive, but retain any zeros as zeros
 	    rel "fslmaths ${im} -bin -binv zeromask"
@@ -251,6 +256,7 @@ function cleanup_preprocessMprage {
 	${T1}_skullstrip_postgdc ${outputFile}_twostepinterp ${T1}_biascorr_gdc_orig ${T1}_biascorr_mask"
 
     [ $( imtest mprage_warpcoef_withgdc ) -eq 1 ] && rel "imrm mprage_warpcoef"
+    [ -d bright_skull ] && rm -rf bright_skull
     
 }
 
