@@ -2,6 +2,7 @@
 REGISTER_FUNC2STRUCT_GLOBALS=(mprageBet fm_phase unwarpdir bbr_pedir funcRefimg funcStructFlirtDOF bbrCapable createBBRFmapWarp)
 function register_func2struct {
     [ -z "$createBBRFmapWarp" ] && createBBRFmapWarp=0
+    [ -f .register_func2struc ] && rel "register_func2struct alraedy" c && return 0
     print_vars_in REGISTER_FUNC2STRUCT_GLOBALS
     #Obtain a transformation matrix that co-registers the subject's
     #structural T1 scan with the functional T2* image used as the motion coregistration target (mc_target).
@@ -34,7 +35,7 @@ function register_func2struct {
 	    -y|y-) bbr_pedir=-2 ;; 
 	    z)     bbr_pedir=3  ;;
 	    -z|z-) bbr_pedir=-3 ;;
-	    *)     echo "Unable to determine unwarping direction from '$unwarpdir'"
+	    *)     echo "$FUNCNAME Unable to determine unwarping direction from '$unwarpdir'"
 		exit 1 ;;
 	esac
 

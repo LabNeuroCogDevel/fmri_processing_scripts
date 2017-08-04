@@ -8,7 +8,7 @@ done
 
 
 # archive everythign matching pattern
-# and then remove wall of it
+# and then archive + remove it
 # expects pattern to be relative to cwd
 archive_dcm() { 
   [ -z "$1" -o -z "$2" ] && return 1
@@ -25,7 +25,7 @@ fieldmap_make_rads_per_sec() {
     local fm_phasedir="$1"; shift
     local fm_magnitude="$1"; shift
     [ -z "$fm_magnitude" ] && warn "$FUNC_NAME: needs 3 inputs!" && return 0
-    [ -z "$TEdiff" ] && rel "did not correctly source fieldmap config!" c && exit 1
+    [ -z "$TEdiff" ] && rel "did not correctly source fieldmap config, no TEdiff in $fm_cfg!" c && exit 1
 
     local lockfile="${fm_phasedir}/.rads_per_sec_inprogress"
     waitforlock $lockfile
@@ -122,13 +122,13 @@ cp_master_ifneeded() {
     # if base doesn't match e.g. MR*, *dcm, we dont need to do anything
     [[ ! "$base" =~ .*\*.* ]] && return 0
 
-    #if the lock file is present, sleep until complete
+    #if the lock file is present, sleep until complete -- lockfile like '.magnitude_inprogress'
     lockfile="${dir}/$(basename $flagfile | sed s/fieldmap_//)_inprogress"
     waitforlock $lockfile
 
     # if we dont have a master flag file, we're in trouble!
     local pointto=""
-    [ -r $masterflag ] && pointto < "$masterflag"
+    [ -r $masterflag ] && read pointto < "$masterflag"
     local pointto_full="$pointto${ext}"
 
     # try to fix master if broken (pointo not empty, but doesn't point to anything good)
@@ -147,7 +147,9 @@ cp_master_ifneeded() {
     # otherwise 
     if [ -f $masterflag -a -f "$pointto_full"  ]; then 
       rel "cp \"$masterflag\" \"$flagfile\""
-    # else
+    else
+        rel "no '$masterfile' or '$pointto_full'" c
+        return 1
     #   reset_dir and touch lockfile
     fi
     return 0
@@ -285,7 +287,6 @@ prepare_gre_fieldmap() {
     # because we use the warpdir sourced from the file
     # later (one-step warp)
     find_and_source_fmconfig "$fm_cfg" || return 1
-
     # check that all required variables exist (defined in cfg)
     for inputName in fm_phase fm_magnitude epiTE dwelltime unwarpdir TEdiff signallossthresh scanner; do
 	inputVal="${!inputName}"
@@ -296,9 +297,10 @@ prepare_gre_fieldmap() {
     # todo check basename of logfile exists?
     for fvar in fm_{phase,magnitude} logFile; do
        fpath="${!fvar}"
-       printf -v "${fvar}"  "$(abspath  "$path")"
+       absfpath="$(abspath  "$fpath")"
+       #echo "setting $fvar from '$fpath' to '$absfpath'"
+       printf -v "${fvar}" "$absfpath"
     done
-
 
     # create variables for basename and dirname
     local fm_phasedir fm_phasebase fm_magnitudedir fm_magnitudebase
@@ -308,6 +310,7 @@ prepare_gre_fieldmap() {
        # dirname for fm_phase and fm_mag should exist
        [ ! -d $(dirname "${!f}") ] && warn "no directory for $f ('${!f}')" && exit 1
     done
+
 
     randomsleep
 

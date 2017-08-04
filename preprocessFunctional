@@ -332,6 +332,7 @@ source "${scriptDir}/preproc_functions/highpass_filter"
 source "${scriptDir}/preproc_functions/intensity_normalization"
 source "${scriptDir}/preproc_functions/nuisance_regression"
 source "${scriptDir}/preproc_functions/ica_aroma"
+source "${scriptDir}/preproc_functions/prepare_mc_target"
 
 #TODO: read dirname from the input and cd to that directory
 funcdir=$(pwd) #define working directory for functional processing
@@ -432,20 +433,24 @@ fi
 if [ $sliceMotion4D -eq 1 ]; then
     #Option 1: 4-D slice timing + motion correction
     correct_slice_motion_4d
+    prepare_mc_target
     prepare_fieldmap #prepare fieldmap must always come after motion correction so that mc_target exists (coregistration target)
     register_func2struct
 elif [ $no_st -eq 1 ]; then
     #just motion and FM unwarp (skip slice timing)
     correct_motion
+    prepare_mc_target
     prepare_fieldmap
     register_func2struct
 elif [ $st_first -eq 1 ]; then	
     correct_slice_timing
     correct_motion
+    prepare_mc_target
     prepare_fieldmap
     register_func2struct
 elif [ $mc_first -eq 1 ]; then
     correct_motion
+    prepare_mc_target
     prepare_fieldmap
     register_func2struct
     onestep_warp mc_target #apply MC + FM unwarping before slice timing correction
@@ -584,3 +589,5 @@ mv ${dotfile}_incomplete ${dotfile}_complete
 
 #ensure that any previous crash is cleared since we've completed processing
 [ -r "${dotfile}_crash" ] && rm -f "${dotfile}_crash"
+
+# vim: set tabstop=7:

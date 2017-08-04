@@ -128,3 +128,4 @@ function skullstrip_threshold {
     return 0
 
 }
+# vim: set tabstop=7:

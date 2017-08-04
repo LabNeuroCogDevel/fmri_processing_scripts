@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+#need to put creation of mc_target_brain (skull-stripped T2*) before fieldmap so fieldmap has access to mc_target_brain_restore for coregistration.
+#but even if fieldmap is not used, we want to run this because register_func2struct also uses the image
+#generate mask of mc_target for use in calculation of rmsdiff and onestep_warp to mc_target
+# fast generates mc_target_brain_restore
+prepare_mc_target() {
+    if [ $( imtest mc_target_brain ) -eq 0 -o $(imtest  mc_target_brain_restore ) -eq 0 ]; then
+	#include bias field correction for mc_target given heavy bias in 32-channel data.
+	#in principle, this should aid in coregistration
+	#rel "bet mc_target mc_target_brain -f 0.3 -n -m -R"
+	rel "3dSkullStrip -overwrite -input mc_target${ext} -prefix mc_target_brain${ext} -orig_vol"
+	rel "fslmaths mc_target_brain -bin mc_target_mask -odt char"
+	rel "fast -o mc_target_brain -l 20 -b -B -t 2 --iter=12 --nopve --fixed=0 mc_target_brain"
+       rel "created mc_target_brain_restore with fast" c
+	rel "imrm mc_target_brain_seg" #not needed for anything
+	rel "immv mc_target_brain_mask mc_target_mask"
+	qa_image mc_target_brain mc_target "mc_target_skullstrip.png" "Skull-stripped mc_target overlaid with original mc_target"
+    fi
+}
+# vim: set tabstop=7:
