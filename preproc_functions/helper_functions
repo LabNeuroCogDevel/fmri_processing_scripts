@@ -161,9 +161,9 @@ function fix_negatives() {
 # path given doesn't have to exist, but the directory (dirname) does
 abspath() { 
  [ -z "$1" ] && return 1
- dir=$(dirname $1)
- [ ! -d "$dir" ] && return 1
- echo $(cd $dir;pwd)/$(basename $1)
+ dir=$(dirname "$1")
+ [ ! -d "$dir" ] && warn "WARNING: $FUNCNAME: cannot find dir for '$1' (while in in '$(pwd)')" && echo "$1" && return 1
+ echo "$(cd "$dir";pwd)/$(basename "$1")"
 }
 
 function deleteFile() {
