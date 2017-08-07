@@ -11,7 +11,7 @@ setup() {
  source $BATS_TEST_DIRNAME/../preproc_functions/waitforlock
  TMPD=$(mktemp -d "$BATS_TMPDIR/XXXX")
  cd $TMPD
- cp -r $BATS_TEST_DIRNAME/exampledata/gre_fm/gre_field_mapping_96x96.[34]/ ./
+ cp -r $BATS_TEST_DIRNAME/exampledata/func+fm+ref/gre_field_mapping_96x96.[34]/ ./
  magd=$(pwd)/gre_field_mapping_96x96.3
  phased=$(pwd)/gre_field_mapping_96x96.4
 }

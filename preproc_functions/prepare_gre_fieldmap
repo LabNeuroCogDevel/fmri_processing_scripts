@@ -212,6 +212,7 @@ prepare_gre_fieldmap_mag(){
 	    rel "Only one echo detected based on ACQ Echo Number in DICOM header. Converting all $fm_magnitudebase in $fm_magnitudedir to one NIfTI." c
 
            convert_or_use_nii fm_magnitude ./
+           ! imtestln fm_magnitude && echo "Failed to create fm_magnitude.nii.gz in $(pwd)!" >&2  && return 1
            #[ "$fm_mag_niidir" = "$fm_magnitudedir" ] && 
            archive_dcm "$fm_magnitudebase" fm_magnitude_dicom.tar.gz
 
@@ -241,7 +242,8 @@ prepare_gre_fieldmap_mag(){
            # convert each echo into a nii
            for e in echo1 echo2; do
               cd $thisdir/$e
-              convert_or_use_nii fm_magnitude_$e ./ #convert dicom to nifti using Dimon
+              # convert dicom to nifti using Dimon
+              convert_or_use_nii fm_magnitude_$e ./
               archive_dcm "$fm_magnitudebase" fm_magnitude_${e}_dicom.tar.gz
               cd $thisdir
            done

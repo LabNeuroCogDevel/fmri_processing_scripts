@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+# get all the things we need
+sourceall() {
+ local scriptdir=$(dirname $0)
+ local sourcedir=$scriptdir/preproc_functions
+ [ ! -d $sourcedir ] && echo "bad source dir! $sourcedir" >&2 && exit 1
+ for f in convert_or_use_nii waitforlock prepare_gre_fieldmap helper_functions;do
+   source $sourcedir/$f
+ done
+}
+
+parsefmargs() {
+ # get input arguements from NEEDARGS
+ # globally exported in printf
+ # probably more cleanly written as case $1 in );;
+ while [ -n "$1" ]; do
+  arg="$1"
+  for var in ${NEEDARGS[@]} ${OPTIONALARGS[@]}; do
+    if [ $arg = "-$var" ]; then #-o $arg = "--$var" ]; then 
+      shift; 
+      val=$1;
+      printf -v "$var" "$val"
+    fi
+  done
+  shift
+ done
+
+ for var in ${NEEDARGS[@]}; do
+   [ -z  "${!var}" ] && echo "need to specify -$var" >&2 && exit 1
+ done
+}
+
+main() {
+   NEEDARGS=(phasedir magdir fm_cfg)
+   OPTIONALARGS=(mrpatt savedir)
+   # optional defaults
+   savedir=$(pwd)
+   mrpatt="MR*"
+
+
+   ## prepare
+   # get functions and args
+   parsefmargs "$@"
+   sourceall
+
+   ## did we already finish? 
+   cnt=0
+   EXPECT=( FM_UD_fmap_mag{,_brain}.nii.gz \
+            unwarp/FM_UD_fmap{,_mag}.nii.gz \
+            .fieldmap_{magnitude,phase} )
+   for f in "${EXPECT[@]}"; do
+     [ -r "$savedir/$f" ] && let ++cnt
+   done
+
+   [ $cnt -eq ${#EXPECT[@]} ] && echo "already have all files in '$savedir'!" && exit 0
+   [ $cnt -gt 0 ] && rel "rm $savedir; # and try again; have $cnt/${#EXPECT[@]} expected files" c && exit 1
+   [ -r "$savedir/phase" -o -r "$savedir/mag" ] &&  rel "have $savedir/{phase,mag} but did not run prepare, remove $savedir and try again?" c && exit 1
+
+
+   ## get files
+   [ ! -d $savedir ] && mkdir $savedir
+   rel "cp -r \"$magdir\" \"$savedir/mag\" "
+   rel "cp -r \"$phasedir\" \"$savedir/phase\" "
+   cd $savedir
+
+   # run
+   fm_phase="phase/$mrpatt"
+   fm_magnitude="mag/$mrpatt"
+   prepare_gre_fieldmap 
+}
+
+main "$@"

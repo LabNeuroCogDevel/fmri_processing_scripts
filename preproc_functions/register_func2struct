@@ -1,5 +1,5 @@
 #!/bin/bash
-REGISTER_FUNC2STRUCT_GLOBALS=(mprageBet fm_phase unwarpdir bbr_pedir funcRefimg funcStructFlirtDOF bbrCapable createBBRFmapWarp)
+REGISTER_FUNC2STRUCT_GLOBALS=(mprageBet fm_phase unwarpdir bbr_pedir funcRefimg funcStructFlirtDOF bbrCapable createBBRFmapWarp bbrCapable)
 function register_func2struct {
     [ -z "$createBBRFmapWarp" ] && createBBRFmapWarp=0
     [ -f .register_func2struc ] && rel "register_func2struct alraedy" c && return 0
@@ -23,7 +23,7 @@ function register_func2struct {
 
     #if using traditional GRE fieldmap or using TOPUP indirect pipeline (in which the field goes through the same pipeline as a typical fieldmap)
     #then convert the PE direction for flirt BBR and setup the additional string to include fieldmap unwarping in flirt.
-    if [[ -n "${fm_phase}" || ( -n "${se_phasepos}" && $topup_direct -eq 0 ) ]]; then
+    if [[ -n "${fm_phase}" || ( -n "${se_phasepos}" && $topup_direct -eq 0 ) || -n "$DISTORTION_DIR" ]]; then
 
 	inweight="-inweight $(pwd)/unwarp/EF_UD_fmap_sigloss"
 	#echo spacing and phase encode direction should be defined when $fm_cfg is sourced by prepareFieldmap (upstream)
@@ -129,12 +129,11 @@ function register_func2struct {
 	rel "Warping subject functional to subject structural" c
 
 	#TODO: move 6dof transform outside of these checks to reduce redundancy. Then mv to _init in case of BBR
-	if [ $funcStructFlirtDOF = "bbr" ]; then
+	if [ "$funcStructFlirtDOF" = "bbr" ]; then
 
-	    if [ $bbrCapable -eq 1 ]; then
+	    if [ -n "$bbrCapable" ] && [ $bbrCapable -eq 1 ]; then
 		rel "Using boundary-based registration approach to register EPI to T1" c
-		[ $( imtest "${mprageBet_base}_fast_seg" ) -eq 0 ] && rel "fast -g -o \"${mprageBet_base}_fast\" \"${mprageBet_base}\"" #segment T1 to create WM
-		[ $( imtest "${mprageBet_base}_fast_wmseg" ) -eq 0 ] && rel "fslmaths ${mprageBet_base}_fast_pve_2 -thr 0.5 -bin ${mprageBet_base}_fast_wmseg" #create binary WM mask
+                fast_wmseg "${mprageBet_base}" # makes ${mprageBet_base}_fast_wmseg (likely mprage_bet_fast_wmseg
 		
 		#standard 6 parameter EPI-to-T1 registration to get initial estimate of transform
 		#leaving off inweight for now because should handle fieldmap in flirt now

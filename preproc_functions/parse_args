@@ -19,6 +19,7 @@ function parse_args {
     delDicom=
     detectSiemens=0
     dicomPattern=
+    DISTORTION_DIR= # alterntaive to preprocessing fieldmaps within preprocessFunctional (more like preprocessMprage). dir most likely named "warp"
     dte=
     dwelltime=     #effective echo spacing. set by -epi_echospacing or by fmcfg file
     epiTE=
@@ -237,6 +238,10 @@ function parse_args {
 	    shift 3
 	elif [ $1 = -dicom ]; then
 	    dicomPattern="${2}"
+	    shift 2
+	elif [ $1 = -distortion_dir ]; then
+	    DISTORTION_DIR=$(abspath "${2}")
+           [ -z "$DISTORTION_DIR" -o ! -d "$DISTORTION_DIR" ] && echo "distortion_dir '$2' ('$DISTORTION_DIR') DNE!" && exit 1
 	    shift 2
 	elif [ $1 = -epi_echospacing ]; then
 	    dwelltime="${2}"

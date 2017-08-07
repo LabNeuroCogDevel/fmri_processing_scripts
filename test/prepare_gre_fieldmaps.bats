@@ -9,9 +9,10 @@ setup() {
  source $BATS_TEST_DIRNAME/../preproc_functions/helper_functions
  source $BATS_TEST_DIRNAME/../preproc_functions/prepare_gre_fieldmap
  source $BATS_TEST_DIRNAME/../preproc_functions/waitforlock
+ source $BATS_TEST_DIRNAME/../preproc_functions/convert_or_use_nii
  TMPD=$(mktemp -d "$BATS_TMPDIR/XXXX")
  cd $TMPD
- cp -r $BATS_TEST_DIRNAME/exampledata/gre_fm/gre_field_mapping_96x96.[34]/ ./
+ cp -r $BATS_TEST_DIRNAME/exampledata/func+fm+ref/gre_field_mapping_96x96.[34]/ ./
  magd=$(pwd)/gre_field_mapping_96x96.3
  phased=$(pwd)/gre_field_mapping_96x96.4
 }
@@ -32,12 +33,13 @@ teardown() {
  fm_cfg="pet"
  fm_phase="$phased/MR*"
  fm_magnitude="$magd/MR*"
- prepare_gre_fieldmap 
- #[ $status -eq 0 ]
+ run prepare_gre_fieldmap 
+ [ $status -eq 0 ]
+ [ -r unwarp/FM_UD_fmap_mag.nii.gz ]
+ [ -r unwarp/FM_UD_fmap.nii.gz ]
 
 }
 @test "prepare mag" {
- #SAVETEST=1
  run prepare_gre_fieldmap_mag $magd "MR*" 
  [ $status -eq 0 ] 
  [ -r .fieldmap_magnitude ]

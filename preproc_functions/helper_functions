@@ -178,13 +178,20 @@ function deleteFile() {
 #rel is shorthand for "run, echo, log"
 function rel() {
     #function that runs, echos to terminal, and logs to file an arbitrary command
-    cmd="${1}"
-    comment=0
+    local cmd="${1}"
+    local comment=0
+    local timeit=0
+    local pipesave=""
+
     if [[ -n "${2}" && ${2} = c ]]; then
 	comment=1
     fi
+    if [[ -n "${2}" && ${2} = t ]]; then
+	timeit=1
+    fi
     
     if [ -n "${logFile}" ]; then
+       pipesave="|tee -a '$logFile'"
 	if [ $comment -eq 1 ]; then
 	    cmd="## ${cmd}"
 	fi
@@ -196,12 +203,17 @@ function rel() {
 	echo ${cmd}
 
 	#run command
+       tic=$(date +%s)
 	eval ${cmd}
 	cmdExit=$?
+       toc=$(date +%s)
     else
 	#echo command to screen with dashes to offset text visually
 	echo -e "----  ${cmd}"
     fi
+
+    # how long did it take. write to file if we have a logfile
+    [ $timeit -eq 1 ] && eval "echo -e \"#\ttook $((($toc - $tic ))) seconds\" $pipesave"
     
     return $cmdExit
 }
@@ -711,3 +723,4 @@ find_and_source_fmconfig(){
       return 1
     fi
 }
+# vim: set tabstop=7:

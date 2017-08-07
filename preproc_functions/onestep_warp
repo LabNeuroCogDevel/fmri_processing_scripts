@@ -10,7 +10,7 @@ unable_warp_msg(){
 }
 
 # GLOBALS:
-ONESTEPWARP_GLOBALS=(templateBrain subjMask se_phasepos fm_phase mc_first prefix funcFile createBBRFmapWarp no_st st_first sliceMotion4D preMC despike postDespike postSS nowarp funcWarpInterp warpCoef)
+ONESTEPWARP_GLOBALS=(templateBrain subjMask se_phasepos fm_phase mc_first prefix funcFile createBBRFmapWarp no_st st_first sliceMotion4D preMC despike postDespike postSS nowarp funcWarpInterp warpCoef use_fm)
 
 function onestep_warp {
 

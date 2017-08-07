@@ -131,7 +131,9 @@ function reset_magdir {
     fi
 }
 
-PREPARE_FIELDMAP_GLOBALS=(bbrCapable funcStructFlirtDOF fm_cfg mcMats fm_phase fm_magnitude ext logFile mprageBet)
+PREPARE_FIELDMAP_GLOBALS=(bbrCapable funcStructFlirtDOF fm_cfg mcMats fm_phase fm_magnitude ext logFile mprageBet qa_imgdir )
+# bbrfmap from 'register_func2struct', but expected to be called after prepare_fieldmap. we probably want this to be empty
+
 ### Worker function for preparation of fieldmap.
 # Steps:
 # 1)  Source fm_cfg file to define relevant fieldmap details (e.g., TEdiff)
@@ -178,9 +180,8 @@ function prepare_fieldmap {
     
     if [[ ( -n "${fm_phase}" || -n "$se_phasepos" || -n "$distortion_dir" ) && -f ".prepare_fieldmap_complete" ]]; then
 	return 0 #preparefieldmap already completed
-    elif [ -n "$distortion_dir" ]; then
-	cp -r $distortion_dir warp# get files from distortion directory
-       cd warp
+    elif [ -n "$DISTORTION_DIR" ]; then
+       prepare_distortion_dir "$DISTORTION_DIR"
     elif [ -n "$fm_phase" ]; then
 	prepare_gre_fieldmap #setup fieldmap files using GRE
     elif [ -n "$se_phasepos" ]; then
@@ -188,7 +189,7 @@ function prepare_fieldmap {
     fi
 
     #handle rare case where PE dir needs to be flipped for fieldmap processing after TOPUP step
-    if [ $flip_topup_pedir -eq 1 ]; then
+    if [ -n "$flip_topup_pedir" ] && [ "$flip_topup_pedir" -eq 1 ]; then
 	case $unwarpdir in
 	    x)     unwarpdir=-x  ;;
 	    -x|x-) unwarpdir=x ;;
@@ -257,6 +258,27 @@ convert_or_use_nii() {
       dimon "${input}" "$name"
    fi
    rmlockfile $lockfile
+}
+
+# make unwarp dir in current working directory, using DISTORTION_DIR
+# if unwarp and distortion_dir are the same, dont do anything
+prepare_distortion_dir() {
+  local DISTORTION_DIR="$1"
+  [ -z "$DISTORTION_DIR" ] && echo "$FUNCNAME: bad usage. need DISTORTION_DIR" >&2 && return 1
+  [ ! -d "$DISTORTION_DIR" ] && echo "distortion_dir ('$DISTORTION_DIR') is not a directory!" >&2 && return 1
+
+  # we only have to do stuff if DISTORTION_DIR is not in this directory
+  if [[ "$(abspath unwarp)" != "$(abspath $DISTORTION_DIR)" ]]; then
+   if [ -d unwarp ]; then
+    rel "already have unwarp but we are rerunning preprocessFunctional, so we're replacing it with $DISTORTION_DIR" c
+    rel "rm -r unwarp"
+   fi
+   rel "cp -r $DISTORTION_DIR unwarp"
+  else
+    rel "fieldmap DISTORTION_DIR ('$DISTORTION_DIR') is within this functional as 'unwarp' run, re-using" c
+  fi
+  cd unwarp
+  return 0
 }
 
 #this function is responsible for running TOPUP on the phase+ and phase- images
@@ -888,13 +910,24 @@ function preproc_fieldmap {
 
     qa_image "$mprageBet" fmap_to_struct fmap_mag_to_struct.png "Structural image overlaid with 6dof-coregistered undistorted fmap mag"
     
+    # 2017-08-07WF
+    #  * added duplicated line for _fast_wmseg also created in register_func2struct             
+    #  * removed bbrfmap from above. set by register_func2struct, which is run after this. 
+    #    if bbrfmap is set, cause error (b/c e.g. unwarp/fmapForBBR.nii.gz DNE yet)
     #further testing indicates that BBR makes substantial improvements in (magnitude) -> struct coregistration for some subjects
     if [[ $bbrCapable -eq 1 && $funcStructFlirtDOF = "bbr" ]]; then
 	local mprageBet_base=$( remove_ext ${mprageBet} ) #skull-stripped mprage image basename
 	rel "immv fmap_to_struct fmap_to_struct_init"
 	rel "mv $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/fmap_to_struct_init.mat"
-	rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -out fmap_to_struct -omat $funcdir/transforms/fmap_to_struct.mat -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
-	        -cost bbr -init $funcdir/transforms/fmap_to_struct_init.mat -dof 6 -schedule ${FSLDIR}/etc/flirtsch/bbr.sch $bbrfmap"
+
+       # create binary WM mask, fast_wmseg is function/script in prepoc_funtions
+       fast_wmseg "${mprageBet_base}" # makes ${mprageBet_base}_fast_wmseg (likely mprage_bet_fast_wmseg.nii.gz)
+
+	rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet \
+             -out fmap_to_struct -omat $funcdir/transforms/fmap_to_struct.mat \
+             -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
+	      -cost bbr -init $funcdir/transforms/fmap_to_struct_init.mat -dof 6 \
+             -schedule ${FSLDIR}/etc/flirtsch/bbr.sch" # $bbrfmap " # bbrfmap rm 20170807WF
 
 	qa_image "$mprageBet" fmap_to_struct fmap_mag_to_struct_bbr.png "Structural image overlaid with bbr-coregistered undistorted fmap mag"
     fi
