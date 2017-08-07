@@ -242,7 +242,12 @@ function parse_args {
 	    dwelltime="${2}"
 	    shift 2
 	elif [ $1 = -epi_pedir ]; then
-	    unwarpdir="${2}" #should be x/-x/y/-y/z/-z
+	    unwarpdir="${2}" #should be x/x-/y/y-/z/z-
+
+	    #fix pickiness of FUGUE
+	    [ "$unwarpdir" = -x ] && unwarpdir="x-" && echo "Please use -epi_pedir x-"
+	    [ "$unwarpdir" = -y ] && unwarpdir="y-" && echo "Please use -epi_pedir y-"
+	    [ "$unwarpdir" = -z ] && unwarpdir="z-" && echo "Please use -epi_pedir z-"
 	    shift 2
 	elif [ $1 = -epi_te ]; then #echo time of EPI data
 	    epiTE=$( echo "($2)/1000" | bc -l ) # convert TE into seconds for sigloss

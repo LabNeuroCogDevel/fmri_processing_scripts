@@ -196,11 +196,11 @@ function prepare_fieldmap {
     #handle rare case where PE dir needs to be flipped for fieldmap processing after TOPUP step
     if [ $flip_topup_pedir -eq 1 ]; then
 	case $unwarpdir in
-	    x)     unwarpdir=-x  ;;
+	    x)     unwarpdir=x-  ;;
 	    -x|x-) unwarpdir=x ;;
-	    y)     unwarpdir=-y  ;;
+	    y)     unwarpdir=y-  ;;
 	    -y|y-) unwarpdir=y ;; 
-	    z)     unwarpdir=-z  ;;
+	    z)     unwarpdir=z-  ;;
 	    -z|z-) unwarpdir=z ;;
 	    *)     echo "Unable to determine unwarping direction from '$unwarpdir'"
 		   exit 1 ;;
