@@ -185,7 +185,7 @@ function prepare_fieldmap {
     # later (one-step warp)
     [ -n "$fm_cfg" ] && { find_and_source_config "$fm_cfg" || return 1; }
     
-    if [[ ( -n "${fm_phase}" || -n "se_phasepos" ) && -f ".prepare_fieldmap_complete" ]]; then
+    if [[ ( -n "${fm_phase}" || -n "${se_phasepos}" ) && -f ".prepare_fieldmap_complete" ]]; then
 	return 0 #preparefieldmap already completed
     elif [ -n "$fm_phase" ]; then
 	prepare_gre_fieldmap #setup fieldmap files using GRE
@@ -313,7 +313,8 @@ function prepare_se_fieldmap {
 
     rel "fslmaths ../topup_undistort/SE_Magnitude       FM_UD_fmap_mag"
     rel "fslmaths ../topup_undistort/SE_TopupField      FM_UD_fmap"
-        
+    rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
+    
     #explicit return code needed to avoid implicit status of prior command
     return 0
     
@@ -561,7 +562,8 @@ function prepare_gre_fieldmap {
     cd unwarp
 
     rel "fslmaths $fm_magnitude      FM_UD_fmap_mag"
-
+    rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
+    
     #Convert fieldmap to rad/s
     if [ $( imtest "${fm_phasedir}/FM_UD_fmap" ) -eq 0 ]; then
 	#conversion to rads/sec not complete
@@ -602,7 +604,6 @@ function preproc_fieldmap {
 
     #assume that we have a) copied FM_UD_fmap_mag and FM_UD_fmap into unwarp directory and b) have cd'd into that directory
     #skull strip magnitude image for registration
-    rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
     [ -n "$funcRefimg" ] &&     rel "fslmaths ../epiref_brain_restore      ER_D_epiref"
     rel "fslmaths ../mc_target_brain_restore                EF_D_mc_target"
     
