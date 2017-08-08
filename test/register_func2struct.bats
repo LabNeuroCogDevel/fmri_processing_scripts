@@ -32,14 +32,13 @@ cat > thingstosource <<EOF
 
  source $BATS_TEST_DIRNAME/../preproc_functions/helper_functions
  source $BATS_TEST_DIRNAME/../preproc_functions/fast_wmseg
- source $BATS_TEST_DIRNAME/../preproc_functions/prepare_gre_fieldmap
- source $BATS_TEST_DIRNAME/../preproc_functions/waitforlock
  source $BATS_TEST_DIRNAME/../preproc_functions/convert_or_use_nii
  source $BATS_TEST_DIRNAME/../preproc_functions/register_func2struct
- source $BATS_TEST_DIRNAME/../preproc_functions/prepare_fieldmap
  source $BATS_TEST_DIRNAME/../preproc_functions/onestep_warp
  source $BATS_TEST_DIRNAME/../preproc_functions/warp_to_template
  source $BATS_TEST_DIRNAME/../preproc_functions/prepare_mc_target
+
+ find_and_source_fmconfig "$fm_cfg"
 
 EOF
 
@@ -48,6 +47,7 @@ EOF
  # sou
  # sou
  cp -r $BATS_TEST_DIRNAME/exampledata/func+fm+ref/gre_field_mapping_96x96.[34]/ ./
+ cp -r $BATS_TEST_DIRNAME/exampledata/func+fm+ref/nii/unwarp      ./
  
  # get t1 and warps
  ln -s $BATS_TEST_DIRNAME/exampledata/func+fm+ref/nii/mprage_bet.nii.gz      ./
@@ -66,7 +66,7 @@ teardown() {
 }
 
 
-@test "preprocessDistortion + register_func2struct (copied fast output to speedup)" {
+@test "register_func2struct (copied fast output to speedup)" {
  SAVETEST=1
 
  ## files
@@ -81,29 +81,9 @@ teardown() {
  mkdir $qa_imgdir
  mkdir transforms
 
-
-
  ## run fieldmaps
- mkdir fm
- cd fm
- run $BATS_TEST_DIRNAME/../preprocessDistortion -phasedir $phased -magdir $magd -fm_cfg $fm_cfg
- [ $status -eq 0 ]
- [ -r unwarp/FM_UD_fmap_mag.nii.gz ]
- [ -r unwarp/FM_UD_fmap.nii.gz ]
- cd ..
-
-
- ## run everything else
- run prepare_mc_target
- [ -r mc_target_brain_restore.nii.gz ]
- #[ $status -eq 0 ]
-
- run prepare_fieldmap
- [ -r transforms/fmap_to_epi.mat ]
- [ -r transforms/fmap_to_struct_init.mat ]
- [ -r transforms/func_to_fmap.mat ]
- [ -r unwarp/fmapForBBR.nii.gz ]
- #[ $status -eq 0 ]
+ #[ -r unwarp/FM_UD_fmap_mag.nii.gz ]
+ #[ -r unwarp/FM_UD_fmap.nii.gz ]
 
  echo "runnign reg" >&2
  register_func2struct >&2
@@ -111,20 +91,6 @@ teardown() {
  [ -r func_to_struct.nii.gz ] 
  [ $status -eq 0 ]
 
- # needs more setup
- #onestep_warp standard
 
 }
 
-@test "preprocessDistortion (see also prepare_gre_fieldmaps.bats) no bbr for faster runtime" {
- skip
- echo "bbrCapable=''" >> thingstosource
- echo "funcStructFlirtDOF=''" >> thingstosource
- source thingstosource
- #SAVETEST=1
- run $BATS_TEST_DIRNAME/../preprocessDistortion -phasedir $phased -magdir $magd -fm_cfg $fm_cfg
- [ $status -eq 0 ]
- [ -r unwarp/FM_UD_fmap_mag.nii.gz ]
- [ -r unwarp/FM_UD_fmap.nii.gz ]
-
-}
