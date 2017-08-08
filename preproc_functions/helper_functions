@@ -182,6 +182,7 @@ function rel() {
     local comment=0
     local timeit=0
     local pipesave=""
+    local cmdExit=0
 
     if [[ -n "${2}" && ${2} = c ]]; then
 	comment=1
