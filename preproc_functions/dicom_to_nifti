@@ -28,8 +28,8 @@ function dicom_to_nifti {
 	dicomHdr=$( dicom_hdr -sexinfo "${firstDicom}" )
 	detectTR=$( echo "${dicomHdr}" | grep "0018 0080.*ACQ Repetition Time" | perl -pe 's:.*ACQ Repetition Time//(\d+)\s*$:\1:' )
 	detectTR=$( echo "scale=3; ${detectTR}/1000" | bc ) #convert to seconds from milliseconds
-	detectTE=$( echo "${dicomHdr}" | grep "0018 0081.*ACQ Echo Time" | perl -pe 's:.*ACQ Echo Time//(\d+)\s*$:\1:' )
-	detectTE=$( echo "scale=3; ${detectTE}/1000" | bc ) #convert to seconds from milliseconds
+	detectTE=$( echo "${dicomHdr}" | grep "0018 0081.*ACQ Echo Time" | perl -pe 's:.*ACQ Echo Time//([0-9\.]+)\s*$:\1:' )
+	detectTE=$( echo "scale=5; ${detectTE}/1000" | bc ) #convert to seconds from milliseconds
 	detectSliceOrder=$( echo "${dicomHdr}" | grep "sSliceArray.ucMode" | perl -pe 's/sSliceArray.ucMode\s+=\s+\d?x?(\d)$/\1/' ) #Trio uses 0x4 style whereas Prisma is just 4
 	detectSeries=$( echo "${dicomHdr}" | grep "REL Series Number//" | perl -pe 's|^.*REL Series Number//(\d+).*$|\1|' ) #series number
 	detectProtocolName=$( echo "${dicomHdr}" | grep "ACQ Protocol Name//" | perl -pe 's|^.*ACQ Protocol Name//(\w+).*$|\1|' ) #protocol name
