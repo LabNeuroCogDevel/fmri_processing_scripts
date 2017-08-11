@@ -6,6 +6,7 @@
 # fast generates mc_target_brain_restore
 prepare_mc_target() {
     if [ $( imtest mc_target_brain ) -eq 0 -o $(imtest  mc_target_brain_restore ) -eq 0 ]; then
+       rel "skullstripping and segmenting (fast) mc_target" c
 	#include bias field correction for mc_target given heavy bias in 32-channel data.
 	#in principle, this should aid in coregistration
 	#rel "bet mc_target mc_target_brain -f 0.3 -n -m -R"

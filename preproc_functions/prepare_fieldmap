@@ -23,11 +23,11 @@ function fieldmap_make_rads_per_sec() {
     nrange=$( echo $range / 4096 | bc -l );
     if [ X`echo "if ( $nrange < 2.1 ) { 1 }" | bc -l` = X1 ] ; then
 	if [ X`echo "if ($nrange > 1.9) { 1 }" | bc -l` = X1 ] ; then
-            # MRIcron range is typically twice that of dicom2nifti
-            newphaseroot=${tmpnm}_tmp_phase
+           # MRIcron range is typically twice that of dicom2nifti
+           newphaseroot=${tmpnm}_tmp_phase
 	    rel "Dividing fieldmap phase image by 2 (MRIcron range is typically twice that of dicom2nifti" c
 	    fslmaths "$fm_phase" fieldmap_orig
-            fslmaths "$fm_phase" -div 2 "$fm_phase"
+           fslmaths "$fm_phase" -div 2 "$fm_phase"
 	fi
     fi
     if [ X`echo "if ( $nrange < 0.9 ) { 1 }" | bc -l` = X1 ] ; then
@@ -159,7 +159,8 @@ function prepare_fieldmap {
     # UD = undistorted (in any space)
     # D  = distorted (in any space)
 
-    [ -z "$fm_phase" -a -z "$fm_magnitude" -a -z "$fm_cfg" ] && rel "not running fieldmap" c && return 0
+    # if we have none of the fieldmap/distortion correction variables, we dont need to do anything
+    [ -z "$fm_phase$fm_magnitude$fm_cfg$se_phaspos$se_phaseneg" ] && rel "not running fieldmap" c && return 0
 
     if [[ $bbrCapable -eq 1 && $funcStructFlirtDOF = "bbr" && -n "$fm_cfg" ]]; then
 	createBBRFmapWarp=1 #generate func -> struct warp that includes FM unwarping (via BBR -fieldmap)
@@ -176,7 +177,7 @@ function prepare_fieldmap {
     # we need to do this before testing if complete
     # because we use the warpdir sourced from the file
     # later (one-step warp)
-    [ -n "$fm_cfg" ] && { find_and_source_config "$fm_cfg" || return 1; }
+    [ -n "$fm_cfg" ] && { find_and_source_fmconfig "$fm_cfg" || return 1; }
     
     if [[ ( -n "${fm_phase}" || -n "$se_phasepos" || -n "$distortion_dir" ) && -f ".prepare_fieldmap_complete" ]]; then
 	return 0 #preparefieldmap already completed
@@ -184,7 +185,7 @@ function prepare_fieldmap {
        prepare_distortion_dir "$DISTORTION_DIR"
     elif [ -n "$fm_phase" ]; then
 	prepare_gre_fieldmap #setup fieldmap files using GRE
-    elif [ -n "$se_phasepos" ]; then
+    elif [ -n "$se_phasepos$se_phaseneg" ]; then
 	prepare_se_fieldmap #setup fieldmap files using SE + TOPUP
     fi
 
@@ -284,6 +285,10 @@ prepare_distortion_dir() {
 #this function is responsible for running TOPUP on the phase+ and phase- images
 #then exporting the rad/s TopupField to the unwarp directory for preprocessing using the typical steps (preproc_fieldmap)
 function prepare_se_fieldmap {
+    if [ -z "$dwelltime" -o -z "$unwarpdir" ]; then
+      rel "Error: Cannot prepare spin echo distorion correction! Missing dwelltime '$dwelltime' and/or unwarpdir '$unwarpdir'. Do you need to include/edit fm_cfg '$fm_cfg' "  c
+      return 1
+    fi 
 
     #TODO/FIX: will use se_phase* if it exsits regardless of what input ($se_phaspos) is given
     convert_or_use_nii se_phasepos "$se_phasepos"
@@ -964,45 +969,46 @@ function preproc_fieldmap {
    
 }
 
-find_and_source_config(){
-    local fm_cfg="$1"
-    [ -z "$fm_cfg" ] && echo "Want to correct with fieldmaps but dont have a config file!" >&2 && return 1
-
-    ## need to find fmcfgdir
-    # expect it to be in $0
-    local fmcfgdir=""
-    for pdirs in $0 $(dirname ${BASH_SOURCE[0]}){,/..}/preprocessFunctional; do
-       [ ! -r "$pdirs" ] && continue
-       pdir=$(cd $(dirname $pdirs); pwd)
-       _fmcfgdir=$pdir/fmcfg
-       [ -d $_fmcfgdir ] && fmcfgdir=$_fmcfgdir &&  break
-    done
-
-    [ -z "$fmcfgdir" -a ! -r "$fm_cfig" ] && echo "cannot find script directory root to find config file for '$fm_cfg'!" >&2 && return 1
-
-    # Allow --config to be a shorthand lookup, defined here, rather than a config file
-    local fm_cfg_file=$fmcfgdir/$fm_cfg.fmcfg
-    if [ -r $fm_cfg_file ]; then
-      fm_cfg=$fm_cfg_file
-    else
-      case $fm_cfg in
-         cogemo|multimodal|wpc5640 ) fm_cfg=$fmcfgdir/cogemo.fmcfg;;
-         clock|specc|wpc6290|p5 )    fm_cfg=$fmcfgdir/MB5_TR1.0_TE30_60slc.fmcfg;;
-         # dead code -- 20170224
-         trust )                     fm_cfg=$fmcfgdir/trust.fmcfg;;
-         bandit )                    fm_cfg=$fmcfgdir/bandit.fmcfg;;
-         pet    )                    fm_cfg=$fmcfgdir/pet.fmcfg;;
-      esac
-    fi
-    
-    # source config file or warn
-    if [ -n "$fm_cfg" -a -r "$fm_cfg" ]; then
-      rel "using '$fm_cfg' for fieldmap config" c
-      source $fm_cfg 
-    else
-      echo "ERROR: readable config file not provided or understood ($fm_cfg)" >&2
-      return 1
-    fi
-}
+# move to helper function file, renamed find_and_source_fmconfig
+# find_and_source_config(){
+#     local fm_cfg="$1"
+#     [ -z "$fm_cfg" ] && echo "Want to correct with fieldmaps but dont have a config file!" >&2 && return 1
+# 
+#     ## need to find fmcfgdir
+#     # expect it to be in $0
+#     local fmcfgdir=""
+#     for pdirs in $0 $(dirname ${BASH_SOURCE[0]}){,/..}/preprocessFunctional; do
+#        [ ! -r "$pdirs" ] && continue
+#        pdir=$(cd $(dirname $pdirs); pwd)
+#        _fmcfgdir=$pdir/fmcfg
+#        [ -d $_fmcfgdir ] && fmcfgdir=$_fmcfgdir &&  break
+#     done
+# 
+#     [ -z "$fmcfgdir" -a ! -r "$fm_cfig" ] && echo "cannot find script directory root to find config file for '$fm_cfg'!" >&2 && return 1
+# 
+#     # Allow --config to be a shorthand lookup, defined here, rather than a config file
+#     local fm_cfg_file=$fmcfgdir/$fm_cfg.fmcfg
+#     if [ -r $fm_cfg_file ]; then
+#       fm_cfg=$fm_cfg_file
+#     else
+#       case $fm_cfg in
+#          cogemo|multimodal|wpc5640 ) fm_cfg=$fmcfgdir/cogemo.fmcfg;;
+#          clock|specc|wpc6290|p5 )    fm_cfg=$fmcfgdir/MB5_TR1.0_TE30_60slc.fmcfg;;
+#          # dead code -- 20170224
+#          trust )                     fm_cfg=$fmcfgdir/trust.fmcfg;;
+#          bandit )                    fm_cfg=$fmcfgdir/bandit.fmcfg;;
+#          pet    )                    fm_cfg=$fmcfgdir/pet.fmcfg;;
+#       esac
+#     fi
+#     
+#     # source config file or warn
+#     if [ -n "$fm_cfg" -a -r "$fm_cfg" ]; then
+#       rel "using '$fm_cfg' for fieldmap config" c
+#       source $fm_cfg 
+#     else
+#       echo "ERROR: readable config file not provided or understood ($fm_cfg)" >&2
+#       return 1
+#     fi
+# }
 
 # vim: set tabstop=7:
