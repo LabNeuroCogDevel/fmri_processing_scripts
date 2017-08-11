@@ -3,12 +3,24 @@
 # University of Pittsburgh's 7T spin echo config
 # created 20170811 WF
 
+# TE in dicom  2.08 not reasonable. Tae things its 26
+epiTE=26  # ms
+epiTE=$( echo "($epiTE)/1000" | bc -l ) # 0.03 sec
+
 unwarpdir="y-" # A>>P -- TODO: test this, y is A<->P but if its - or + is up to experementation
 
-#Used by fugue to unwarp EPI
+#Used by topup
 dwelltime=.0806 
+
 # 20170811 WF - Tae says use 1/value in 0019,1028 (1/12.401 == .0806)
 # dcm_hdr reports "Unimplemented" but matlab reads it
 # matlab -nodisplay -r "dinfo=dicominfo('PHAN.MR.TIEJUN_20170711.0022.0016.2017.08.02.13.27.46.531250.3540776.IMA'); fprintf('%f',dinfo.Private_0019_1028); quit;"   
 #    12.401000
 
+######################################################################
+# Signal loss threshold: Determines where the signal loss in the EPI is too great
+# for registration to get a good match between the EPI data and other images. 
+# Areas where the % signal loss in the EPI exceeds this threshold will get masked out of 
+# the registration process between the EPI and the fieldmap and structural images.
+
+signallossthresh=0.9 # Areas with 90% or more signal loss in fieldmap are masked out
