@@ -2,7 +2,7 @@
 
 for needfunc in convert_or_use_nii; do
    [ "$(type -t $needfunc)" == "function" ] && continue
-   filetosource="$(dirname ${BASH_SOURCE[0]})/$needfuc"
+   filetosource="$(dirname ${BASH_SOURCE[0]})/$needfunc"
    [ ! -r "$filetosource" ] && echo "$BASH_SORUCE: need function $needfunc, not in '$filetosource'; not running" >&2 && return 1
    source "$filetosource"
 done
