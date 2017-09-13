@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 
-###################
-# test lock funcs #
-###################
+#####################################
+# stand alone distortion correction #
+#####################################
 
 # source the functions we want to test
 setup() {
@@ -11,6 +11,9 @@ setup() {
 
  # put this in a file so we can go back to it when SAVEDIR=1
 cat > thingstosource <<EOF
+ BATS_TEST_DIRNAME="$BATS_TEST_DIRNAME"
+ BATS_TMPDIR="$BATS_TMPDIR"
+
  fm_cfg="pet"
  DISTORTION_DIR="fm/unwarp"
  magd=$(pwd)/gre_field_mapping_96x96.3
@@ -45,8 +48,6 @@ EOF
 
 
  # get fieldmaps
- # sou
- # sou
  cp -r $BATS_TEST_DIRNAME/exampledata/func+fm+ref/gre_field_mapping_96x96.[34]/ ./
  
  # get t1 and warps

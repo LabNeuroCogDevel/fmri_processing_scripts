@@ -724,4 +724,27 @@ find_and_source_fmconfig(){
       return 1
     fi
 }
+
+exiterr(){ warn $@; exit 1; }
+
+failunless(){ ! which $1 2>&1 >/dev/null ; }
+checkdepends() {
+   ret=0
+   failunless imtest        && warn "You do not have FSL installed! This is required!" && let ++ret
+   failunless 3dinfo        && warn "You do not have AFNI installed! This is required!" && let ++ret
+
+   failunless perl          && warn "Your system does not have perl! This is required!" && let ++ret
+   failunless python        && warn "Your system does not have python! This is required!" && let ++ret
+
+   ! python -c "import nipy" && warn "You do not have nipy for python! This is required for 4d_slice_motion"
+   ! which ffmpeg            && warn "You do not have ffmpeg installed! This is required for mcmove!" 
+
+   failunless ANTS              && warn    "You do not have ANTS installed! This is not required, but will improve preprocessing" 
+   failunless runROBEX.sh       && warn    "You do not have ROBEX installed! This is not required, but will improve preprocessing" 
+   failunless c3d_affine_tool   && warn    "You do not have c3d installed! This is not required, but will improve preprocessing: http://git.code.sf.net/p/c3d/git"
+
+   failunless bats          && warn    "You do not have bats installed! This is only useful for testing the software" 
+
+   return $ret
+}
 # vim: set tabstop=7:
