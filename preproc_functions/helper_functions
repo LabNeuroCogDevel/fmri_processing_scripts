@@ -760,4 +760,8 @@ checkdepends() {
 
    return $ret
 }
+
+# dummy function so we know if this file has been sourced
+helper_functions() { echo ${BASH_SOURCE[0]}; }
+
 # vim: set tabstop=7:
