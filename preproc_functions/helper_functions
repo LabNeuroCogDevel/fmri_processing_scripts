@@ -684,21 +684,24 @@ isglob() { [[ "$1" =~ .*\*.* ]]; }
 # how many file in/match the first arg provided
 cnt() { ls $1 | wc -l; }
 
-find_and_source_fmconfig(){
+# given a full file or partial name of a fieldmap config file
+# find the full path
+# echo lots of warnigns along the way
+find_fmconfig(){
     local fm_cfg="$1"
     [ -z "$fm_cfg" ] && echo "Want to correct with fieldmaps but dont have a config file!" >&2 && return 1
 
     ## need to find fmcfgdir
-    # expect it to be in $0
+    # expect it to be in the fmcfg directory alongside our script ($0)
     local fmcfgdir=""
-    for pdirs in $0 $(dirname ${BASH_SOURCE[0]}){,/..}/preprocessFunctional; do
-       [ ! -r "$pdirs" ] && continue
-       pdir=$(cd $(dirname $pdirs); pwd)
+    for preprocScript in $0 $(dirname ${BASH_SOURCE[0]}){,/..}/preprocessFunctional; do
+       [ ! -r "$preprocScript" ] && continue
+       pdir=$(cd $(dirname $preprocScript); pwd)
        _fmcfgdir=$pdir/fmcfg
        [ -d $_fmcfgdir ] && fmcfgdir=$_fmcfgdir &&  break
     done
 
-    [ -z "$fmcfgdir" -a ! -r "$fm_cfig" ] && echo "cannot find script directory root to find config file for '$fm_cfg'!" >&2 && return 1
+    [ -z "$fmcfgdir" -a ! -r "$fm_cfg" ] && echo "Cannot find script directory root to find config file for '$fm_cfg'!" >&2 && return 1
 
     # Allow --config to be a shorthand lookup, defined here, rather than a config file
     local fm_cfg_file=$fmcfgdir/$fm_cfg.fmcfg
@@ -717,13 +720,22 @@ find_and_source_fmconfig(){
     
     # source config file or warn
     if [ -n "$fm_cfg" -a -r "$fm_cfg" ]; then
-      rel "using '$fm_cfg' for fieldmap config" c
-      source $fm_cfg 
+      echo "$fm_cfg" # print out config file too
       return 0
     else
       echo "ERROR: readable config file not provided or understood ($fm_cfg)" >&2
       return 1
     fi
+}
+find_and_source_fmconfig() {
+   fm_cfg=$(find_fmconfig $@)
+   if [ ! -z "$fm_cfg" ]; then
+      rel "using '$fm_cfg' for fieldmap config" c
+      source $fm_cfg 
+   else
+      rel "could not find fm_cfg for '$@'; probably cannot continue" c
+      return 1
+   fi
 }
 
 exiterr(){ warn $@; exit 1; }
