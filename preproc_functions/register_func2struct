@@ -26,10 +26,13 @@ function register_func2struct {
     if [[ -n "${fm_phase}" || ( -n "${se_phasepos}" && $topup_direct -eq 0 ) || -n "$DISTORTION_DIR" ]]; then
 
 	inweight="-inweight $(pwd)/unwarp/EF_UD_fmap_sigloss"
-        [ -z "$unwarpdir" -a ! -n "$fm_cfg" ] && rel "$FUNCNAME doesn't know about fieldmaping, something is strange" c && find_and_source_fmconfig "$fm_cfg"
+        if [ -z "$unwarpdir" -a -n "$fm_cfg" ]; then
+            rel "$FUNCNAME doesn't know about fieldmaping, something is strange" c 
+            find_and_source_fmconfig "$fm_cfg"
+        fi
         # if that didn't work we have problems
         if [ -z "$unwarpdir" ]; then
-          warn "isfm (fm_phase '$fm_phase', se_phasepos '$se_phasepos', or DISTORTION_DIR '$DISTORTION_DIR') but unrecoginzed fm_cfg '$fm_cfg'" 
+            warn "$FUNCNAME: using fm ( b/c fm_phase '$fm_phase', se_phasepos '$se_phasepos', or DISTORTION_DIR '$DISTORTION_DIR') but unrecoginzed fm_cfg '$fm_cfg' (no 'unwarpdir');" 
           return 1
         fi
 	#echo spacing and phase encode direction should be defined when $fm_cfg is sourced by prepareFieldmap (upstream)
