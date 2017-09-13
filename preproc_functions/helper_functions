@@ -719,6 +719,7 @@ find_and_source_fmconfig(){
     if [ -n "$fm_cfg" -a -r "$fm_cfg" ]; then
       rel "using '$fm_cfg' for fieldmap config" c
       source $fm_cfg 
+      return 0
     else
       echo "ERROR: readable config file not provided or understood ($fm_cfg)" >&2
       return 1

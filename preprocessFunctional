@@ -431,6 +431,9 @@ if [[ -z $st_first && -z $mc_first && $sliceMotion4D -eq 0 && $no_st -eq 0 ]]; t
     fi
 fi
 
+# add fm config settings to gobal environment (incase we already ran prepare_fieldmap, but need it for register_func2struct
+[ -n "$fm_cfg" ] && find_and_source_fmconfig $fm_cfg
+
 if [ $sliceMotion4D -eq 1 ]; then
     #Option 1: 4-D slice timing + motion correction
     correct_slice_motion_4d
