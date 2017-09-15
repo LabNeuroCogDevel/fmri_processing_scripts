@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+# follow decision tree regarding how to warp
+# 0) do we need to warp
+# 1) what will be warped
+# 2) is it voxelwise
+# 3) what is the convert command
+
+# where/what is the fieldmap warp field: topup, bbr, or conventional
+# depends on if topup_direct or createBBRFmapWarp is set
+#fmap_unwarp_field is the fm unwarp field aligned to mc_target (aka 'example func' [EF], the coregistration target)
+find_fm_warp_field(){
+  if [ "$use_fm" -eq 1 ]; then
+    if [ "$topup_direct" -eq 1 ]; then
+        local fmap_unwarp_field=topup_undistort/EF_WarpField
+    elif [ "$createBBRFmapWarp" -eq 1 ]; then
+        local fmap_unwarp_field=unwarp/EF_UD_warp_bbr
+    else
+        local fmap_unwarp_field=unwarp/EF_UD_warp
+    fi
+    echo $fmap_unwarp_field
+  fi
+}
+
+is() { [ -n "$1" -a "$1" -eq 1 ]; }
+# towarp is either preMC,postSS, por postDespike based on
+# combinations of despike, slice timing (no_st, st_first), and motion (mc_first) or sliceMotion4D
+what_to_warp() {
+ what_to_warp_flags=(warp_target mc_first no_st st_first sliceMotion4D despike )
+ local warp_to=""
+ 
+ #for v in ${what_to_warp_flags[@]}; do echo "$v: '${!v}'" >&2; done
+
+ if   [ "$warp_target" == "mc_target" ] && (is "$no_st" || is "$mc_first" ); then 
+     warp_to=preMC 
+ elif [ "$warp_target" == "standard"  ] && ! is "$sliceMotion4D" && (is "$no_st" || is "$st_first" ); then 
+     warp_to=preMC 
+ elif ! is "$despike"; then 
+     warp_to=postSS
+ elif is "$despike"; then
+     warp_to=postDespike
+ else
+     warn "$FUNCNAME: unknown warp_target ($warp_target) + no_st ($no_st) + mc_first ($mc_first) + despike ($despike) combo! warp_to cannot be set!"
+     return 1
+ fi
+
+ echo "$warp_to"
+}
+
+
+warp_how(){
+ warp_how_flags=(warp_target use_fm mc_first no_st st_first no_warp sliceMotion4D despike )
+ warp_how_files=(preMC postSS postDespike fmap_unwarp_field ref mask)
+ 
+
+}
+
+
+onestep_warp_parts() {
+    echo hi
+}
+# vi: set shiftwidth=4 tabstop=8 expandtab:
