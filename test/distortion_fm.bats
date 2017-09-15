@@ -33,6 +33,11 @@ cat > thingstosource <<EOF
  use_fm=1
  logFile="$(pwd)/log"
 
+ funcFile="func.nii.gz"
+ templateBrain='template_brain'
+
+ funcWarpInterp=spline
+
  source $BATS_TEST_DIRNAME/../preproc_functions/helper_functions
  source $BATS_TEST_DIRNAME/../preproc_functions/fast_wmseg
  source $BATS_TEST_DIRNAME/../preproc_functions/prepare_gre_fieldmap
@@ -44,6 +49,22 @@ cat > thingstosource <<EOF
  source $BATS_TEST_DIRNAME/../preproc_functions/warp_to_template
  source $BATS_TEST_DIRNAME/../preproc_functions/prepare_mc_target
 
+
+ #created by prepare_fieldmap?
+ #createBBRFmapWarp 
+ 
+ # needed for onestep warp
+ topup_direct=0  
+ no_st=0
+ st_first=0
+ no_warp=0
+ despike=0
+
+ # pretend mc_traget is skull stripped
+ postSS=mc_target
+ preMC=mc_target
+ subjMask=mc_target_brain
+
 EOF
 
 
@@ -53,6 +74,7 @@ EOF
  # get t1 and warps
  ln -s $BATS_TEST_DIRNAME/exampledata/func+fm+ref/nii/mprage_bet.nii.gz      ./
  ln -s $BATS_TEST_DIRNAME/exampledata/func+fm+ref/nii/mprage_warpcoef.nii.gz ./
+ ln -s $BATS_TEST_DIRNAME/exampledata/func+fm+ref/nii/template_brain.nii ./
 
  # bring in all the settings and functions
  source thingstosource
@@ -67,7 +89,7 @@ teardown() {
 }
 
 
-@test "preprocessDistortion + register_func2struct (copied fast output to speedup)" {
+@test "preprocessDistortion gre + register_func2struct + onestep_warp (slow!)" {
  SAVETEST=1
 
  ## files
@@ -94,6 +116,9 @@ teardown() {
  cd ..
 
 
+ # N.B. continuing on, scripts are useing distoration dir, already set as
+ # DISTORTION_DIR="fm/unwarp"
+ 
  ## run everything else
  run prepare_mc_target
  [ -r mc_target_brain_restore.nii.gz ]
@@ -106,18 +131,17 @@ teardown() {
  [ -r unwarp/fmapForBBR.nii.gz ]
  #[ $status -eq 0 ]
 
- echo "runnign reg" >&2
  register_func2struct >&2
- echo "ran reg" >&2
  [ -r func_to_struct.nii.gz ] 
  [ $status -eq 0 ]
 
  # needs more setup
- #onestep_warp standard
+ onestep_warp standard
+ [ $status -eq 0 ]
 
 }
 
-@test "preprocessDistortion (see also prepare_gre_fieldmaps.bats) no bbr for faster runtime" {
+@test "preprocessDistortion gre (see also prepare_gre_fieldmaps.bats) no bbr for faster runtime" {
  skip
  echo "bbrCapable=''" >> thingstosource
  echo "funcStructFlirtDOF=''" >> thingstosource
