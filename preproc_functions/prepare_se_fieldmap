@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-for needfunc in convert_or_use_nii; do
+# load all the functions we need (helper_functions file provides rel and qa_image)
+for needfunc in convert_or_use_nii helper_functions; do
    [ "$(type -t $needfunc)" == "function" ] && continue
    filetosource="$(dirname ${BASH_SOURCE[0]})/$needfunc"
    [ ! -r "$filetosource" ] && echo "$BASH_SORUCE: need function $needfunc, not in '$filetosource'; not running" >&2 && return 1
@@ -9,6 +10,14 @@ done
 
 #this function is responsible for running TOPUP on the phase+ and phase- images
 #then exporting the rad/s TopupField to the unwarp directory for preprocessing using the typical steps (preproc_fieldmap)
+# inputs
+#  epi
+#  fmcfg (dwelltime,unwarpdir)
+#  se_phasepos and se_phaseneg
+#final outputs
+#   FM_UD_fmap_mag
+#   FM_UD_fmap
+# 
 prepare_se_fieldmap() {
     if [ -z "$dwelltime" -o -z "$unwarpdir" ]; then
       rel "Error: Cannot prepare spin echo distorion correction! Missing dwelltime '$dwelltime' and/or unwarpdir '$unwarpdir'. Do you need to include/edit fm_cfg '$fm_cfg' "  c
@@ -64,56 +73,5 @@ prepare_se_fieldmap() {
     return 0
     
 }
-
-# use convert_or_use_nii from it's own file
-## give the name and either a nifti or a dicom directory
-#convert_or_use_nii() {
-#   local name="$1"; shift
-#   local input="$1"
-#   local inputdir=$(dirname "$input")
-#   #convert SE images to NIfTI if needed
-#   #determine if the image already exists
-#
-#   # maybe we've already converted. if we have, set the input to name 
-#   # and well return out of this on the next line
-#   # [ $( imtest $name ) -eq 1 ] && input=$name
-#
-#   # if we have the input, we're all set. dont need to do anything
-#   # N.B. imtest fails on symlinks!?
-#   [ $( imtest $input ) -eq 1 ] && return 0
-#
-#   # if no files match the input string, that's an error
-#   if [ $( ls $input | wc -l ) -eq 0 ]; then
-#      rel "Could not find any images matching $name specification ('$input')." c && exit 1
-#   fi
-#
-#   # make sure we are looking at a dicom
-#   first_dicom=$( ls $input | head -n 1 )
-#   dicom_hdr "$first_dicom" 2>&1 | grep -q "ERROR: can't open.*as a DICOM file" && isdicom=0 || isdicom=1 # 0 exit status from grep indicates a match
-#   if [ $isdicom -eq 0 ]; then
-#      rel "Cannot recognize $first_dicom (from '$input') as DICOM or NIfTI" c
-#      exit 1
-#   fi
-#
-#   rel "Converting $name to NIfTI" c
-#
-#   # lock here so we dont run dicom2nii twice while parallel processing multiple protocols that share this FM
-#   local lockfile="${inputdir}/.${name}_inprogress"
-#   waitforlock $lockfile
-#   makelockfile $lockfile
-#
-#   # TODO: allow reuse 
-#   # save nifti in the dicom directory?
-#
-#   # convert dicoms to nifti called $name in working directory (functional preprocess directory)
-#   if [ $have_dcm2niix -eq 1 ]; then
-#      [ -r $name.nii.gz ] && rm -f $name.nii.gz
-#      dcm2niix -z y -f $name -o ./ $inputdir
-#   else
-#      rel "Using Dimon to convert $name to NIfTI. Warning: this may result in inconsistent unwarping behavior due to bad image headers. Prefer dcm2niix!" c
-#      dimon "${input}" "$name"
-#   fi
-#   rmlockfile $lockfile
-#}
 
 # vim: set tabstop=7:
