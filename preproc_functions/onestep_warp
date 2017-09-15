@@ -10,8 +10,9 @@ unable_warp_msg(){
 }
 
 # GLOBALS:
-ONESTEPWARP_GLOBALS=(templateBrain subjMask se_phasepos fm_phase mc_first prefix funcFile createBBRFmapWarp no_st st_first sliceMotion4D preMC despike postDespike postSS nowarp funcWarpInterp warpCoef use_fm)
+ONESTEPWARP_GLOBALS=(templateBrain subjMask se_phasepos fm_phase mc_first prefix funcFile createBBRFmapWarp no_st st_first sliceMotion4D preMC despike postDespike postSS no_warp funcWarpInterp warpCoef use_fm topup_direct)
 
+# uses helper_functions: rel, imtestln
 function onestep_warp {
 
     if [ $# -lt 1 ]; then
@@ -19,8 +20,22 @@ function onestep_warp {
 	exit 1
     fi
 
+
     # record all the globals used by this function
     print_vars_in ONESTEPWARP_GLOBALS
+
+    # these would have all been set upstream
+    # return if we dont have it
+    # ---default to zero if they dont exist (like if we are testing with bats)--
+    for warpopt in use_fm mc_first topup_direct createBBRFmapWarp no_st no_warp st_first sliceMotion4D despike funcWarpInterp; do
+      if [ -z "${!warpopt}" ]; then
+          rel "'$warpopt' is not defined! will not continue" c
+          return 1
+          # TODO: maybe we just warn -- unless funcWarpInterp is empty
+          rel "$warpopt is not defined! that is weird, setting to 0" c
+          printf -v $warpopt 0
+      fi
+    done
     
     # figure out what to do based on the target
     local warp_target="$1"
@@ -29,7 +44,7 @@ function onestep_warp {
 	local ref="$templateBrain"
 	local mask="${subjMask}"
 
-	if [[ $use_fm -eq 1 && $mc_first -eq 0 ]]; then #if -mc_first, then fieldmap unwarping happens upstream
+	if [[ "$use_fm" -eq 1 && "$mc_first" -eq 0 ]]; then #if -mc_first, then fieldmap unwarping happens upstream
 	    prefix="wu${prefix}" #fm unwarp and warp to standard
 	else
 	    prefix="w${prefix}" #just warp to standard
@@ -38,17 +53,17 @@ function onestep_warp {
 	#filename for post-warp, used in nuisance regression
 	postWarp="${prefix}${funcFile}"
 	
-	if [[ $use_fm -eq 1 && -f .warp_complete && -f .fmunwarp_complete ]]; then
+	if [[ "$use_fm" -eq 1 && -f .warp_complete && -f .fmunwarp_complete ]]; then
 	    #echo "returning 0"
 	    return 0
-	elif [[ $use_fm -eq 0 && -f .warp_complete ]]; then
+	elif [[ "$use_fm" -eq 0 && -f .warp_complete ]]; then
 	    return 0   #relevant steps already complete
 	fi
-    elif [ $warp_target = mc_target ]; then
+    elif [ "$warp_target" = mc_target ]; then
 	local ref=mc_target
 	local mask=mc_target_mask #Used to be unwarp/EF_UD_fmap_mag_brain_mask, but should constrain warp to observed EPI data (in case FM has larger extent)
 
-	if [ $use_fm -eq 1 ]; then
+	if [ "$use_fm" -eq 1 ]; then
 	    prefix="u${prefix}"
 	fi
 	
@@ -60,6 +75,14 @@ function onestep_warp {
 	exit 1
     fi
 
+    ## what warp targets do we have?
+    warp_target_list=("preMC postSS") # we will always have something before motion corerction, and a skullstrip (right?)
+    [ "$despike" -eq 1 ] && warp_target_list+=("postDespike")
+    # do they all exist
+    for warpnii in ${warp_target_list[@]} ref mask; do
+      if ! imtestln "${!warpnii}"; then rel "$FUNCNAME: missing $warpnii '${!warpnii}'" c; return 1; fi
+    done
+
     # One-step warping occurs under several scenarios, and applies motion correction, 
     # fieldmap unwarping, and warping to standard in various combinations. The motivating
     # goal is to reduce the number of data interpolations.
@@ -67,12 +90,12 @@ function onestep_warp {
     # Combinations that combine motion correction with fieldmap unwarping and/or warp to standard
     # require a unique volume-wise warp (i.e., volwise=1)
 
-    if [ $use_fm -eq 1 ]; then
+    if [ "$use_fm" -eq 1 ]; then
 	#fmap_unwarp_field is the fm unwarp field aligned to mc_target (aka 'example func' [EF], the coregistration target)
-	if [ $topup_direct -eq 1 ]; then
+	if [ "$topup_direct" -eq 1 ]; then
 	    rel "Using the TOPUP unwarping coefficients directly to unwarp functional data" c
 	    local fmap_unwarp_field=topup_undistort/EF_WarpField
-	elif [ $createBBRFmapWarp -eq 1 ]; then
+	elif [ "$createBBRFmapWarp" -eq 1 ]; then
 	    rel "Using unwarp information from BBR -fieldmap functional -> struct alignment" c
 	    local fmap_unwarp_field=unwarp/EF_UD_warp_bbr
 	else
@@ -105,6 +128,7 @@ function onestep_warp {
 	    #        
 	    #              This is the condition handled in the standard FSL tools (motion correction + fieldmap unwarping before slice timing)
 
+            rel "warp from pre motion correct" c
 	    towarp="${preMC}"
 
 	    #make a vol-specific warp for MC + unwarp
@@ -121,8 +145,10 @@ function onestep_warp {
 	    #              c) data already motion-corrected by -4d_slice_motion
 
 	    if [ $despike -eq 1 ]; then		
+                rel "warp from despiked" c
 		towarp="${postDespike}" #warp functionals after despiking: dktm_
 	    else
+                rel "warp from skull stripped" c
 		towarp="${postSS}" #warp functionals after skull strip + intensity: ktm_funcfile
 	    fi
 	    volwise=0
@@ -151,6 +177,7 @@ function onestep_warp {
 
         elif [ $no_warp -eq 1 -a $st_first -eq 1 -a $despike -eq 0 ]; then
           #WF20170216 -- here for MJ following gu 2015 pnas
+          rel "warp from skull striped" c
 	  towarp="${postSS}" #warp functionals after skull strip + intensity: ktm0_funcfile
 
           # if we were going to concat the motion correction mats we'd want to use 
@@ -186,6 +213,7 @@ function onestep_warp {
 	    #              b) -no_st OR -st_first AND
 	    #              c) Use conventional motion and slice timing correction (i.e., not -4d_slice_motion)
 
+            rel "warp from pre motion corrected" c
 	    towarp="${preMC}" #warp the pre-motion correction data because we are combining motion + standard
 
 	    #make a vol-specific warp for MC + standard
@@ -206,8 +234,10 @@ function onestep_warp {
 	    #for mc_first, steps before warp to template are MC + FM + ST + SS.
 	    #for sliceMotion4D without FM, steps before warp are MC + ST + SS.
 	    if [ $despike -eq 1 ]; then		
+                rel "warp from despiking" c
 		towarp="${postDespike}" #warp functionals after despiking: dktm_
 	    else
+                rel "warp from skull stripping" c
 		towarp="${postSS}" #warp functionals after skull strip + intensity: ktm_funcfile
 	    fi
 
@@ -222,9 +252,11 @@ function onestep_warp {
 	    #  Conditions: a) fieldmap provided (use_fm=1) AND
 	    #              b) data already motion-corrected by -4d_slice_motion
 
-	    if [ $despike -eq 1 ]; then		
+	    if [ "$despike" -eq 1 ]; then		
+                rel "warp from despiking" c
 		towarp="${postDespike}" #warp functionals after despiking: dktm_
 	    else
+                rel "warp from skull stripping" c
 		towarp="${postSS}" #warp functionals after skull strip + intensity: ktm_funcfile
 	    fi
 
@@ -239,6 +271,7 @@ function onestep_warp {
 	    #  Conditions: a) -no_st OR -st_first AND
 	    #              b) fieldmap provided (use_fm=1) AND
     
+            rel "warp from pre motion correct" c
 	    towarp="${preMC}"
 
 	    volwise=1
@@ -256,7 +289,7 @@ function onestep_warp {
 	exit 1
     fi
 
-    [ $( imtest $towarp ) -eq 0 ] && echo "Unable to find volume to warp: $towarp" && exit 1
+    [ $( imtest $towarp ) -eq 0 ] && echo "Unable to find volume to warp: '$towarp'" && exit 1
 
     #applywarp basics:
     #
@@ -301,8 +334,8 @@ function onestep_warp {
 	    rel "${torun}"
 
 	    rel "applywarp --in=episplit/episplit$pad --out=episplit/episplit$pad \
-		--warp=func_to_${warp_target}_warp_v${pad} --ref=$ref --rel \
-		--mask=$mask --interp=${funcWarpInterp}"
+		--warp=func_to_${warp_target}_warp_v${pad} --ref=\"$ref\" --rel \
+		--mask=\"$mask\" --interp=${funcWarpInterp}"
 	done
 	
 	rel "fslmerge -t ${prefix}${funcFile} episplit/*"
