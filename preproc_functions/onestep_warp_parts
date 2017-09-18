@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 
+# quick syntax for checking if a variable is "1"
+is() { [ -n "$1" -a "$1" -eq 1 ]; }
+
+
 # follow decision tree regarding how to warp
 # 0) do we need to warp
 # 1) what will be warped
+#   using fieldmap?
 # 2) is it voxelwise
 # 3) what is the convert command
 
@@ -22,41 +27,251 @@ find_fm_warp_field(){
   fi
 }
 
-is() { [ -n "$1" -a "$1" -eq 1 ]; }
 # towarp is either preMC,postSS, por postDespike based on
 # combinations of despike, slice timing (no_st, st_first), and motion (mc_first) or sliceMotion4D
 what_to_warp() {
  what_to_warp_flags=(warp_target mc_first no_st st_first sliceMotion4D despike )
- local warp_to=""
+ local warp_from=""
  
  #for v in ${what_to_warp_flags[@]}; do echo "$v: '${!v}'" >&2; done
-
  if   [ "$warp_target" == "mc_target" ] && (is "$no_st" || is "$mc_first" ); then 
-     warp_to=preMC 
+     warp_from=preMC 
  elif [ "$warp_target" == "standard"  ] && ! is "$sliceMotion4D" && (is "$no_st" || is "$st_first" ); then 
-     warp_to=preMC 
+     warp_from=preMC 
  elif ! is "$despike"; then 
-     warp_to=postSS
+     warp_from=postSS
  elif is "$despike"; then
-     warp_to=postDespike
+     warp_from=postDespike
  else
-     warn "$FUNCNAME: unknown warp_target ($warp_target) + no_st ($no_st) + mc_first ($mc_first) + despike ($despike) combo! warp_to cannot be set!"
+     warn "$FUNCNAME: unknown warp_target ($warp_target) + no_st ($no_st) + mc_first ($mc_first) + despike ($despike) combo! warp_from cannot be set!"
      return 1
  fi
 
- echo "$warp_to"
+ echo "$warp_from"
 }
 
+# will this be a voxelwise warp? (currently, just test if we are warping to PreMC == voxelwisej)
+# return true (0) if is voxelwise, return error (1) otherwise
+warp_isvoxelwise(){
+ warp_isvoxelwise_flags=(warp_from)
+ # if we are warping to before MC, this is voxelwise
+ if [ "$warp_from" = "PreMC" ]; then 
+    return 0;
+ else
+    return 1
+ fi
+}
+unknown_warp_param_msg() {
+    msg=""
+    for var in warp_target use_fm sliceMotion4D mc_first no_st st_first mc_first; do
+        msg="$msg $var: '${!var}';"
+    done
+    msg="$msg\nref: '$ref'; mask: '$mask'"
+    rel "warp failed because parameters are unexpected combination:\n\t$msg" c
+    return 1
+}
 
-warp_how(){
- warp_how_flags=(warp_target use_fm mc_first no_st st_first no_warp sliceMotion4D despike )
- warp_how_files=(preMC postSS postDespike fmap_unwarp_field ref mask)
- 
+warp_convert_command(){
+  if [ "$warp_target" = "mc_target" ]; then 
+      if [[ ( $use_fm -eq 0 && $sliceMotion4D -eq 1 ) || $mc_first -eq 1 ]]; then
+          rel "Warp to $warp_target alone via $warpCoef." c
+          cvcmd="convertwarp --ref=$ref --premat=$funcdir/transforms/func_to_struct.mat --warp1=$warpCoef \
+      	--relout --out=func_to_${warp_target}_warp_allv"
 
+      elif [[ $use_fm -eq 1 && $sliceMotion4D -eq 1 ]]; then
+          rel "Fieldmap unwarping + warp to $warp_target in one interpolation" c
+          cvcmd="convertwarp --ref=$ref --warp1=$fmap_unwarp_field --midmat=$funcdir/transforms/func_to_struct.mat \
+      	--warp2=${warpCoef} --relout --out=func_to_${warp_target}_warp_allv"
+      else
+          unknown_warp_param_msg; return 1
+      fi
+   # standard
+   elif [ "$warp_target" = "standard" ]; then
+      if [[ $use_fm -eq 0 && ( $no_st -eq 1 || $st_first -eq 1 ) && $sliceMotion4D -eq 0 ]]; then
+          #orig cvcmd
+          cvcmd="convertwarp --ref=$ref --midmat=$funcdir/transforms/func_to_struct.mat \
+      	--warp2=${warpCoef} --relout"	#use --warp2 to warp after vol -> mc_target and func -> struct
+
+      elif [[ ( $use_fm -eq 0 && $sliceMotion4D -eq 1 ) || $mc_first -eq 1 ]]; then
+          cvcmd="convertwarp --ref=$ref --premat=$funcdir/transforms/func_to_struct.mat --warp1=$warpCoef \
+      	--relout --out=func_to_${warp_target}_warp_allv"
+      
+      elif [[ ( $use_fm -eq 0 && $sliceMotion4D -eq 1 ) || $mc_first -eq 1 ]]; then
+          cvcmd="convertwarp --ref=$ref --premat=$funcdir/transforms/func_to_struct.mat --warp1=$warpCoef \
+      	--relout --out=func_to_${warp_target}_warp_allv"
+      
+      elif [[ $use_fm -eq 1 && $sliceMotion4D -eq 1 ]]; then
+          rel "Fieldmap unwarping + warp to $warp_target in one interpolation" c
+          cvcmd="convertwarp --ref=$ref --warp1=$fmap_unwarp_field --midmat=$funcdir/transforms/func_to_struct.mat \
+      	--warp2=${warpCoef} --relout --out=func_to_${warp_target}_warp_allv"
+          
+      elif [[ $use_fm -eq 1 && ( $no_st -eq 1 || $st_first -eq 1 ) && $sliceMotion4D -eq 0 ]]; then
+          #orig cvcmd
+          rel "Volume-wise motion correction, fieldmap unwarping, and warp to $warp_target in one interpolation" c
+          cvcmd="convertwarp --ref=$ref --warp1=$fmap_unwarp_field --midmat=$funcdir/transforms/func_to_struct.mat \
+      	--warp2=${warpCoef} --relout"
+      else
+          unknown_warp_param_msg; return 1
+      fi
+  else
+      warn "expected warp target '$warp_target' to be standard or mc_target"
+      return 1
+  fi
+  export cvcmd
+}
+
+# give prefix, needs warp_target, mc_first, and use_fm
+# add w, u, or wu  to prefix
+update_prefix(){
+    local prefix="$1";shift
+    [ -z "$prefix" ] && warn "$FUNCNAME: prefix should not be empty!" && return 1
+
+    # did we already correct with field map
+    #if -mc_first, then fieldmap unwarping happens upstream
+    alreadyFM=0
+    [ $warp_target = standard ] && ! is "$mc_first" && alreadyFM=1
+
+    # add u and then w when needed
+    is "$use_fm" && ! is "$alreadyFM" && prefix="u$prefix"
+    [ "$warp_target" = standard ] && prefix="w$prefix"
+
+    # give back the updated prefix 
+    echo $prefix
+}
+
+# do we need to do anything?
+# based on use_fm,no_warp warp_target, and files .{fmun,}warp_complete
+is_onstep_complete() {
+   is "$use_fm" && [ -f .warp_complete -a -f .fmunwarp_complete ] && return 0
+ ! is "$use_fm" && [ -f .warp_complete ] && return 0
+   [ "$warp_target" = mc_target  -a -f .fmunwarp_complete ] && return 0
+
+   # the do nothing options
+   [ "$warp_target" = mc_target ] && ! is "$use_fm" && return 0
+   is "$no_warp" && ! is "$use_fm" && return 0
+   # no warp + 4d + despike + fm = convert warp
+   
+
+ return 1
 }
 
 
 onestep_warp_parts() {
-    echo hi
+
+ warp_how_flags=(warp_target use_fm mc_first no_st st_first no_warp sliceMotion4D despike )
+ warp_how_files=(preMC postSS postDespike fmap_unwarp_field ref mask funcFile)
+
+ # what are we going to warping to
+ local warp_target="$1"
+ [[ $warp_target =~ ^(standard|mc_target)$ ]] && 
+      warn "$FUNCNAME: warp_target '$warp_target' is not understood" && return 1
+
+ # add u,w, or wu
+ prefix=$(update_prefix "$prefix")
+ # update env for filename for post-warp, used in nuisance regression
+ postWarp="${prefix}${funcFile}"
+
+ # we're all done, no need to redo
+ # also tests against conditions where we dont need to warp
+ # N.B. prefix and postWarp set before we leave for downstream scripts
+ is_onstep_complete && return 0
+
+ # what ref and mask should we use?
+ if [ $warp_target = standard ]; then
+     local ref="$templateBrain"
+     local mask="${subjMask}"
+ elif [ "$warp_target" = mc_target ]; then
+     local ref=mc_target
+     # Used to be unwarp/EF_UD_fmap_mag_brain_mask, but should constrain warp to observed EPI data (in case FM has larger extent)
+     local mask=mc_target_mask 
+ fi
+
+
+ ## what are we going to warp
+ # like PreMC, postSS, or postDespike
+ warp_from=$(what_to_warp)
+ [ -z "$warp_from" ] && return 1
+
+ # actually get image corresponding to variable (e.g. PreMC -> towarp='func.nii.gz' )
+ towarp="${!warp_from}"
+ [ $( imtest "$towarp" ) -eq 0 ] && rel "Unable to find volume to warp: '$towarp'" c && return 1
+
+ # isvoxelwise is the same as warp_from=PreMC
+ isvoxelwise=$(warp_isvoxelwise &&  echo 1 || echo 0)
+
+ fmap_unwarp_field=$(find_fm_warp_field)
+
+ # set cvcmd
+ warp_convert_command
+
+
+ ### copied from original onestep warp. only chage is cvcmd for voxelwise=0
+ #   done here instead of above bc we add to cvcmd if voxelwise=1
+
+ if ! is "$voxelwise"; then
+
+     # creates func_to_${warp_target}_warp_allv
+     [ -n "$cvcmd" ] && rel "$cvcmd"
+
+     rel "applywarp --in=\"$towarp\" --out=\"${prefix}${funcFile}\" \
+         --warp=func_to_${warp_target}_warp_allv --ref=$ref --rel \
+         --mask=$mask --interp=${funcWarpInterp}"
+     
+ else
+     #volume-wise warping (includes motion correction)
+
+     # split the funcdata into numbered individual volumes
+     [ -d episplit ] && rel "rm -rf episplit" #cleanup old split
+     rel "mkdir episplit"
+     rel "fslsplit \"$towarp\" episplit/episplit"
+
+     # get the total number of volumes in the functional
+     totalVolumes=$( fslhd $towarp | perl -lne 'print $1 if m/^dim4\s+(\d+)$/' )
+
+     # count is 0 based
+     for ((i = 0; i < $(( $totalVolumes )); i++)); do
+         pad=$(printf "%04d" $i)
+
+         torun="${cvcmd} --premat=$mcMats/MAT_$pad --out=func_to_${warp_target}_warp_v${pad}"
+         rel "${torun}"
+
+         rel "applywarp --in=episplit/episplit$pad --out=episplit/episplit$pad \
+     	--warp=func_to_${warp_target}_warp_v${pad} --ref=\"$ref\" --rel \
+     	--mask=\"$mask\" --interp=${funcWarpInterp}"
+     done
+     
+     rel "fslmerge -t ${prefix}${funcFile} episplit/*"
+     #rel "fslmerge -t func_to_${warp_target}_warp_allv func_to_${warp_target}_warp_v*" #this is an ill-conceived idea because each warp vol has 3 sub-briks
+
+     [ -d episplit ] && rel "rm -rf episplit" #for now always cleanup episplit (don't depend on -cleanup)
+
+     _picture "${prefix}${funcFile}"  "EPI after unwarping"
+
+     rm -f func_to_${warp_target}_warp_v* #cleanup separate warps
+ fi
+
+ [ $use_fm -eq 1 ] && rel "date > .fmunwarp_complete"
+ [ $warp_target = standard ] && rel "date > .warp_complete"
+
+ #explicit return code needed to avoid implicit status of prior command
+ return 0
+
 }
+ #applywarp basics:
+ #
+ # --ref: Reference brain. Note that the dimensions and voxel sizes of the
+ #   ref parameter become the dimensions and voxel sizes for the resulting images.
+ # --in: The input is the slice-timed, motion-corrected, skull-stripped,
+ #   thresholded 4D functional file: kmt_$funcFile.
+ # --out: The warped 4D functionals file to create: wkmt_$funcFile
+ # --premat: An affine (linear) transformation matrix to be applied to
+ #   each volume prior to the nonlinear warp. This is important so that
+ #   each functional volume is first spatially aligned with the structural
+ #  scan before being warped.
+ # --warp: The warping matrix to be applied. Here, we use the nonlinear
+ #   warping matrix from the mprage normalization.
+ # --interp: The interpolation method for performing the warp. See -warp_interpolation in help.
+ # --mask: Restrict the warp to the mask above used for thresholding low intensity voxels.
+ #   Note that this corrects odd behavior with applywarp and sinc interpolation smudging edge voxels extensively.
+ #   See here: https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind1108&L=FSL&P=R66855&1=FSL&9=A
 # vi: set shiftwidth=4 tabstop=8 expandtab:
