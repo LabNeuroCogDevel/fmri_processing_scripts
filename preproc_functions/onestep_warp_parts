@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # quick syntax for checking if a variable is "1"
-is() { [ -n "$1" -a "$1" -eq 1 ]; }
+is() { [ -n "$1" -a "$1" = "1" ]; }
 
 
 # follow decision tree regarding how to warp
@@ -123,20 +123,20 @@ warp_convert_command(){
 # give prefix, needs warp_target, mc_first, and use_fm
 # add w, u, or wu  to prefix
 update_prefix(){
-    local prefix="$1";shift
+    local prefix="$1"; shift
     [ -z "$prefix" ] && warn "$FUNCNAME: prefix should not be empty!" && return 1
 
     # did we already correct with field map
     #if -mc_first, then fieldmap unwarping happens upstream
     alreadyFM=0
-    [ $warp_target = standard ] && ! is "$mc_first" && alreadyFM=1
+    [ "$warp_target" = standard ] && is "$mc_first" && alreadyFM=1
 
     # add u and then w when needed
     is "$use_fm" && ! is "$alreadyFM" && prefix="u$prefix"
     [ "$warp_target" = standard ] && prefix="w$prefix"
 
     # give back the updated prefix 
-    echo $prefix
+    echo "$prefix"
 }
 
 # do we need to do anything?
