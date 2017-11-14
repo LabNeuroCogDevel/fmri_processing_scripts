@@ -108,6 +108,11 @@ function compute_nuisance_regressors {
 	local func_ts="${prewarp_func_ts}" #no warped file to refer to
     fi
 
+    # 2017114 - c/o BTC - dont want to put aroma removed noise back in 
+    if [ $ica_aroma -eq 1 ]; then
+      local func_ts="$postAroma"
+    fi
+
     #parse comma-delimited regressors of interest into array
     OLDIFS="${IFS}"
     IFS=',' read -ra reg <<< "$nuisance_regressors"
