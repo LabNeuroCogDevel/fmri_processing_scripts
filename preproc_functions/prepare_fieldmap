@@ -177,6 +177,7 @@ function prepare_fieldmap {
     # we need to do this before testing if complete
     # because we use the warpdir sourced from the file
     # later (one-step warp)
+    # -- preprocessDistortion makes a fm.cfg copy. we can use that
     [ -n "$fm_cfg" ] && { find_and_source_fmconfig "$fm_cfg" || return 1; }
     
     if [[ ( -n "${fm_phase}" || -n "$se_phasepos" || -n "$distortion_dir" ) && -f ".prepare_fieldmap_complete" ]]; then
@@ -279,6 +280,12 @@ prepare_distortion_dir() {
     rel "fieldmap DISTORTION_DIR ('$DISTORTION_DIR') is within this functional as 'unwarp' run, re-using" c
   fi
   cd unwarp
+
+  if [ ! -r $DISTORTION_DIR/fm.cfg ]; then
+    rel "'$DISTORTION_DIR/fm.cfg' DNE. weird but not a problem if you provided -fm_cfg flag"
+  else
+    source $DISTORTION_DIR/fm.cfg 
+  fi
   return 0
 }
 

@@ -29,6 +29,15 @@ function onestep_warp {
     # ---default to zero if they dont exist (like if we are testing with bats)--
     for warpopt in use_fm mc_first topup_direct createBBRFmapWarp no_st no_warp st_first sliceMotion4D despike funcWarpInterp; do
       if [ -z "${!warpopt}" ]; then
+          # mc_first is okay as unset
+          if [[ "$warpopt" == "mc_first" ||
+                "$warpopt" == "st_first" ]]; then
+            rel "$FUNCNAME: '$warpopt' is not defined (neither 0 nor 1)! This should not happend " c 
+            printf -v $warpopt 0 
+            rel "setting $warpopt=0" c 
+            continue
+          fi
+
           rel "'$warpopt' is not defined! will not continue" c
           return 1
           # TODO: maybe we just warn -- unless funcWarpInterp is empty

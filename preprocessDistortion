@@ -50,6 +50,7 @@ parsefmargs() {
 }
 
 _preprocessDistortion() {
+   starttime=$(date +%s)
    NEEDARGS=(phasedir magdir fm_cfg)
    OPTIONALARGS=(mrpatt savedir)
    # optional defaults
@@ -90,7 +91,18 @@ _preprocessDistortion() {
    fm_phase="phase/$mrpatt"
    fm_magnitude="mag/$mrpatt"
    prepare_gre_fieldmap 
+
+   # copy config to save directory
+   fmcfgfile=$(find_fmconfig $fm_cfg)
+   [ -z "$fmcfgfile" -o ! -r "$fmcfgfile" ] && warn "cannot find config file '$fm_cfg', how did the above work!?" && exit 1
+   rel "cp $fmcfgfile $savedir/unwarp/fm.cfg"
+
+   # all done
    rel "$(date) Finished distortion preprocessing" c
+
+   # write git version in completed file flag
+   gitver=$(cd $(dirname $(which preprocessDistortion )); git log --pretty=format:'%ci %h' -n 1)
+   echo -e "$gitver\t$(date +%FT%H:%M)\t$(whoami)@$(hostname)\t$starttime\t$(date +%s)" > $savedir/.preprocessDistortion_complete
 }
 
 # if we did not source this file
