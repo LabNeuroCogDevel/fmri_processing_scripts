@@ -512,7 +512,7 @@ function parse_args {
 
     #whether to use a fieldmap, either GRE or TOPUP
     use_fm=0
-    if [[ -n "$fm_phase" || -n "$se_phasepos" ]]; then
+    if [[ -n "$fm_phase" || -n "$se_phasepos"  || -n "$DISTORTION_DIR" ]]; then
 	use_fm=1
     fi
 

@@ -151,7 +151,6 @@ PREPARE_FIELDMAP_GLOBALS=(bbrCapable funcStructFlirtDOF fm_cfg mcMats fm_phase f
 # 13) Generate image of shift map overlaid on fieldmap magnitude image
 function prepare_fieldmap {
   
-    [ -f .prepare_fieldmap_complete ] && rel "fieldmap completed already" c &&  return 0
 
     print_vars_in PREPARE_FIELDMAP_GLOBALS
     # FM = space of fieldmap
@@ -163,12 +162,16 @@ function prepare_fieldmap {
     [ -z "$fm_phase$fm_magnitude$fm_cfg$se_phaspos$se_phaseneg" ] && rel "not running fieldmap" c && return 0
 
     if [[ $bbrCapable -eq 1 && $funcStructFlirtDOF = "bbr" && -n "$fm_cfg" ]]; then
-	createBBRFmapWarp=1 #generate func -> struct warp that includes FM unwarping (via BBR -fieldmap)
+	export createBBRFmapWarp=1 #generate func -> struct warp that includes FM unwarping (via BBR -fieldmap)
     else
-	createBBRFmapWarp=0
+	export createBBRFmapWarp=0
     fi
 
     prepare_mc_target 
+
+    # we did our prep, we can leave now if we've finished
+    [ -f .prepare_fieldmap_complete ] && rel "fieldmap completed already" c &&  return 0
+
     # Make an unwarp temps working directory
     tempsdir=$(pwd)/unwarptemps
     [ -d $tempsdir ] && rm -r $tempsdir
