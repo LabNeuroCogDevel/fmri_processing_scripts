@@ -15,6 +15,7 @@ is() { [ -n "$1" -a "$1" = "1" ]; }
 # depends on if topup_direct or createBBRFmapWarp is set
 #fmap_unwarp_field is the fm unwarp field aligned to mc_target (aka 'example func' [EF], the coregistration target)
 find_fm_warp_field(){
+  fmap_unwarp_field=""
   if [ "$use_fm" -eq 1 ]; then
     if [ "$topup_direct" -eq 1 ]; then
         local fmap_unwarp_field=topup_undistort/EF_WarpField
@@ -27,8 +28,8 @@ find_fm_warp_field(){
   fi
 }
 
-# towarp is either preMC,postSS, por postDespike based on
-# combinations of despike, slice timing (no_st, st_first), and motion (mc_first) or sliceMotion4D
+# towarp is either preMC,postSS, or postDespike based on
+# based on combinations of despike, slice timing (no_st, st_first), and motion (mc_first) or sliceMotion4D
 what_to_warp() {
  what_to_warp_flags=(warp_target mc_first no_st st_first sliceMotion4D despike )
  local warp_from=""
@@ -63,7 +64,7 @@ warp_isvoxelwise(){
 }
 unknown_warp_param_msg() {
     msg=""
-    for var in warp_target use_fm sliceMotion4D mc_first no_st st_first mc_first; do
+    for var in warp_target use_fm sliceMotion4D no_st st_first mc_first no_warp despike; do
         msg="$msg $var: '${!var}';"
     done
     msg="$msg\nref: '$ref'; mask: '$mask'"
@@ -71,6 +72,7 @@ unknown_warp_param_msg() {
     return 1
 }
 
+# how should convert warp be used with the given options
 warp_convert_command(){
   if [ "$warp_target" = "mc_target" ]; then 
       if [[ ( $use_fm -eq 0 && $sliceMotion4D -eq 1 ) || $mc_first -eq 1 ]]; then
@@ -92,10 +94,6 @@ warp_convert_command(){
           cvcmd="convertwarp --ref=$ref --midmat=$funcdir/transforms/func_to_struct.mat \
       	--warp2=${warpCoef} --relout"	#use --warp2 to warp after vol -> mc_target and func -> struct
 
-      elif [[ ( $use_fm -eq 0 && $sliceMotion4D -eq 1 ) || $mc_first -eq 1 ]]; then
-          cvcmd="convertwarp --ref=$ref --premat=$funcdir/transforms/func_to_struct.mat --warp1=$warpCoef \
-      	--relout --out=func_to_${warp_target}_warp_allv"
-      
       elif [[ ( $use_fm -eq 0 && $sliceMotion4D -eq 1 ) || $mc_first -eq 1 ]]; then
           cvcmd="convertwarp --ref=$ref --premat=$funcdir/transforms/func_to_struct.mat --warp1=$warpCoef \
       	--relout --out=func_to_${warp_target}_warp_allv"
@@ -203,6 +201,8 @@ onestep_warp_parts() {
 
  # set cvcmd
  warp_convert_command
+
+ #TODO: check all files exist
 
 
  ### copied from original onestep warp. only chage is cvcmd for voxelwise=0
