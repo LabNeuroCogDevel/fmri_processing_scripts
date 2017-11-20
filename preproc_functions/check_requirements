@@ -176,12 +176,14 @@ function check_requirements {
     # where 2.355 is the FWHM -> Sigma conversion
 
     #allow for seconds to be passed in, then converted to volumes
-    if [ "${hpFilter: -1}" == "s" ]; then
-	rel "High pass filter specified in seconds: $hpFilter. Dividing by 2.355*${tr} (TR) for fslmaths -bptf" c
-	hpFilter=$( echo "scale=4; ${hpFilter%?}/(2.355*${tr})" | bc )
-    else
-	rel "Dividing -hp_filter argument $hpFilter (in volumes) by 2.355 for FWHM argument to fslmaths -bptf." c	    
-	hpFilter=$( echo "scale=4; ${hpFilter}/2.355" | bc )
+    if [ $no_hp -eq 0 ]; then
+	if [ "${hpFilter: -1}" == "s" ]; then
+	    rel "High pass filter specified in seconds: $hpFilter. Dividing by 2.355*${tr} (TR) for fslmaths -bptf" c
+	    hpFilter=$( echo "scale=4; ${hpFilter%?}/(2.355*${tr})" | bc )
+	else
+	    rel "Dividing -hp_filter argument $hpFilter (in volumes) by 2.355 for FWHM argument to fslmaths -bptf." c	    
+	    hpFilter=$( echo "scale=4; ${hpFilter}/2.355" | bc )
+	fi
     fi
     
     #check for existence of required files
