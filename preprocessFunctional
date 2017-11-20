@@ -594,4 +594,6 @@ mv ${dotfile}_incomplete ${dotfile}_complete
 #ensure that any previous crash is cleared since we've completed processing
 [ -r "${dotfile}_crash" ] && rm -f "${dotfile}_crash"
 
+exit 0
+
 # vim: set tabstop=7:
