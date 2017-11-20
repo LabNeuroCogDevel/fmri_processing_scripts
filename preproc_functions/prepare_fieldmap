@@ -180,6 +180,7 @@ function prepare_fieldmap {
     # -- preprocessDistortion makes a fm.cfg copy. we can use that
     [ -n "$fm_cfg" ] && { find_and_source_fmconfig "$fm_cfg" || return 1; }
     
+
     if [[ ( -n "${fm_phase}" || -n "$se_phasepos" || -n "$distortion_dir" ) && -f ".prepare_fieldmap_complete" ]]; then
 	return 0 #preparefieldmap already completed
     elif [ -n "$DISTORTION_DIR" ]; then
@@ -193,11 +194,11 @@ function prepare_fieldmap {
     #handle rare case where PE dir needs to be flipped for fieldmap processing after TOPUP step
     if [ -n "$flip_topup_pedir" ] && [ "$flip_topup_pedir" -eq 1 ]; then
 	case $unwarpdir in
-	    x)     unwarpdir=-x  ;;
+	    x)     unwarpdir=x-  ;;
 	    -x|x-) unwarpdir=x ;;
-	    y)     unwarpdir=-y  ;;
+	    y)     unwarpdir=y-  ;;
 	    -y|y-) unwarpdir=y ;; 
-	    z)     unwarpdir=-z  ;;
+	    z)     unwarpdir=z-  ;;
 	    -z|z-) unwarpdir=z ;;
 	    *)     echo "$FUNCNAME Unable to determine unwarping direction from '$unwarpdir'"
 		   exit 1 ;;
@@ -341,7 +342,8 @@ function prepare_se_fieldmap {
 
     rel "fslmaths ../topup_undistort/SE_Magnitude       FM_UD_fmap_mag"
     rel "fslmaths ../topup_undistort/SE_TopupField      FM_UD_fmap"
-        
+    rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
+    
     #explicit return code needed to avoid implicit status of prior command
     return 0
     
@@ -631,7 +633,6 @@ function preproc_fieldmap {
 
     #assume that we have a) copied FM_UD_fmap_mag and FM_UD_fmap into unwarp directory and b) have cd'd into that directory
     #skull strip magnitude image for registration
-    rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
     [ -n "$funcRefimg" ] &&     rel "fslmaths ../epiref_brain_restore      ER_D_epiref"
     rel "fslmaths ../mc_target_brain_restore                EF_D_mc_target"
     
