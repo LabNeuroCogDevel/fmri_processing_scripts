@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+
+ppdistortion_usage() {
+   cat  >&2 <<HEREDOC
+USAGE:
+  preprocessDistortion -phasedir path/to/fm_phase_dicoms/ -magdir path/to/fm_mag_dicoms/ -fm_cfg protocol_cfg [-mrpatt "MR*" ] [-savedir $(pwd) ]
+
+  manditory:
+    -phasedir
+    -magdir
+    -fm_cfg
+  optional:
+    -mrpatt
+    -savedir
+
+HEREDOC
+exit 1
+}
+
+# get all the things we need
+sourceall() {
+ local scriptdir=$(dirname $0)
+ local sourcedir=$scriptdir/preproc_functions
+ [ ! -d $sourcedir ] && echo "bad source dir! $sourcedir" >&2 && exit 1
+ for f in convert_or_use_nii waitforlock prepare_gre_fieldmap helper_functions;do
+   source $sourcedir/$f
+ done
+}
+
+parsefmargs() {
+ # get input arguements from NEEDARGS
+ # globally exported in printf
+ # probably more cleanly written as case $1 in );;
+ while [ -n "$1" ]; do
+  arg="$1"
+  [[ $arg =~ ^-*h(elp)?$ ]] && ppdistortion_usage 
+  for var in ${NEEDARGS[@]} ${OPTIONALARGS[@]}; do
+    if [ $arg = "-$var" ]; then #-o $arg = "--$var" ]; then 
+      shift; 
+      val=$1;
+      printf -v "$var" "$val"
+    fi
+  done
+  shift
+ done
+
+ for var in ${NEEDARGS[@]}; do
+   [ -z  "${!var}" ] && echo "need to specify -$var" >&2 && exit 1
+ done
+}
+
+_preprocessDistortion() {
+   starttime=$(date +%s)
+   NEEDARGS=(phasedir magdir fm_cfg)
+   OPTIONALARGS=(mrpatt savedir)
+   # optional defaults
+   savedir=$(pwd)
+   mrpatt="MR*"
+
+
+   ## prepare
+   # get functions and args
+   parsefmargs "$@"
+   sourceall
+
+   ## did we already finish? 
+   EXPECT=( FM_UD_fmap_mag{,_brain}.nii.gz \
+            unwarp/FM_UD_fmap{,_mag}.nii.gz \
+            .fieldmap_{magnitude,phase} )
+   HAVEEXPECT=()
+   for f in "${EXPECT[@]}"; do
+      [ -r "$savedir/$f" ] && HAVEEXPECT=(${HAVEEXPECT[@]} $f)
+   done
+
+   [ ${#HAVEEXPECT[@]} -eq ${#EXPECT[@]} ] && echo "skipping '$savedir'; have all final files: ${HAVEEXPECT[@]}" && exit 0
+   if [ ${#HAVEEXPECT[@]}  -gt 0 ] ; then
+      rel "rm $savedir; # and try again; have ${#HAVEEXPECT[@]}/${#EXPECT[@]} expected files: ${HAVEEXPECT[@]}" c 
+      exit 1
+   fi
+
+   [ -r "$savedir/phase" -o -r "$savedir/mag" ] &&  rel "have $savedir/{phase,mag} but did not run prepare, remove $savedir and try again?" c && exit 1
+
+
+   ## get files
+   [ ! -d $savedir ] && mkdir $savedir
+   rel "cp -r \"$magdir\" \"$savedir/mag\" "
+   rel "cp -r \"$phasedir\" \"$savedir/phase\" "
+   cd $savedir
+
+   # run
+   fm_phase="phase/$mrpatt"
+   fm_magnitude="mag/$mrpatt"
+   prepare_gre_fieldmap 
+
+   # copy config to save directory
+   fmcfgfile=$(find_fmconfig $fm_cfg)
+   [ -z "$fmcfgfile" -o ! -r "$fmcfgfile" ] && warn "cannot find config file '$fm_cfg', how did the above work!?" && exit 1
+   rel "cp $fmcfgfile $savedir/unwarp/fm.cfg"
+
+   # all done
+   rel "$(date) Finished distortion preprocessing" c
+
+   # write git version in completed file flag
+   gitver=$(cd $(dirname $(which preprocessDistortion )); git log --pretty=format:'%ci %h' -n 1)
+   echo -e "$gitver\t$(date +%FT%H:%M)\t$(whoami)@$(hostname)\t$starttime\t$(date +%s)" > $savedir/.preprocessDistortion_complete
+}
+
+# if we did not source this file
+# but ran it like ./preprocessDistortion
+# actually run
+[ $(basename $0 ) == "preprocessDistortion" ] && 
+  _preprocessDistortion "$@"

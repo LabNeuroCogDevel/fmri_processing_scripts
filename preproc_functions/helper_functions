@@ -166,9 +166,9 @@ function fix_negatives() {
 # path given doesn't have to exist, but the directory (dirname) does
 abspath() { 
  [ -z "$1" ] && return 1
- dir=$(dirname $1)
- [ ! -d "$dir" ] && return 1
- echo $(cd $dir;pwd)/$(basename $1)
+ dir=$(dirname "$1")
+ [ ! -d "$dir" ] && warn "WARNING: $FUNCNAME: cannot find dir for '$1' (while in in '$(pwd)')" && echo "$1" && return 1
+ echo "$(cd "$dir";pwd)/$(basename "$1")"
 }
 
 function deleteFile() {
@@ -183,13 +183,21 @@ function deleteFile() {
 #rel is shorthand for "run, echo, log"
 function rel() {
     #function that runs, echos to terminal, and logs to file an arbitrary command
-    cmd="${1}"
-    comment=0
+    local cmd="${1}"
+    local comment=0
+    local timeit=0
+    local pipesave=""
+    local cmdExit=0
+
     if [[ -n "${2}" && ${2} = c ]]; then
 	comment=1
     fi
+    if [[ -n "${2}" && ${2} = t ]]; then
+	timeit=1
+    fi
     
     if [ -n "${logFile}" ]; then
+       pipesave="|tee -a '$logFile'"
 	if [ $comment -eq 1 ]; then
 	    cmd="## ${cmd}"
 	fi
@@ -201,12 +209,17 @@ function rel() {
 	echo ${cmd}
 
 	#run command
+       tic=$(date +%s)
 	eval ${cmd}
 	cmdExit=$?
+       toc=$(date +%s)
     else
 	#echo command to screen with dashes to offset text visually
 	echo -e "----  ${cmd}"
     fi
+
+    # how long did it take. write to file if we have a logfile
+    [ $timeit -eq 1 ] && eval "echo -e \"#\ttook $((($toc - $tic ))) seconds\" $pipesave"
     
     return $cmdExit
 }
@@ -590,6 +603,7 @@ function read_preproc_cmd {
    exit 1
  fi
 }
+warn() { echo -e "$@" >&2; }
 
 
 # given the NAME of an array that contains the names of other variables 
@@ -650,3 +664,101 @@ function qa_image {
 
     rm -f sl?.png #cleanup
 }
+
+#randomly sleep 0-2 seconds to avoid lock file collisision
+#Apr2014: I'm not really sure if this is necessary... problems may have emerged from running fslreorient2std simultaneously on originals...
+#Still, for 2 seconds, I'll keep it.
+randomsleep(){ sleep $(echo "scale=9; $RANDOM/32767*2"|bc)s; }
+
+# imtest but return w/exit status and can handle relative symlnks
+# if basename is not a file, readlink wont find it and will return "", abspath of "" is "". imtest "" fails
+# TODO: need imglob -extension ?
+imtestln() { [ -n "$1" ] && [ $( imtest $1 ) -eq 1 -o $(cd $(dirname $1); imtest $(abspath $(readlink $(basename $1)))) -eq 1 ]; }
+# is file one really file 2, returns 0 (true) if same
+a_is_b() { diff -q $1 $2; }
+# is the input a glob (e.g "MR*", "path/to/*dcm")
+isglob() { [[ "$1" =~ .*\*.* ]]; }
+# how many file in/match the first arg provided
+cnt() { ls $1 | wc -l; }
+
+# given a full file or partial name of a fieldmap config file
+# find the full path
+# echo lots of warnigns along the way
+find_fmconfig(){
+    local fm_cfg="$1"
+    [ -z "$fm_cfg" ] && echo "Want to correct with fieldmaps but dont have a config file!" >&2 && return 1
+
+    ## need to find fmcfgdir
+    # expect it to be in the fmcfg directory alongside our script ($0)
+    local fmcfgdir=""
+    for preprocScript in $0 $(dirname ${BASH_SOURCE[0]}){,/..}/preprocessFunctional; do
+       [ ! -r "$preprocScript" ] && continue
+       pdir=$(cd $(dirname $preprocScript); pwd)
+       _fmcfgdir=$pdir/fmcfg
+       [ -d $_fmcfgdir ] && fmcfgdir=$_fmcfgdir &&  break
+    done
+
+    [ -z "$fmcfgdir" -a ! -r "$fm_cfg" ] && echo "Cannot find script directory root to find config file for '$fm_cfg'!" >&2 && return 1
+
+    # Allow --config to be a shorthand lookup, defined here, rather than a config file
+    local fm_cfg_file=$fmcfgdir/$fm_cfg.fmcfg
+    if [ -r $fm_cfg_file ]; then
+      fm_cfg=$fm_cfg_file
+    else
+      case $fm_cfg in
+         cogemo|multimodal|wpc5640 ) fm_cfg=$fmcfgdir/cogemo.fmcfg;;
+         clock|specc|wpc6290|p5 )    fm_cfg=$fmcfgdir/MB5_TR1.0_TE30_60slc.fmcfg;;
+         # dead code -- 20170224
+         trust )                     fm_cfg=$fmcfgdir/trust.fmcfg;;
+         bandit )                    fm_cfg=$fmcfgdir/bandit.fmcfg;;
+         pet    )                    fm_cfg=$fmcfgdir/pet.fmcfg;;
+      esac
+    fi
+    
+    # source config file or warn
+    if [ -n "$fm_cfg" -a -r "$fm_cfg" ]; then
+      echo "$fm_cfg" # print out config file too
+      return 0
+    else
+      echo "ERROR: readable config file not provided or understood ($fm_cfg)" >&2
+      return 1
+    fi
+}
+find_and_source_fmconfig() {
+   fm_cfg=$(find_fmconfig $@)
+   if [ ! -z "$fm_cfg" ]; then
+      rel "using '$fm_cfg' for fieldmap config" c
+      source $fm_cfg 
+   else
+      rel "could not find fm_cfg for '$@'; probably cannot continue" c
+      return 1
+   fi
+}
+
+exiterr(){ warn $@; exit 1; }
+
+failunless(){ ! which $1 2>&1 >/dev/null ; }
+checkdepends() {
+   ret=0
+   failunless imtest        && warn "You do not have FSL installed! This is required!" && let ++ret
+   failunless 3dinfo        && warn "You do not have AFNI installed! This is required!" && let ++ret
+
+   failunless perl          && warn "Your system does not have perl! This is required!" && let ++ret
+   failunless python        && warn "Your system does not have python! This is required!" && let ++ret
+
+   ! python -c "import nipy" && warn "You do not have nipy for python! This is required for 4d_slice_motion"
+   ! which ffmpeg            && warn "You do not have ffmpeg installed! This is required for mcmove!" 
+
+   failunless ANTS              && warn    "You do not have ANTS installed! This is not required, but will improve preprocessing" 
+   failunless runROBEX.sh       && warn    "You do not have ROBEX installed! This is not required, but will improve preprocessing" 
+   failunless c3d_affine_tool   && warn    "You do not have c3d installed! This is not required, but will improve preprocessing: http://git.code.sf.net/p/c3d/git"
+
+   failunless bats          && warn    "You do not have bats installed! This is only useful for testing the software" 
+
+   return $ret
+}
+
+# dummy function so we know if this file has been sourced
+helper_functions() { echo ${BASH_SOURCE[0]}; }
+
+# vim: set tabstop=7:

@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+# load all the functions we need (helper_functions file provides rel and qa_image)
+for needfunc in convert_or_use_nii helper_functions; do
+   [ "$(type -t $needfunc)" == "function" ] && continue
+   filetosource="$(dirname ${BASH_SOURCE[0]})/$needfunc"
+   [ ! -r "$filetosource" ] && echo "$BASH_SORUCE: need function $needfunc, not in '$filetosource'; not running" >&2 && return 1
+   source "$filetosource"
+done
+
+#this function is responsible for running TOPUP on the phase+ and phase- images
+#then exporting the rad/s TopupField to the unwarp directory for preprocessing using the typical steps (preproc_fieldmap)
+# inputs
+#  epi
+#  fmcfg (dwelltime,unwarpdir)
+#  se_phasepos and se_phaseneg
+#final outputs
+#   FM_UD_fmap_mag
+#   FM_UD_fmap
+# 
+prepare_se_fieldmap() {
+    if [ -z "$dwelltime" -o -z "$unwarpdir" ]; then
+      rel "Error: Cannot prepare spin echo distorion correction! Missing dwelltime '$dwelltime' and/or unwarpdir '$unwarpdir'. Do you need to include/edit fm_cfg '$fm_cfg' "  c
+      return 1
+    fi 
+
+    #TODO/FIX: will use se_phase* if it exsits regardless of what input ($se_phaspos) is given
+    convert_or_use_nii se_phasepos "$se_phasepos"
+    [ $(imtest se_phasepos ) -eq 1 ] && se_phasepos=se_phasepos
+
+    convert_or_use_nii se_phaseneg "$se_phaseneg"
+    [ $(imtest se_phaseneg ) -eq 1 ] && se_phaseneg=se_phaseneg
+
+    #topup works from data before skull-stripping
+    #determine which is the target for distortion correction
+    if [ -n "$funcRefimg" ]; then
+	local target="epiref"
+    else
+	local target="mc_target"
+    fi
+    
+    #Should now be in a position to call topup script. This will concatenate phase+ and phase- images, then perform distortion correction
+    #Note that topup internally runs motion coregistration to the first volume in the series. Thus, the warp outputs are aligned to this volume
+    #  and need to be realigned to relevant images in the pipeline (e.g., epiref or struct) to be useful.
+    #The outputs include:
+    # 1) SE_TopupField: the distortion field in rad/s, suitable for input to fugue and other standard fieldmap steps (--fout)
+    # 2) SE_WarpField: warp coefficients for each volume in BothPhases usable with applywarp. Note that this is a scalar/constant transform from TopupField (--dfout)
+    # 2) BothPhases: concatenated SE images (negative, then positive)
+    # 3) PhasePos: phase-positive SE image
+    # 4) PhaseNeg: phase-negative SE image
+    # 5) Coefficients: distortion coeffients useful with applytopup (--out)
+    # 6) SE_Magnitudes: concatenated distortion corrected SE images
+    # 7) SE_Magnitude: temporal mean of Magnitudes, useful for coregistration to other targets (e.g., epiref or struct)
+    
+    rel "Running TOPUP on SE phase+ and phase- images to estimate and correct distortion. See topuplog.txt for details" c
+    rel "${scriptDir}/preproc_functions/TopupPreprocessingAll -workingdir topup_undistort -phaseneg $se_phaseneg -phasepos $se_phasepos \
+		-epiref ${target} -epiref_pedir ${unwarpdir} -echospacing ${dwelltime} -usejacobian false"
+
+    qa_image topup_undistort/SE_Magnitude topup_undistort/SE_UD_epiref epiref_to_sefmap.png "SE Magnitude overlaid with undistorted coregistered epiref"
+    qa_image topup_undistort/ER_UD_epiref topup_undistort/epiref epiref_undistort.png "Undistorted epiref (TOPUP direct warp) overlaid with distorted epiref"
+    
+    #Saves a file called ER_WarpField in topup_undistort that is aligned to the epiref
+    #Use this to undistort the files used in functional -> structural coregistration
+    
+    rel "Copying fieldmap ingredients to FSL namespace images" c
+    [ ! -d "unwarp" ] && mkdir unwarp
+    cd unwarp
+
+    rel "fslmaths ../topup_undistort/SE_Magnitude       FM_UD_fmap_mag"
+    rel "fslmaths ../topup_undistort/SE_TopupField      FM_UD_fmap"
+        
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
+    
+}
+
+# vim: set tabstop=7:

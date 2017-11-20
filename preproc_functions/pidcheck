@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# 20171006 - WF 
+# pidcheck stops concurrent runs of preprocessFunctional
+
+PREPROCPID=.preproc_pid
+# from helper_functions: warn
+
+writepid()  { echo "$$ $(date +%s) $(uname -n)" > "$PREPROCPID"; }
+rmpidfile() { [ -r "$PREPROCPID" ] && rm "$PREPROCPID"; return 0; }
+
+# return 0 (true) if no valid pid
+# return 1 if pid is running or on a different machine and less than a day old
+pidcheck(){
+ local pidfile="$(pwd)/$PREPROCPID"
+ [ ! -r "$pidfile" ] && return 0
+
+ # read in pid info
+ read prevpid prevsec prevmachine < $pidfile 
+ [ -z "$prevpid" ] && warn "$pidfile is malformated" && return 1
+
+ # if it is still running, report so
+ if ps -eo pid | grep -q "^$prevpid$"; then
+   warn "looks like another $0 is running in this directory! (pid = $prevpid, from $pidfile) "
+   return 1
+ fi
+
+ local sec=$(date +%s)
+ local thismachine="$(uname -n)"
+ local secdiff=$[$sec - $prevsec ]
+
+ secinday=86400
+ if [ $secdiff -lt $secinday -a  "$prevmachine" != "$thismachine" ]; then
+   warn "Old $0's pid was run on $prevmachine (not here $thismachine). It is less than a day old ($secdiff seconds). Not running. rm '$pidfile' to override"
+   return 1
+ fi
+
+
+ warn "Old $0's pid file is still around but is not running. It is $secdiff seconds old. Removing $pidfile"
+ rm $pidfile
+ 
+ return 0
+}
+

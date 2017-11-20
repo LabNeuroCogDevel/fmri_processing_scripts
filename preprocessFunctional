@@ -311,6 +311,8 @@ EndOfHelp
 scriptDir=$( dirname "$0" )
 source "${scriptDir}/preproc_functions/waitforlock"
 source "${scriptDir}/preproc_functions/helper_functions"
+source "${scriptDir}/preproc_functions/fast_wmseg"
+source "${scriptDir}/preproc_functions/convert_or_use_nii"
 source "${scriptDir}/preproc_functions/parse_args"
 source "${scriptDir}/preproc_functions/check_requirements"
 source "${scriptDir}/preproc_functions/dicom_to_nifti"
@@ -331,6 +333,7 @@ source "${scriptDir}/preproc_functions/highpass_filter"
 source "${scriptDir}/preproc_functions/intensity_normalization"
 source "${scriptDir}/preproc_functions/nuisance_regression"
 source "${scriptDir}/preproc_functions/ica_aroma"
+source "${scriptDir}/preproc_functions/prepare_mc_target"
 
 #TODO: read dirname from the input and cd to that directory
 funcdir=$(pwd) #define working directory for functional processing
@@ -428,23 +431,30 @@ if [[ -z $st_first && -z $mc_first && $sliceMotion4D -eq 0 && $no_st -eq 0 ]]; t
     fi
 fi
 
+# add fm config settings to gobal environment (incase we already ran prepare_fieldmap, but need it for register_func2struct
+[ -n "$fm_cfg" ] && find_and_source_fmconfig $fm_cfg
+
 if [ $sliceMotion4D -eq 1 ]; then
     #Option 1: 4-D slice timing + motion correction
     correct_slice_motion_4d
+    prepare_mc_target
     prepare_fieldmap #prepare fieldmap must always come after motion correction so that mc_target exists (coregistration target)
     register_func2struct
 elif [ $no_st -eq 1 ]; then
     #just motion and FM unwarp (skip slice timing)
     correct_motion
+    prepare_mc_target
     prepare_fieldmap
     register_func2struct
 elif [ $st_first -eq 1 ]; then	
     correct_slice_timing
     correct_motion
+    prepare_mc_target
     prepare_fieldmap
     register_func2struct
 elif [ $mc_first -eq 1 ]; then
     correct_motion
+    prepare_mc_target
     prepare_fieldmap
     register_func2struct
     onestep_warp mc_target #apply MC + FM unwarping before slice timing correction
@@ -505,13 +515,21 @@ nuisance_regression
 #####
 #Ensure that the resulting 4D NIFTI file has the correct TR. (history of FSL stripping this information out)
 
-tr_hdr=$( fslhd ${prefix}${funcFile}${smoothing_suffix} | grep pixdim4 | perl -pe 's/^.*pixdim4\s+([\d+\.]+).*$/\1/' )
-
-if [ $( echo "${tr_hdr} != $tr" | bc ) -eq 1 ]; then
-    rel "Setting TR in ${prefix}${funcFile}${smoothing_suffix}.nii.gz to: $tr" c
-    rel "3drefit -TR $tr \"${prefix}${funcFile}${smoothing_suffix}.nii.gz\""
+nuisance_reg_out_vol=$(imglob -extension ${prefix}${funcFile}${smoothing_suffix})
+if [ -z "$nuisance_reg_out_vol" -o ! -r "$nuisance_reg_out_vol" ]; then
+   rel "WARNING: cannot read expected nuisance_regession output: ${prefix}${funcFile}${smoothing_suffix} (matches '$nuisance_reg_out_vol')" c 
+   rel "         last 2 modified files are $(ls -at |head -n2| paste -sd, )" c 
+else
+   #tr_hdr=$( fslhd ${prefix}${funcFile}${smoothing_suffix} | grep pixdim4 | perl -pe 's/^.*pixdim4\s+([\d+\.]+).*$/\1/' )
+   tr_hdr=$(3dinfo -tr $nuisance_reg_out_vol)
+   tr_hdr_nomatch=$( echo "${tr_hdr} != $tr" | bc ) 
+   if [ -z "$tr_hdr" -o "$tr_hdr_nomatch" -eq 1 ]; then
+       rel "Setting TR in ${prefix}${funcFile}${smoothing_suffix}.nii.gz to: $tr" c
+       rel "3drefit -TR $tr \"${prefix}${funcFile}${smoothing_suffix}.nii.gz\""
+   else 
+       rel "nuisance_regression set tr to '$tr_hdr' matches '$tr', not adjusting '${prefix}${funcFile}${smoothing_suffix}.nii.gz' " c
+   fi
 fi
-
 #####
 #Compute mean functional of final 4d file and mask to be used in GLM
 #First mask the final preprocessed file using the warped mask from above.
@@ -575,3 +593,5 @@ mv ${dotfile}_incomplete ${dotfile}_complete
 
 #ensure that any previous crash is cleared since we've completed processing
 [ -r "${dotfile}_crash" ] && rm -f "${dotfile}_crash"
+
+# vim: set tabstop=7:

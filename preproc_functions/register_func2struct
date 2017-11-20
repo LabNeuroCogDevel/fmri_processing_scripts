@@ -1,6 +1,8 @@
 #!/bin/bash
-REGISTER_FUNC2STRUCT_GLOBALS=(mprageBet fm_phase unwarpdir bbr_pedir funcRefimg funcStructFlirtDOF bbrCapable createBBRFmapWarp)
+REGISTER_FUNC2STRUCT_GLOBALS=(mprageBet fm_phase unwarpdir bbr_pedir funcRefimg funcStructFlirtDOF bbrCapable createBBRFmapWarp bbrCapable)
 function register_func2struct {
+    [ -z "$createBBRFmapWarp" ] && createBBRFmapWarp=0
+    [ -f .register_func2struc ] && rel "register_func2struct alraedy" c && return 0
     print_vars_in REGISTER_FUNC2STRUCT_GLOBALS
     #Obtain a transformation matrix that co-registers the subject's
     #structural T1 scan with the functional T2* image used as the motion coregistration target (mc_target).
@@ -21,20 +23,28 @@ function register_func2struct {
 
     #if using traditional GRE fieldmap or using TOPUP indirect pipeline (in which the field goes through the same pipeline as a typical fieldmap)
     #then convert the PE direction for flirt BBR and setup the additional string to include fieldmap unwarping in flirt.
-    if [[ -n "${fm_phase}" || ( -n "${se_phasepos}" && $topup_direct -eq 0 ) ]]; then
+    if [[ -n "${fm_phase}" || ( -n "${se_phasepos}" && $topup_direct -eq 0 ) || -n "$DISTORTION_DIR" ]]; then
 
 	inweight="-inweight $(pwd)/unwarp/EF_UD_fmap_sigloss"
+        if [ -z "$unwarpdir" -a -n "$fm_cfg" ]; then
+            rel "$FUNCNAME doesn't know about fieldmaping, something is strange" c 
+            find_and_source_fmconfig "$fm_cfg"
+        fi
+        # if that didn't work we have problems
+        if [ -z "$unwarpdir" ]; then
+            warn "$FUNCNAME: using fm ( b/c fm_phase '$fm_phase', se_phasepos '$se_phasepos', or DISTORTION_DIR '$DISTORTION_DIR') but unrecoginzed fm_cfg '$fm_cfg' (no 'unwarpdir');" 
+          return 1
+        fi
 	#echo spacing and phase encode direction should be defined when $fm_cfg is sourced by prepareFieldmap (upstream)
 	#need to convert pedir to numeric codes x=1, y=2, z=3
-	case $unwarpdir in
+	case "$unwarpdir" in
 	    x)     bbr_pedir=1  ;;
 	    -x|x-) bbr_pedir=-1 ;;
 	    y)     bbr_pedir=2  ;;
 	    -y|y-) bbr_pedir=-2 ;; 
 	    z)     bbr_pedir=3  ;;
 	    -z|z-) bbr_pedir=-3 ;;
-	    *)     echo "Unable to determine unwarping direction from '$unwarpdir'"
-		exit 1 ;;
+	    *)     warn "$FUNCNAME Unable to determine unwarping direction from '$unwarpdir'"; exit 1 ;;
 	esac
 
 	bbrfmap="-fieldmap $(pwd)/unwarp/fmapForBBR -pedir $bbr_pedir -echospacing $dwelltime"
@@ -112,7 +122,7 @@ function register_func2struct {
     #trust fmap -> struct transform as initialization for func -> struct warp
     #in principle, if BBR-based coreg succeeds, it may be even better than letting func -> be estimated. But it depends on the quality of func -> fmap in prepare_fieldmap
     initMat=
-    if [ $use_fm -eq 1 ]; then
+    if [ "$use_fm" -eq 1 ]; then
 	#need to compute func_to_struct_init.mat via the concatentation of func -> fmap -> struct warps
 	if [ $target = "mc_target_brain_restore" ]; then
 	    rel "convert_xfm -omat $funcdir/transforms/func_to_struct_viafmap.mat -concat $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/func_to_fmap.mat"
@@ -127,12 +137,11 @@ function register_func2struct {
 	rel "Warping subject functional to subject structural" c
 
 	#TODO: move 6dof transform outside of these checks to reduce redundancy. Then mv to _init in case of BBR
-	if [ $funcStructFlirtDOF = "bbr" ]; then
+	if [ "$funcStructFlirtDOF" = "bbr" ]; then
 
-	    if [ $bbrCapable -eq 1 ]; then
+	    if [ -n "$bbrCapable" ] && [ $bbrCapable -eq 1 ]; then
 		rel "Using boundary-based registration approach to register EPI to T1" c
-		[ $( imtest "${mprageBet_base}_fast_seg" ) -eq 0 ] && rel "fast -g -o \"${mprageBet_base}_fast\" \"${mprageBet_base}\"" #segment T1 to create WM
-		[ $( imtest "${mprageBet_base}_fast_wmseg" ) -eq 0 ] && rel "fslmaths ${mprageBet_base}_fast_pve_2 -thr 0.5 -bin ${mprageBet_base}_fast_wmseg" #create binary WM mask
+                fast_wmseg "${mprageBet_base}" # makes ${mprageBet_base}_fast_wmseg (likely mprage_bet_fast_wmseg
 		
 		#standard 6 parameter EPI-to-T1 registration to get initial estimate of transform
 		#leaving off inweight for now because should handle fieldmap in flirt now
@@ -154,7 +163,7 @@ function register_func2struct {
 
 		qa_image $mprageBet ${oname}_to_struct "${oname}_to_struct.png" "Structural overlaid with bbr-coregistered ${oname}"
 
-		if [ $no_warp -eq 0 ]; then
+		if [ "$no_warp" -eq 0 ]; then
 		    rel "applywarp -i ${oname}_to_struct -r $templateBrain -w $warpCoef -o ${oname}_to_template --interp=spline --rel"
 		    qa_image $templateBrain ${oname}_to_template "${oname}_to_template.png" "Template overlaid with warped ${oname}"
 		    #rel "imrm ${oname}_to_template"
@@ -179,7 +188,7 @@ function register_func2struct {
 	    rel "convert_xfm -omat $funcdir/transforms/struct_to_func.mat -inverse $funcdir/transforms/func_to_struct.mat"
 	fi
 
-	if [ $createBBRFmapWarp -eq 1 ]; then
+	if [ "$createBBRFmapWarp" -eq 1 ]; then
 	    #also generate a func -> struct image without fmap unwarping in BBR to verify that fieldmap unwarping is helping with coregistration
 	    rel "applywarp -i $target -o ${oname}_to_struct_nounwarp --premat=$funcdir/transforms/${oname}_to_struct.mat --interp=spline -r \"$mprageBet\""
 	    qa_image "$mprageBet" ${oname}_to_struct_nounwarp ${oname}_to_struct_nounwarp.png "Structural image overlaid with bbr-coregistered distorted ${oname}"

@@ -37,11 +37,11 @@ setup() {
   [ $((( $toc - $tic ))) -le 1 ]
 }
 
-@test "wait for lock to clear (hang for 3s)" {
+@test "wait for lock to clear (hang for 4s)" {
   makelockfile testlock
 
   tic=$(date +%s)
-  (sleep 4; rm testlock)
+  (sleep 4; rm testlock) &
   waitforlock testlock
   toc=$(date +%s)
 

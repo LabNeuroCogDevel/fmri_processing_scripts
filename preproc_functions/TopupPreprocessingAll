@@ -469,3 +469,4 @@ echo "# Visual check of warpfield and Jacobian" >> $WD/qa.txt
 echo "$viewcmd ${WD}/SE_WarpField ${WD}/SE_Jacobian" >> $WD/qa.txt
 
 ##############################################################################################
+# vim: set tabstop=7:
