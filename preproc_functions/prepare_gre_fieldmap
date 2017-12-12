@@ -267,7 +267,9 @@ prepare_gre_fieldmap_mag(){
 
 }
 
-# mag should have 1/2 as many dcms as phase
+# mag looks like a brain, phase looks like a gradient over the brain and noise elswhere
+# in mMR, mag is collected first
+# mag should have 2x as many dcms as phase (mag1+mag2)
 # otherwise we need to flip them
 # as a function so we can test it
 phase_mag_need_swap(){

@@ -90,6 +90,8 @@ _preprocessDistortion() {
    fm_phase="phase/$mrpatt"
    fm_magnitude="mag/$mrpatt"
    prepare_gre_fieldmap 
+   # bet'ed brain needs to be in unwarp directory
+   [ -r FM_UD_fmap_mag_brain.nii.gz -a -d unwarp ] && ( cd unwarp; cp ../FM_UD_fmap_mag_brain.nii.gz ./)
    rel "$(date) Finished distortion preprocessing" c
 }
 

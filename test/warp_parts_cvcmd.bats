@@ -71,17 +71,6 @@ setup(){
 }
 
 
-@test "cvcmd: all var combos" {
-
-  ref="ref"
-  warpCoef="warpCoef"
-  funcdir=.
-
-  for warp_target in standard mc_target;do
-   cvcmflags no_warp use_fm sliceMotion4D no_st mc_first st_first despike
-  done
-
-}
 # parse args does not allow 4d_slice_motion and mc_first
 @test "cvcmd: parse_args: fm" {
   # setup
@@ -147,4 +136,16 @@ setup(){
   [ $midmat = "./transforms/func_to_struct.mat" ] 
   [ $warp2  = "warpCoef" ] 
   
+}
+@test "cvcmd: all var combos" {
+  skip
+
+  ref="ref"
+  warpCoef="warpCoef"
+  funcdir=.
+
+  for warp_target in standard mc_target;do
+   cvcmflags no_warp use_fm sliceMotion4D no_st mc_first st_first despike
+  done
+
 }
