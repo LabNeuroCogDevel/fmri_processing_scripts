@@ -151,7 +151,6 @@ PREPARE_FIELDMAP_GLOBALS=(bbrCapable funcStructFlirtDOF fm_cfg mcMats fm_phase f
 # 13) Generate image of shift map overlaid on fieldmap magnitude image
 function prepare_fieldmap {
   
-    [ -f .prepare_fieldmap_complete ] && rel "fieldmap completed already" c &&  return 0
 
     print_vars_in PREPARE_FIELDMAP_GLOBALS
     # FM = space of fieldmap
@@ -163,12 +162,16 @@ function prepare_fieldmap {
     [ -z "$fm_phase$fm_magnitude$fm_cfg$se_phaspos$se_phaseneg" ] && rel "not running fieldmap" c && return 0
 
     if [[ $bbrCapable -eq 1 && $funcStructFlirtDOF = "bbr" && -n "$fm_cfg" ]]; then
-	createBBRFmapWarp=1 #generate func -> struct warp that includes FM unwarping (via BBR -fieldmap)
+	export createBBRFmapWarp=1 #generate func -> struct warp that includes FM unwarping (via BBR -fieldmap)
     else
-	createBBRFmapWarp=0
+	export createBBRFmapWarp=0
     fi
 
     prepare_mc_target 
+
+    # we did our prep, we can leave now if we've finished
+    [ -f .prepare_fieldmap_complete ] && rel "fieldmap completed already" c &&  return 0
+
     # Make an unwarp temps working directory
     tempsdir=$(pwd)/unwarptemps
     [ -d $tempsdir ] && rm -r $tempsdir
@@ -177,8 +180,10 @@ function prepare_fieldmap {
     # we need to do this before testing if complete
     # because we use the warpdir sourced from the file
     # later (one-step warp)
+    # -- preprocessDistortion makes a fm.cfg copy. we can use that
     [ -n "$fm_cfg" ] && { find_and_source_fmconfig "$fm_cfg" || return 1; }
     
+
     if [[ ( -n "${fm_phase}" || -n "$se_phasepos" || -n "$distortion_dir" ) && -f ".prepare_fieldmap_complete" ]]; then
 	return 0 #preparefieldmap already completed
     elif [ -n "$DISTORTION_DIR" ]; then
@@ -192,11 +197,11 @@ function prepare_fieldmap {
     #handle rare case where PE dir needs to be flipped for fieldmap processing after TOPUP step
     if [ -n "$flip_topup_pedir" ] && [ "$flip_topup_pedir" -eq 1 ]; then
 	case $unwarpdir in
-	    x)     unwarpdir=-x  ;;
+	    x)     unwarpdir=x-  ;;
 	    -x|x-) unwarpdir=x ;;
-	    y)     unwarpdir=-y  ;;
+	    y)     unwarpdir=y-  ;;
 	    -y|y-) unwarpdir=y ;; 
-	    z)     unwarpdir=-z  ;;
+	    z)     unwarpdir=z-  ;;
 	    -z|z-) unwarpdir=z ;;
 	    *)     echo "$FUNCNAME Unable to determine unwarping direction from '$unwarpdir'"
 		   exit 1 ;;
@@ -279,6 +284,12 @@ prepare_distortion_dir() {
     rel "fieldmap DISTORTION_DIR ('$DISTORTION_DIR') is within this functional as 'unwarp' run, re-using" c
   fi
   cd unwarp
+
+  if [ ! -r $DISTORTION_DIR/fm.cfg ]; then
+    rel "'$DISTORTION_DIR/fm.cfg' DNE. weird but not a problem if you provided -fm_cfg flag"
+  else
+    source $DISTORTION_DIR/fm.cfg 
+  fi
   return 0
 }
 
@@ -334,7 +345,8 @@ function prepare_se_fieldmap {
 
     rel "fslmaths ../topup_undistort/SE_Magnitude       FM_UD_fmap_mag"
     rel "fslmaths ../topup_undistort/SE_TopupField      FM_UD_fmap"
-        
+    rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
+    
     #explicit return code needed to avoid implicit status of prior command
     return 0
     
@@ -624,7 +636,6 @@ function preproc_fieldmap {
 
     #assume that we have a) copied FM_UD_fmap_mag and FM_UD_fmap into unwarp directory and b) have cd'd into that directory
     #skull strip magnitude image for registration
-    rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
     [ -n "$funcRefimg" ] &&     rel "fslmaths ../epiref_brain_restore      ER_D_epiref"
     rel "fslmaths ../mc_target_brain_restore                EF_D_mc_target"
     

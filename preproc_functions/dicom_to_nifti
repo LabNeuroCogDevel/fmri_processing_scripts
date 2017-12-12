@@ -2,127 +2,115 @@
 
 function dicom_to_nifti {
     #handle dicom to nifti conversion
-    if [ -z $funcFile ]; then
-	#if 4d file not passed, check for dicom pattern
-	#need dicomPattern in quotes to avoid expansion
-	if [ -z "$dicomPattern" ]; then
-	    echo -e "No 4d file provided to script. This file is required.\nPass using the -4d parameter.\n"
-	    echo -e "Alternatively, pass a dicom file pattern, such as -dicom \"MR*\"\nExiting.\n"
+    if [ -n "$funcFile" ]; then
+	return 0 #We are starting from NIfTI. This function is not relevant and should just return
+    fi
+    
+    #if 4d file not passed, check for dicom pattern
+    #need dicomPattern in quotes to avoid expansion
+    if [ -z "$dicomPattern" ]; then
+	rel "No 4d file provided to script. This file is required.\nPass using the -4d parameter.\n" c
+	rel "Alternatively, pass a dicom file pattern, such as -dicom \"MR*\"\nExiting.\n" c
+	exit 1
+    else
+	#process dicom files first, check whether files exist
+	numFiles=$( ls $dicomPattern 2>/dev/null | wc -l ) #pipe stderr to null to avoid no such file/directory when there are no DICOMs.
+	if [ $numFiles -eq 0 ]; then
+	    rel "No DICOM files found using pattern: $dicomPattern.\nIf you have already converted DICOM to NIFTI and want to skip this step, pass in the 4d functionals file using the -4d parameter.\nExample: preprocessFunctional -4d 10802_func.nii.gz" c
 	    exit 1
-	else
-	    #process dicom files first
-            #check whether files exist
-	    numFiles=$( ls $dicomPattern 2>/dev/null | wc -l ) #pipe stderr to null to avoid no such file/directory when there are no DICOMs.
-	    if [ $numFiles -eq 0 ]; then
-		#initial run of -dicom should copy the name of funcNifti into .functional. If this exists, read it and resume.
-		if [ -f .functional ]; then
-		    read funcNifti < .functional
-		    funcFile=$( remove_ext $funcNifti )
-		    if [ ! -r "$funcNifti" ]; then
-			echo "Tried to use the 4d file $funcNifti as input, but failed to locate it."
-			exit 1
-		    else
-			#success: funcFile and funcNifti now defined.
-			return 0
-		    fi		    
-		else
-		    echo -e "No DICOM files found using pattern: $dicomPattern.\nIf you have already converted DICOM to NIFTI and want to skip this step, pass in the 4d functionals file using the -4d parameter.\nExample: preprocessFunctional -4d 10802_func.nii.gz"
-		    exit 1
-		fi
-	    fi
+	fi
 
-	    funcFile="${output_basename}" #base name for preprocessing steps below
-	    funcNifti="${output_basename}${ext}"
+	funcFile="${output_basename}" #base name for preprocessing steps below
+	funcNifti="${output_basename}${ext}"
 
-	    #look for TR and slice acquisition order in Dicom
-	    firstDicom=$( find . -iname "${dicomPattern}" \( -type f -or -type l \) | head -1 )
-	    dicomHdr=$( dicom_hdr -sexinfo "${firstDicom}" )
-	    detectTR=$( echo "${dicomHdr}" | grep "0018 0080.*ACQ Repetition Time" | perl -pe 's:.*ACQ Repetition Time//(\d+)\s*$:\1:' )
-	    detectTR=$( echo "scale=3; ${detectTR}/1000" | bc ) #convert to seconds from milliseconds
-	    detectTE=$( echo "${dicomHdr}" | grep "0018 0081.*ACQ Echo Time" | perl -pe 's:.*ACQ Echo Time//(\d+)\s*$:\1:' )
-	    detectTE=$( echo "scale=3; ${detectTE}/1000" | bc ) #convert to seconds from milliseconds
-	    detectSliceOrder=$( echo "${dicomHdr}" | grep "sSliceArray.ucMode" | perl -pe 's/sSliceArray.ucMode\s+=\s+\d?x?(\d)$/\1/' ) #Trio uses 0x4 style whereas Prisma is just 4
-	    detectSeries=$( echo "${dicomHdr}" | grep "REL Series Number//" | perl -pe 's|^.*REL Series Number//(\d+).*$|\1|' ) #series number
-	    detectProtocolName=$( echo "${dicomHdr}" | grep "ACQ Protocol Name//" | perl -pe 's|^.*ACQ Protocol Name//(\w+).*$|\1|' ) #protocol name
+	#look for TR and slice acquisition order in Dicom
+	firstDicom=$( find . -iname "${dicomPattern}" \( -type f -or -type l \) | head -1 )
+	dicomHdr=$( dicom_hdr -sexinfo "${firstDicom}" )
+	detectTR=$( echo "${dicomHdr}" | grep "0018 0080.*ACQ Repetition Time" | perl -pe 's:.*ACQ Repetition Time//(\d+)\s*$:\1:' )
+	detectTR=$( echo "scale=3; ${detectTR}/1000" | bc ) #convert to seconds from milliseconds
+	detectTE=$( echo "${dicomHdr}" | grep "0018 0081.*ACQ Echo Time" | perl -pe 's:.*ACQ Echo Time//([0-9\.]+)\s*$:\1:' )
+	detectTE=$( echo "scale=5; ${detectTE}/1000" | bc ) #convert to seconds from milliseconds
+	detectSliceOrder=$( echo "${dicomHdr}" | grep "sSliceArray.ucMode" | perl -pe 's/sSliceArray.ucMode\s+=\s+\d?x?(\d)$/\1/' ) #Trio uses 0x4 style whereas Prisma is just 4
+	detectSeries=$( echo "${dicomHdr}" | grep "REL Series Number//" | perl -pe 's|^.*REL Series Number//(\d+).*$|\1|' ) #series number
+	detectProtocolName=$( echo "${dicomHdr}" | grep "ACQ Protocol Name//" | perl -pe 's|^.*ACQ Protocol Name//(\w+).*$|\1|' ) #protocol name
+	
+	if [ "${sliceTimesFile}" == "detect" ]; then
+	    rel "Detecting Siemens slice times from dicom header" c
+	    rel "dicom_hdr -slice_times \"${firstDicom}\" | perl -pe 's/-- Siemens timing \(\d+ entries\): //' > .sttmp"
 	    
-	    if [ "${sliceTimesFile}" == "detect" ]; then
-		rel "Detecting Siemens slice times from dicom header" c
-		rel "dicom_hdr -slice_times \"${firstDicom}\" | perl -pe 's/-- Siemens timing \(\d+ entries\): //' > .sttmp"
-		
-		#read in slice times from file, convert to seconds, and write .dicom_stimes file for downstream use
-		rel "Rscript -e \"x <- scan('.sttmp'); x <- x/1000; cat(x, file='.dicom_stimes', sep=',')\""
-		rm -f .sttmp
-	    fi
+	    #read in slice times from file, convert to seconds, and write .dicom_stimes file for downstream use
+	    rel "Rscript -e \"x <- scan('.sttmp'); x <- x/1000; cat(x, file='.dicom_stimes', sep=',')\""
+	    rm -f .sttmp
+	fi
 
-	    if [ "${detectSliceOrder}" = "1" ]; then
-		detectSliceOrder="seqasc"
-	    elif [ "${detectSliceOrder}" = "2" ]; then
-		detectSliceOrder="seqdesc"
-	    elif [ "${detectSliceOrder}" = "4" ]; then
-		detectSliceOrder="interleaved"
-		#used to test need for ocustom switch in slicetimer
-		#odd/even is all Siemens (to my knowledge), not just Trio Tim
-		#detectTrioTim=$(    echo "${dicomHdr}" | perl -ne 'print "1" if /TrioTim/' )
-		detectSiemens=$(    echo "${dicomHdr}" | perl -ne 'print "1" if /ID Manufacturer\/\/SIEMENS/' )
-		detectSliceNum=$(   echo "${dicomHdr}" | perl -ne 'print $1  if /sSliceArray.lSize\s*=\s*(\d+)/' )
-	    fi
+	if [ "${detectSliceOrder}" = "1" ]; then
+	    detectSliceOrder="seqasc"
+	elif [ "${detectSliceOrder}" = "2" ]; then
+	    detectSliceOrder="seqdesc"
+	elif [ "${detectSliceOrder}" = "4" ]; then
+	    detectSliceOrder="interleaved"
+	    #used to test need for ocustom switch in slicetimer
+	    #odd/even is all Siemens (to my knowledge), not just Trio Tim
+	    #detectTrioTim=$(    echo "${dicomHdr}" | perl -ne 'print "1" if /TrioTim/' )
+	    detectSiemens=$(    echo "${dicomHdr}" | perl -ne 'print "1" if /ID Manufacturer\/\/SIEMENS/' )
+	    detectSliceNum=$(   echo "${dicomHdr}" | perl -ne 'print $1  if /sSliceArray.lSize\s*=\s*(\d+)/' )
+	fi
 
-	    rel "Auto-detecting TR and slice acquisition order from DICOM header: ${firstDicom}" c
-	    rel "  Detected TR: ${detectTR}s" c
-	    rel "  Detected TE: ${detectTE}s" c
-	    rel "  Detected Slice Order: ${detectSliceOrder}" c
-	    rel "  Number of slices: ${detectSliceNum}" c
-	    rel "  Protocol name: ${detectProtocolName}" c
-	    rel "  Series number: ${detectSeries}" c
-	    rel "  If this is incorrect, please exit the script now by pressing Ctrl-C" c
+	rel "Auto-detecting TR and slice acquisition order from DICOM header: ${firstDicom}" c
+	rel "  Detected TR: ${detectTR}s" c
+	rel "  Detected TE: ${detectTE}s" c
+	rel "  Detected Slice Order: ${detectSliceOrder}" c
+	rel "  Number of slices: ${detectSliceNum}" c
+	rel "  Protocol name: ${detectProtocolName}" c
+	rel "  Series number: ${detectSeries}" c
+	rel "  If this is incorrect, please exit the script now by pressing Ctrl-C" c
 
-	    sleep 3
+	sleep 3
 
-	    #check auto-detect against user specification
-	    if [ -n "${tr}" ]; then
-		trEquiv=$( echo "${tr} == ${detectTR}" | bc )	    
-		if [ ${trEquiv} -eq 0 ]; then
-		    echo "Specified TR: ${tr} does not match detected TR: ${detectTR}"
-		    echo "Exiting script. Please resolve discrepancy."
-		    exit 1
-		fi
-	    fi
-
-	    if [ -n "${sliceAcquisition}" ] && [ "${sliceAcquisition}" != "${detectSliceOrder}" ]; then
-		echo "Specified slice order: ${sliceAcquisition} does not match detected slice order: ${detectSliceOrder}"
+	#check auto-detect against user specification
+	if [ -n "${tr}" ]; then
+	    trEquiv=$( echo "${tr} == ${detectTR}" | bc )	    
+	    if [ ${trEquiv} -eq 0 ]; then
+		echo "Specified TR: ${tr} does not match detected TR: ${detectTR}"
 		echo "Exiting script. Please resolve discrepancy."
 		exit 1
 	    fi
-
-	    #tr and sliceAcquisition parameters will be created downstream in check_requirements based on .detect_tr and .detect_sliceorder
-	    echo "${detectTR}" > .detect_tr
-	    echo "${detectTE}" > .detect_te
-	    echo "${detectSliceOrder}" > .detect_sliceorder
-	    echo "${detectSeries}" > .detect_series
-	    echo "${detectProtocolName}" > .detect_protocolname
-
-	    dimon "${dicomPattern}" "${output_basename}" #convert dicom to nifti using Dimon
-
-	    echo "${output_basename}${ext}" > .functional #save name of functional file created for resume when dicoms have been deleted/archived
-
-            #Ask user what to do with original DICOM files unless passed on command line
-	    if [ -z $delDicom ]; then
-		until [[ "$delDicom" = [AaNnYy] ]]; do
-		    read -sn1 -p "Delete or archive original DICOM files? (y/n/a)" delDicom
-		done
-	    else
-		[ "$delDicom" = "delete" ] && delDicom="y" #yes and delete are the same
-		delDicom=${delDicom:0:1} #retain only the first character
-	    fi
-
-	    case ${delDicom} in
-		y|Y) echo -e "\nDeleting DICOM files"; rm -f ${dicomPattern} ;;
-		n|N) echo -e "\nKeeping DICOM files" ;;
-		a|A) echo -e "\nArchiving DICOM files (${output_basename}_dicom.tar.gz)"; tar czf ${output_basename}_dicom.tar.gz ${dicomPattern} && rm -f ${dicomPattern} ;;
-	    esac
-	    sleep 1
-
 	fi
+
+	if [ -n "${sliceAcquisition}" ] && [ "${sliceAcquisition}" != "${detectSliceOrder}" ]; then
+	    echo "Specified slice order: ${sliceAcquisition} does not match detected slice order: ${detectSliceOrder}"
+	    echo "Exiting script. Please resolve discrepancy."
+	    exit 1
+	fi
+
+	#tr and sliceAcquisition parameters will be created downstream in check_requirements based on .detect_tr and .detect_sliceorder
+	echo "${detectTR}" > .detect_tr
+	echo "${detectTE}" > .detect_te
+	echo "${detectSliceOrder}" > .detect_sliceorder
+	echo "${detectSeries}" > .detect_series
+	echo "${detectProtocolName}" > .detect_protocolname
+
+	dimon "${dicomPattern}" "${output_basename}" #convert dicom to nifti using Dimon
+
+	echo "${output_basename}${ext}" > .functional #save name of functional file created for resume when dicoms have been deleted/archived
+
+        #Ask user what to do with original DICOM files unless passed on command line
+	if [ -z $delDicom ]; then
+	    until [[ "$delDicom" = [AaNnYy] ]]; do
+		read -sn1 -p "Delete or archive original DICOM files? (y/n/a)" delDicom
+	    done
+	else
+	    [ "$delDicom" = "delete" ] && delDicom="y" #yes and delete are the same
+	    delDicom=${delDicom:0:1} #retain only the first character
+	fi
+
+	case ${delDicom} in
+	    y|Y) echo -e "\nDeleting DICOM files"; rm -f ${dicomPattern} ;;
+	    n|N) echo -e "\nKeeping DICOM files" ;;
+	    a|A) echo -e "\nArchiving DICOM files (${output_basename}_dicom.tar.gz)"; tar czf ${output_basename}_dicom.tar.gz ${dicomPattern} && rm -f ${dicomPattern} ;;
+	esac
+	sleep 1
+
     fi
 
     #explicit return code to avoid implicit code of prior command

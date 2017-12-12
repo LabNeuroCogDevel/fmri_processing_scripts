@@ -7,7 +7,7 @@
 # used for boundary based registration (bbr) by register_func2struct if not earlier by prepare_fieldmaps
 # makes ${mprageBet_base}_fast_wmseg
 fast_wmseg() {
-       rel "Using fast to create white mater mask" c
+       rel "Using fast to create white matter mask" c
        [ -z "$1" ] && warn "$FUNCNAME: need mprageBet_base as input" && return 1
        ! imtestln "$1" &&  warn "'$1' does not exist in '$(pwd)'" && return 1
 	mprageBet_base="$(imglob "$1")" # this will make sure we dont have .nii.gz or .nii

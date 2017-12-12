@@ -242,12 +242,19 @@ function parse_args {
 	elif [ $1 = -distortion_dir ]; then
 	    DISTORTION_DIR=$(abspath "${2}")
            [ -z "$DISTORTION_DIR" -o ! -d "$DISTORTION_DIR" ] && echo "distortion_dir '$2' ('$DISTORTION_DIR') DNE!" && exit 1
+           # use fm_cfg from distortion directoyr unless we've already specifed a fm_cfg
+           [ -z "$fm_cfg" -a -r "$DISTORTION_DIR/fm.cfg" ] && export fm_cfg="$DISTORTION_DIR/fm.cfg"
 	    shift 2
 	elif [ $1 = -epi_echospacing ]; then
 	    dwelltime="${2}"
 	    shift 2
 	elif [ $1 = -epi_pedir ]; then
-	    unwarpdir="${2}" #should be x/-x/y/-y/z/-z
+	    unwarpdir="${2}" #should be x/x-/y/y-/z/z-
+
+	    #fix pickiness of FUGUE
+	    [ "$unwarpdir" = -x ] && unwarpdir="x-" && echo "Please use -epi_pedir x-"
+	    [ "$unwarpdir" = -y ] && unwarpdir="y-" && echo "Please use -epi_pedir y-"
+	    [ "$unwarpdir" = -z ] && unwarpdir="z-" && echo "Please use -epi_pedir z-"
 	    shift 2
 	elif [ $1 = -epi_te ]; then #echo time of EPI data
 	    epiTE=$( echo "($2)/1000" | bc -l ) # convert TE into seconds for sigloss
@@ -458,18 +465,34 @@ function parse_args {
 	fi
     done
 
+    #If we have previously converted to NIfTI (dicom_to_nifti function), then the name of the file (i.e., funcNifti) should be stored in .functional. If this exists, read it and use it.
+    if [ -f .functional ]; then
+	[ -n "$funcFile" ] && local fcache="$funcFile"
+	read funcNifti < .functional
+	funcFile=$( remove_ext $funcNifti )
+
+	if [[ -n "$fcache" && "$fcache" != "$funcFile" ]]; then
+	    rel "This is odd. You seem to have specified -4d, but I found a .functional file, which implies starting from DICOM. I will use $funcFile, not $fcache" c
+	fi
+	
+	if [ ! -r "$funcNifti" ]; then
+	    rel "Tried to use the 4d file $funcNifti as input, but failed to locate it." c
+	    exit 1
+	fi
+    fi
+
     #trim off file extension for functional file
     if [ -n "$funcFile" ]; then
 	if [ ! -r ${funcFile} ]; then
 	    #passed in parameter does not exist or does not have .nii or nii.gz extension. Need to test for file with added extension
 	    if [ -r "${funcFile}.nii" ]; then
 		funcNifti="${funcFile}.nii"
-		echo "Assuming that ${funcNifti} is the intended -4d input."
+		rel "Assuming that ${funcNifti} is the intended -4d input." c
 	    elif [ -r "${funcFile}.nii.gz" ]; then
 		funcNifti="${funcFile}.nii.gz"
-		echo "Assuming that ${funcNifti} is the intended -4d input."
+		rel "Assuming that ${funcNifti} is the intended -4d input." c
 	    else
-		echo -e "Raw functional 4d file: $funcFile does not exist.\nAttempted to look for ${funcFile}.nii and ${funcFile}.nii.gz to no avail.\nExiting.\n"
+		rel "Raw functional 4d file: $funcFile does not exist.\nAttempted to look for ${funcFile}.nii and ${funcFile}.nii.gz to no avail.\nExiting.\n" c
 		exit 1
 	    fi
 	fi
@@ -510,7 +533,7 @@ function parse_args {
 
     #whether to use a fieldmap, either GRE or TOPUP
     use_fm=0
-    if [[ -n "$fm_phase" || -n "$se_phasepos" ]]; then
+    if [[ -n "$fm_phase" || -n "$se_phasepos"  || -n "$DISTORTION_DIR" ]]; then
 	use_fm=1
     fi
 
@@ -566,6 +589,9 @@ function parse_mprage_args() {
 	if [[ $1 = -b || $1 = -bet_opts ]] ; then
 	    betOpts="${2}"
 	    shift 2
+	elif [[ $1 = -bright_skull ]] ; then
+	    bright_skull=1
+	    shift 1
 	elif [[ $1 = -cleanup ]]; then
 	    cleanup=1
 	    shift 1
@@ -590,6 +616,9 @@ function parse_mprage_args() {
 	    fi
 	elif [[ $1 = -p || $1 = -dicom ]]; then
 	    dicomPattern="${2}"
+	    shift 2
+	elif [[ $1 = -fnirt_mask ]]; then
+	    fnirt_mask="${2}"
 	    shift 2
 	elif [[ $1 = -grad_unwarp ]]; then
 	    gcoeffs="${2}"
