@@ -49,6 +49,16 @@ parsefmargs() {
  done
 }
 
+testExpected() {
+   # global EXPECT,HAVEEXPECT, savedir
+   HAVEEXPECT=()
+   for f in "${EXPECT[@]}"; do
+      [ -r "$savedir/$f" ] && HAVEEXPECT=(${HAVEEXPECT[@]} $f)
+   done
+
+   [ ${#HAVEEXPECT[@]} -eq ${#EXPECT[@]} ] 
+}
+
 _preprocessDistortion() {
    starttime=$(date +%s)
    NEEDARGS=(phasedir magdir fm_cfg)
@@ -67,14 +77,11 @@ _preprocessDistortion() {
    EXPECT=( FM_UD_fmap_mag{,_brain}.nii.gz \
             unwarp/FM_UD_fmap{,_mag}.nii.gz \
             .fieldmap_{magnitude,phase} )
-   HAVEEXPECT=()
-   for f in "${EXPECT[@]}"; do
-      [ -r "$savedir/$f" ] && HAVEEXPECT=(${HAVEEXPECT[@]} $f)
-   done
 
-   [ ${#HAVEEXPECT[@]} -eq ${#EXPECT[@]} ] && echo "skipping '$savedir'; have all final files: ${HAVEEXPECT[@]}" && exit 0
+   testExpected && echo "skipping '$savedir'; have all final files: ${HAVEEXPECT[@]}" && exit 0
+
    if [ ${#HAVEEXPECT[@]}  -gt 0 ] ; then
-      rel "rm $savedir; # and try again; have ${#HAVEEXPECT[@]}/${#EXPECT[@]} expected files: ${HAVEEXPECT[@]}" c 
+      rel "rm -r $savedir; # and try again; have ${#HAVEEXPECT[@]}/${#EXPECT[@]} expected files: ${HAVEEXPECT[@]}" c 
       exit 1
    fi
 
@@ -92,12 +99,21 @@ _preprocessDistortion() {
    fm_magnitude="mag/$mrpatt"
    prepare_gre_fieldmap 
    # bet'ed brain needs to be in unwarp directory
-   [ -r FM_UD_fmap_mag_brain.nii.gz -a -d unwarp ] && ( cd unwarp; cp ../FM_UD_fmap_mag_brain.nii.gz ./)
+   if [ -r ../FM_UD_fmap_mag_brain.nii.gz ]; then
+      cp ../FM_UD_fmap_mag_brain.nii.gz ./
+   else
+      echo "WARNING: missing $(pwd)/FM_UD_fmap_mag_brain.nii.gz !"
+   fi
+
+   # also need the FM_UD from fm_phase -- actually have it already!
+   #[ -r fm_phase/FM_UD_fmap.nii.gz -a -d unwarp ] && cp fm_phase/FM_UD_fmap.nii.gz unwarp/
 
    # copy config to save directory
    fmcfgfile=$(find_fmconfig $fm_cfg)
    [ -z "$fmcfgfile" -o ! -r "$fmcfgfile" ] && warn "cannot find config file '$fm_cfg', how did the above work!?" && exit 1
    rel "cp $fmcfgfile $savedir/unwarp/fm.cfg"
+
+   ! testExpected && echo "DID NOT FINISH '$savedir'; have ${HAVEEXPECT[@]}, want ${EXPECT[@]}" && exit 1
 
    # all done
    rel "$(date) Finished distortion preprocessing" c
