@@ -1,5 +1,5 @@
 #!/usr/bin/env Rscript
-#This is a script for automated preprocessing of functional MRI data and their corresponding structural scans.
+#This is a script for automated processing of functional MRI data and their corresponding structural scans.
 #It expects to find several key configuration parameters in the system environment at the time of execution.
 #These are typically handled upstream of the script by autopreproc, which sources a cfg file to initialize these variables.
 #The basic structure is that files are copied from a raw source location to a processed destination location.
@@ -102,6 +102,25 @@ if (is.na(use_moab)) {
   use_moab <- FALSE #should I trap other possibilities here?    
 }
 
+if (use_moab) { use_job_array <- TRUE } #Moab implies a job array
+
+use_massive_qsub = as.numeric(Sys.getenv("use_massive_qsub"))
+if (is.na(use_massive_qsub)) {
+  use_massive_qsub <- FALSE
+} else if (use_massive_qsub == 1) {
+  use_massive_qsub <- TRUE
+  cat("Using massive single-job qsub approach to parallel execution\n\n")
+} else {
+  use_massive_qsub <- FALSE #should I trap other possibilities here?    
+}
+
+#unified flag to denote whether to use qsub approach
+if (use_job_array || use_moab || use_massive_qsub) {
+  asynchronous_processing <- TRUE
+} else {
+  asynchronous_processing <- FALSE
+}
+
 job_array_preamble <- Sys.getenv("job_array_preamble")
 if (job_array_preamble=="") {
   job_array_preamble <- c(
@@ -116,13 +135,13 @@ if (job_array_preamble=="") {
 }
 
 #setup default wall times for different steps
-if (use_job_array) {
+if (asynchronous_processing) {
   mprage_walltime <- Sys.getenv("mprage_walltime")
   if (mprage_walltime == "") { mprage_walltime <- "4:00:00" } # 4-hour max estimate for a single subject mprage to process
   freesurfer_walltime <- Sys.getenv("freesurfer_walltime")
   if (freesurfer_walltime == "") { freesurfer_walltime <- "54:00:00" } # 54-hour max estimate for a single subject freesurfer to process
   functional_walltime <- Sys.getenv("functional_walltime")
-  if (functional_walltime == "") { functional_walltime <- "36:00:00" } # 36-hour max estimate for a single subject functional to process  
+  if (functional_walltime == "") { functional_walltime <- "40:00:00" } # 40-hour max estimate for a single subject functional to process  
 }
 
 detect_refimg = as.numeric(Sys.getenv("detect_refimg")) #whether to pass raw directory to preprocessFunctional in order to detect refimg
@@ -133,7 +152,6 @@ if (is.na(detect_refimg)) {
 } else {
   detect_refimg <- FALSE #should I trap other possibilities here?    
 }
-
 
 #setup default parameters
 if (mprage_dicompattern == "") { mprage_dicompattern = "MR*" }
@@ -162,15 +180,23 @@ useGREFieldmap = ifelse(nchar(gre_fieldmap_dirpattern) > 0, TRUE, FALSE) #whethe
 useSEFieldmap = ifelse(nchar(se_phasepos_dirpattern) > 0, TRUE, FALSE) #whether to include SE fieldmaps in processing
 
 #setup location for script outputs
-if (use_job_array) {
+if (asynchronous_processing) {
   registerDoSEQ() #force sequential
   scratchdir <- paste0("/gpfs/scratch/", system("whoami", intern=TRUE))
   qsubdir <- tempfile(pattern="preprocessAll_", tmpdir=ifelse(dir.exists(scratchdir), scratchdir, execdir))
   dir.create(qsubdir, showWarnings=FALSE)
-  preproc_one <- c(
-    "#!/bin/bash",
-    "source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash #setup environment"
-  )
+
+  if (use_massive_qsub) {
+    #under massive individual qsub, each worker script is a qsub job itself
+    #but to keep the paradigm consistent (the exec_pbs_array function handles PBS directives),
+    #we just want the ni_path setup. The preamble will be prepended to each at runtime.
+    preproc_one <- c("source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash #setup environment")
+  } else {
+    preproc_one <- c(
+      "#!/bin/bash",
+      "source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash #setup environment"
+    )
+  }
 } else {
   registerDoMC(njobs) #setup number of jobs to fork
 }
@@ -212,11 +238,21 @@ if (use_job_array) {
   cat("  Using a PBS array approach to queue preprocessing\n")
   cat("  Directory for PBS job array files:", qsubdir, "\n")
   cat("  Maximum number of concurrent jobs:", njobs, "\n")
+  cat("  Using this scheduler for handling arrays:", ifelse(use_moab, "moab", "torque"), "\n")
   cat("  Walltime for single preprocessMprage:", mprage_walltime, "\n")
   if (proc_freesurfer) { cat("  Walltime for freesurfer:", freesurfer_walltime, "\n") }
   cat("  Walltime for single functional:", functional_walltime, "\n")
   cat("  Basic setup for qsub scripts:\n")
   cat(job_array_preamble, sep="\n")
+}
+if (use_massive_qsub) {
+  cat("  Using a massive individual qsub approach to queue preprocessing\n")
+  cat("  Directory for PBS job files:", qsubdir, "\n")
+  cat("  Walltime for single preprocessMprage:", mprage_walltime, "\n")
+  if (proc_freesurfer) { cat("  Walltime for freesurfer:", freesurfer_walltime, "\n") }
+  cat("  Walltime for single functional:", functional_walltime, "\n")
+  cat("  Basic setup for qsub scripts:\n")
+  cat(job_array_preamble, sep="\n")  
 }
 cat("--------\n\n")
 
@@ -280,7 +316,7 @@ if (length(mprage_toprocess) > 0L) {
   print(mprage_toprocess)
 
   #copy mprage files for processing
-  if (use_job_array) {
+  if (asynchronous_processing) {
     mprage_dest_queue <- file.path(loc_mrproc_root, basename(dirname(mprage_toprocess)), "mprage") #assume that output structure is MR_Proc/<SUBID>/mprage
     have_dest <- dir.exists(mprage_dest_queue)
     mprage_src_queue <- mprage_toprocess[!have_dest] #only copy directories that don't already exist
@@ -310,8 +346,11 @@ if (length(mprage_toprocess) > 0L) {
         preprocessMprage_call = sub("-dicom\\s+\\S+\\s+", "", preprocessMprage_call, perl=TRUE) #strip out call to dicom
         preprocessMprage_call <- paste(preprocessMprage_call, "-nifti mprage.nii.gz")
       }
-      
-      if (use_job_array) {
+
+      if (file.exists("need_analyze")) { unlink("need_analyze") } #remove dummy file
+      if (file.exists("analyze")) { unlink("analyze") } #remove dummy file
+
+      if (asynchronous_processing) {
         #create preprocessing script for the ith dataset
         output_script <- c(preproc_one,
                            paste("cd", mpragedir),
@@ -326,17 +365,16 @@ if (length(mprage_toprocess) > 0L) {
         if (!file.exists(".preprocessmprage_complete")) {
           sink(".preprocessmprage_complete"); cat(as.character(Sys.time())); sink()
         }
-        if (file.exists("need_analyze")) { unlink("need_analyze") } #remove dummy file
-        if (file.exists("analyze")) { unlink("analyze") } #remove dummy file
       }
     }
     return(d)
   }
 
-  if (use_job_array) {
+  if (asynchronous_processing) {
     #execute mprage array job
-      mprage_jobid <- exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=length(mprage_toprocess), jobprefix="qsub_one_preprocessMprage_", allscript="qsub_all_mprage.bash",
-                                     qsubdir=qsubdir, job_array_preamble=job_array_preamble, walltime=mprage_walltime, waitfor=mprage_copy_jobid, use_moab=use_moab)
+    mprage_jobid <- exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=length(mprage_toprocess), jobprefix="qsub_one_preprocessMprage_", allscript="qsub_all_mprage.bash",
+      qsubdir=qsubdir, job_array_preamble=job_array_preamble, walltime=mprage_walltime, waitfor=mprage_copy_jobid,
+      use_moab=use_moab, use_massive_qsub=use_massive_qsub)
   }
 }
 
@@ -350,9 +388,9 @@ if (proc_freesurfer) {
     subid <- basename(dirname(d))
     outdir <- file.path(loc_mrproc_root, subid)
     
-    if (!use_job_array && !file.exists(file.path(outdir, "mprage"))) {
+    if (!asynchronous_processing && !file.exists(file.path(outdir, "mprage"))) {
       message("Cannot locate processed mprage data for: ", outdir)
-    } else if (!use_job_array && !file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {
+    } else if (!asynchronous_processing && !file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {
       message("Cannot locate .preprocessmprage_complete in: ", outdir)
     } else if (file.exists(file.path(fs_subjects_dir, paste0(freesurfer_id_prefix, subid)))) {
       message("Skipping FreeSurfer pipeline for subject: ", subid)
@@ -369,7 +407,7 @@ if (proc_freesurfer) {
     f <- foreach(d=1:length(fs_toprocess), .inorder=FALSE) %dopar% {
 
       #use the gradient distortion-corrected files if available
-      if (use_job_array) {
+      if (asynchronous_processing) {
         #create preprocessing script for the ith dataset
         output_script <- c(preproc_one,
                            paste0("[ ! -d \"", fs_toprocess[d], "\" ] && { echo \"Cannot find directory: ", fs_toprocess[d], ". Aborting.\"; exit 0; }"),
@@ -391,11 +429,12 @@ if (proc_freesurfer) {
       }
     }
 
-    if (use_job_array) {
+    if (asynchronous_processing) {
       #execute freesurfer array job
       freesurfer_jobid <- exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=length(fs_toprocess), qsubdir=qsubdir,
                                          jobprefix="qsub_one_FreeSurferPipeline_", allscript="qsub_all_freesurfer.bash",
-                                         waitfor=mprage_jobid, job_array_preamble=job_array_preamble, walltime=freesurfer_walltime, use_moab=use_moab)
+                                         waitfor=mprage_jobid, job_array_preamble=job_array_preamble, walltime=freesurfer_walltime,
+                                         use_moab=use_moab, use_massive_qsub=use_massive_qsub)
     }
   }
 }
@@ -474,7 +513,7 @@ for (d in subj_dirs) {
   mpragedir <- file.path(loc_mrproc_root, subid, "mprage")
   #Only validate mprage directory structure if we are not using job arrays.
   #For a job array, the mprage folders/files may not be in place yet since this script functions more for setup than computation
-  if (!use_job_array) { 
+  if (!asynchronous_processing) { 
     if (file.exists(mpragedir)) {
       if (! (file.exists(file.path(mpragedir, paste0("mprage_warpcoef", gradunwarpsuffix, ".nii.gz"))) && file.exists(file.path(mpragedir, "mprage_bet.nii.gz")) ) ) {
         message("Unable to locate required mprage files in dir: ", mpragedir)
@@ -669,7 +708,7 @@ if (useOfflineMB) {
     message("Copying MB reconstructed files into place.")
     print(data.frame(src=mb_src_queue, dest=mb_dest_queue), row.names=FALSE)
 
-    if (use_job_array) {
+    if (asynchronous_processing) {
       queue_copy_jobid <- exec_pbs_iojob(mb_src_queue, mb_dest_queue, cpcmd="3dcopy", njobs=24, qsubdir=qsubdir)
     } else {
       ##for now, arbitrarily copy 12 at a time for a reasonable level of disk I/O
@@ -685,7 +724,7 @@ if (useOfflineMB) {
     message("Copying raw DICOM folders into place")
     print(data.frame(src=functional_src_queue, dest=functional_dest_queue), row.names=FALSE)
 
-    if (use_job_array) {
+    if (asynchronous_processing) {
       queue_copy_jobid <- exec_pbs_iojob(functional_src_queue, functional_dest_queue, cpcmd="cp -Rp", njobs=24, qsubdir=qsubdir)
     } else {
       registerDoMC(12)
@@ -701,7 +740,7 @@ all_funcrun_dirs <- do.call(rbind, all_funcrun_dirs)
 row.names(all_funcrun_dirs) <- NULL
 
 #re-register parallel backend since it was set to 12 just above (ideally, the copying should be outsourced to a function)
-if (use_job_array) {
+if (asynchronous_processing) {
   registerDoSEQ() #force sequential
 } else {
   registerDoMC(njobs) #setup number of jobs to fork
@@ -737,7 +776,7 @@ if (!is.null(all_funcrun_dirs) && nrow(all_funcrun_dirs) > 0L) {
     ##run preprocessFunctional
     args <- paste(resumepart, funcpart, mpragepart, fmpart, separt, refimgpart, preproc_call)
 
-    if (use_job_array) {
+    if (asynchronous_processing) {
       output_script <- c(preproc_one,
                          paste("cd", cd$funcdir),
                          paste("preprocessFunctional", args, ">preprocessFunctional_stdout 2>preprocessFunctional_stderr"))
@@ -749,10 +788,11 @@ if (!is.null(all_funcrun_dirs) && nrow(all_funcrun_dirs) > 0L) {
     }
   }
 
-  if (use_job_array) {
+  if (asynchronous_processing) {
     save(all_funcrun_dirs, file=file.path(qsubdir, "funcdata_toprocess.RData"))
     #execute functional array job
     functional_jobid <- exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=nrow(all_funcrun_dirs), jobprefix="qsub_one_preprocessFunctional_", qsubdir=qsubdir,
-                                       allscript="qsub_all_functional.bash", waitfor=c(queue_copy_jobid, mprage_jobid), job_array_preamble=job_array_preamble, walltime=functional_walltime, use_moab=use_moab)
+      allscript="qsub_all_functional.bash", waitfor=c(queue_copy_jobid, mprage_jobid), job_array_preamble=job_array_preamble, walltime=functional_walltime,
+      use_moab=use_moab, use_massive_qsub=use_massive_qsub)
   }
 }
