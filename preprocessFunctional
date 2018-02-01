@@ -138,6 +138,7 @@ Command line options:
 	-template_brain MNI_2.3mm (MNI152 brain, 2.3mm isotropic voxels, template from MNI Fonov et al. 2009). For 2.3mm MB sequence.
         -template_brain MNI_3mm (MNI152 brain, 3mm isotropic voxels, template from MNI Fonov et al. 2009)
         -template_brain MNI_FSL_3mm (MNI152 brain, 3mm isotropic voxels, template from FSL standard)
+        -template_brain MNI_FSL_2mm (MNI152 brain, 2mm isotropic voxels, template from FSL standard)
         -template_brain SPM_2mm (MNI brain from spm8 canonical template)
         -template_brain Tal_3mm (Talairach brain, 3mm isotropic voxels. Brain built by resampling MNI template in Tal space)
   -threshold: The method to use for thresholding/masking low intensity voxels. Options are:

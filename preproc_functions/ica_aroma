@@ -42,7 +42,7 @@ function ica_aroma {
 
 	    [ $no_warp -eq 1 ] && rel "imrm func_to_fsl_warpfield"
 
-	elif [[ $templateName = MNI_FSL_3mm ]]; then
+	elif [[ $templateName = MNI_FSL_3mm || $templateName = MNI_FSL_2mm ]]; then
 	    #if data are in FSL MNI152 already, then the warp should be complete at this point
 	    #in this case, ICA_AROMA.py does not need -affmat or -warp. Data will be resampled by the python script to 2mm to match template
 
