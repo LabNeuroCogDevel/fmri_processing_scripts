@@ -555,7 +555,7 @@ def denoising(fslDir, inFile, outDir, melmix, denType, denIdx):
             denIdxStrJoin = ','.join(denIdxStr)
 
 
-        useafni=True
+        useafni=False #NB. AFNI implements 'aggressive' denoising in fsl_regfilt terms It regresses only noise components, not partialed for other components
         if useafni:
             mixafni = np.loadtxt(melmix) #write file for only filtered regressors
             np.savetxt(os.path.join(outDir, 'toremove.1D'), mixafni[:,denIdx])
