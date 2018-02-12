@@ -165,6 +165,15 @@ function check_requirements {
 	compute_warp=1
     fi
 
+    #if no smooth and ICA-AROMA are both requested, we need to compute AROMA on smoothed data (increases SNR) and then apply component regressions onto unsmoothed data.
+    #Undo smooth will remove the 's' at the beginning of the file prefix and run fsl_regfilt on unsmoothed data
+    if [[ $no_smooth -eq 1 && $ica_aroma -eq 1 ]]; then
+  	undo_smooth=1
+  	no_smooth=0
+    else
+  	undo_smooth=0
+    fi
+
     #####
     #High-pass filtering for slow-frequency scanner drift
     #-bptf 60 -1: high-pass filter with FWHM = 60 volumes (e.g., so filter slower than about 141 volumes)

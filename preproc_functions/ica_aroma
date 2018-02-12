@@ -3,15 +3,19 @@
 function ica_aroma {
     
     #Run ICA-AROMA on data after spatial smoothing is complete
+
     if [ $ica_aroma -eq 1 ]; then
-	preAroma="${postSmooth}" #should always fall after this step
-	prefix="a${prefix}"
-	postAroma="${prefix}${funcFile}${smoothing_suffix}"
+        preAroma="${postSmooth}" #should always fall after this step
+        if [ $undo_smooth -eq 1 ]; then
+            prefix=$(echo ${prefix} | perl -pe 's/^s//') #remove s from the beginning of the prefix since the preproc data are not smoothed
+        fi
+        prefix="a${prefix}"
+        postAroma="${prefix}${funcFile}${smoothing_suffix}"
 
-	if [ -f ".ica_aroma_complete" ]; then
-	    return 0
-	fi
-
+        if [ -f ".ica_aroma_complete" ]; then
+            return 0
+        fi
+	
 	#need absolute paths to ICA_AROMA.py script. (should eventually move this to the main script and make global)
 	local funcdir=$(pwd) #define working directory for functional processing
 	
@@ -54,6 +58,18 @@ function ica_aroma {
 	    rel "Must use -template_brain <MNI_2mm|MNI_2.3mm|MNI_3mm|MNI_FSL_3mm>" c
 	    exit 1
 	fi
+
+	 #rename AROMA output to dummy, then regress melodic mixing matrix onto unsmoothed data
+        if [ $undo_smooth -eq 1 ]; then
+            #only apply AROMA components to unsmoothed data if any of them was flagged as noise. Otherwise, simply update symbolic links to point to unsmoothed data
+            rel "immv ica_aroma/denoised_func_data_nonaggr ica_aroma/denoised_func_data_nonaggr_withsmooth"
+
+            if [ -f "${funcdir}/ica_aroma/classified_motion_ICs.txt" ]; then
+                rel "fsl_regfilt -i ${preSmooth} -o ica_aroma/denoised_func_data_nonaggr -d ${funcdir}/ica_aroma/melodic.ica/melodic_mix -f <(cat ${funcdir}/ica_aroma/classified_motion_ICs.txt)"
+            else
+                rel "ln -sfn ../${preSmooth}${ext} ica_aroma/denoised_func_data_nonaggr${ext}" #nothing to denoise. just carry forward unsmoothed data as AROMA 'output'
+            fi
+        fi
 
 	#create symbolic link to the aroma output
 	rel "ln -sfn ica_aroma/denoised_func_data_nonaggr${ext} ${postAroma}${ext}"
