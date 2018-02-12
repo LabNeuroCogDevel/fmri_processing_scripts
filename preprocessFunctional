@@ -196,10 +196,13 @@ EndOfHelp
 }
 
 #Written: 2010/5/18
-#Last updated: 2017/7/5
+#Last updated: 2018/2/12
 #Last defaults change: 2017/7/5
 #
 #Changelog:
+#2/12/2017 (MH)
+# - Implement ICA AROMA + no smooth option. Because AROMA benefits from smoothed data to increase SNR, the data are smoothed for AROMA, but then
+#    motion components are applied to unsmoothed data, and the pipeline proceeds from there (unsmoothed). Occurs -no_smooth and -ica_aroma are requested.
 #7/5/2017 (MH)
 # - support TOPUP distortion correction using S-E images (-se_phasepos, -se_phaseneg, -epi_echospacing, -epi_pedir)
 # - Switch to 3dSkullStrip for epiref and mc_target due to weak performance of bet in several datasets
