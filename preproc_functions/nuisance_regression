@@ -544,8 +544,12 @@ function nuisance_regression {
 
     # bandpass and regress
     elif [ "$todo" = "br" ]; then
-        rel "3dBandpass -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
-		-prefix \"$postNRBP\" -ort ${nuisance_file} $bpLow $bpHigh"
+	rel "3dTproject -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
+		-prefix \"$postNRBP\" -polort 2 -ort ${nuisance_file} -passband $bpLow $bpHigh"
+
+	#Deprecated -- 3dTproject performs true simultaneous approach, not filter all -> bandpass
+        #rel "3dBandpass -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
+	#	-prefix \"$postNRBP\" -ort ${nuisance_file} $bpLow $bpHigh"
 
 	rel "date > .bandpass_filter_complete"
 	rel "date > .nuisance_regression_complete"
