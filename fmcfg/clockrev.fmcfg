@@ -20,7 +20,7 @@ scanner=SIEMENS
 ### TE of epi acquisition
 # Scansheet: ...X4 > Routine > TE
 
-epiTE=25  # ms 
+epiTE=27  # ms 
 
 ######################################################################
 ### EPI dwell time per phase-encode line -- same as effective echo spacing
@@ -34,7 +34,7 @@ epiTE=25  # ms
 
 GRAPPAAccel=1  # set to 1 if not an accelerated sequence
 
-echoSpacing=0.49 # ms
+echoSpacing=0.53 # ms
 
 ######################################################################
 ### TEs of gre fieldmap magnitude images -- used to convert fieldmap to rad/s
@@ -47,8 +47,8 @@ echoSpacing=0.49 # ms
 # Scansheet: gre_fieldmapping > Routine > TE1
 # Scansheet: gre_fieldmapping > Routine > TE2
 
-greTE1=4.92 # ms/
-greTE2=7.38 # ms
+greTE1=4.47 # ms
+greTE2=6.93 # ms
 
 ######################################################################
 ### Unwarp direction: i.e., the phase-encoding direction of the fMRI EPI sequence

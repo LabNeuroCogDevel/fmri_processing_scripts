@@ -270,7 +270,9 @@ function cleanup_preprocessMprage {
 
     [ $( imtest mprage_warpcoef_withgdc ) -eq 1 ] && rel "imrm mprage_warpcoef"
     [ -d bright_skull ] && rm -rf bright_skull
-    
+
+    #explicit return code needed to avoid implicit status of prior command
+    return 0
 }
 
 
