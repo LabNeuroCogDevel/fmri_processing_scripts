@@ -12,7 +12,6 @@
 # bash does not accept spaces between the equal sign 
 #@@@ 
 
-
 ######################################################################
 
 scanner=SIEMENS 
@@ -62,8 +61,7 @@ greTE2=6.93 # ms
 # Scansheet: ...X4 > Routine > Phase enc. dir.
 # Scansheet: gre_field_mapping > Routine > Phase enc. dir.
 
-unwarpdir="y" # R>>L #x+ gives proper results for MM data using convertwarp and flirt -bbr -pedir.
-			  # P >> A #y+ is what it is initially set at check to see if this is the correct direction
+unwarpdir="y-" # A>>P
 
 ######################################################################
 # Signal loss threshold: Determines where the signal loss in the EPI is too great
@@ -88,64 +86,10 @@ signallossthresh=0.9 # Areas with 90% or more signal loss in fieldmap are masked
 #epiTE=$(echo "($epiTE)/1000" |bc -l)  
 
 #Used by fugue to unwarp EPI
-dwelltime=$(echo "($echoSpacing/$GRAPPAAccel)/1000" | bc -l) # 0.000425 sec
+dwelltime=$(echo "($echoSpacing/$GRAPPAAccel)/1000" | bc -l) # 0.00053 sec
 
 # difference of gre magnitude TEs is used to calculate rad/s of fieldmap
 TEdiff=$(echo "($greTE2 - $greTE1)/1000" | bc -l) # 0.00246  sec
 
 # TE of the epi is used by sigloss and expected in seconds
-epiTE=$( echo "($epiTE)/1000" | bc -l ) # 0.002 sec
-
-######################################################################
-## Command to generate rad/s field map
-# First check that fieldmap NIFTI slope and intercept and intercept match expectation
-# fieldmaptoRS $fieldmap needs to be called after sourcing this cfg
-
-# The multimodal fieldmap files have intercept -4096 and slope 2
-# Instructions for converting to rad/s for such a scenario are mentioned here:
-# https://www.jiscmail.ac.uk/cgi-bin/webadmin?A2=ind0712&L=FSL&P=R35595&1
-# From Siemens Trio scanner, original GRE fieldmaps values (typically) range 0 - 4096.
-# Our goal is to convert to radians per second, which involves:
-# 1) subtract 2048 -> range is -2048 -- 2048
-# 2) divide by 2048 -> range is -1 -- 1
-# 3) multiply by pi -> range is -pi -- pi, now in radians
-# 4) divide by fieldmap TE difference in seconds -> now radians / sec
-#
-# When converted from DICOM, the NIFTI header has
-# scl_inter=-4096 and scl_slope=2. So add 4096 and divide by 2 to recover original units.
-# As shown in the above post, a one-step conversion of the fieldmap to rad/s can be accomplished like so:
-
-# fslmaths rawfieldmap.nii.gz -mul 3.141593 -div 4096 -div .00246 radpers -odt float
-
-# or, one could undo the (weird) inter/slope encoding and compute in long-form:
-#fslmaths grefieldmap2.nii.gz -add 4096 -div 2 -sub 2048 -div 2048 -mul 3.14159 -div .00246 twostep
-
-#in our case, just check the fieldmap header to make sure it's -4096 intercept and 2 slope
-#then proceed with onestep
-
-
-export fm_slope=2
-export fm_intercept=-4096
-
-function fieldmapToRS {
-  # input is grefieldmap
-  fieldmap=$1
-
-  [ -r FM_UD_fmap ] && echo "FM_UD_fmap (mag in rad/sec) exists?, overwriting"
-  
-  ## check fm_slope and fm_intercept 
-  fslhd $fieldmap |
-    perl -lne 'our $fm_intercept= int($1) if m/^scl_inter\s+(-[\d.]+)/;
-               our $fm_slope    = int($1) if m/^scl_slope\s+(\d+)/;
-               END { unless( $fm_intercept == $ENV{fm_intercept} 
-                              && $fm_slope == $ENV{fm_slope}){
-                    print "Fieldmap intercept ($fm_intercept) and slope ($fm_slope) fields do not match expected values",
-                     " of $ENV{fm_intercept} and $ENV{fm_slope}, respectively.\n  Cannot determine conversion to rad/s.",
-                     " Exiting script.";
-                     exit 1
-                  } 
-            }' || exit 1
-
-  ## convert to rad/sec
-  fslmaths $fieldmap -mul 3.141593 -div $((($fm_intercept*-1))) -div $TEdiff  FM_UD_fmap
-}
+epiTE=$( echo "($epiTE)/1000" | bc -l ) # 0.027 sec
