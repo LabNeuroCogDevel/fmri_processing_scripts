@@ -470,7 +470,7 @@ function parse_args {
     if [ -f .functional ]; then
 	[ -n "$funcFile" ] && local fcache="$funcFile"
 	read funcNifti < .functional
-	funcFile=$( remove_ext $funcNifti )
+	funcFile=$( remove_ext "$funcNifti" )
 
 	if [[ -n "$fcache" && "$fcache" != "$funcFile" ]]; then
 	    rel "This is odd. You seem to have specified -4d, but I found a .functional file, which implies starting from DICOM. I will use $funcFile, not $fcache" c
@@ -498,12 +498,12 @@ function parse_args {
 	    fi
 	fi
 
-	if [ ${funcFile:(-7)} = ".nii.gz" ]; then
+	if [ "${funcFile:(-7)}" = ".nii.gz" ]; then
 	    #strip off the suffix for FSL processing and makes filenames easier to build.
 	    lenFile=${#funcFile}
 	    lenSub=$( expr $lenFile - 7 )
 	    funcFile=${funcFile:0:$lenSub}
-	elif [ ${funcFile:(-4)} = ".nii" ]; then
+	elif [ "${funcFile:(-4)}" = ".nii" ]; then
 	    #strip off the suffix for FSL processing
 	    lenFile=${#funcFile}
 	    lenSub=$( expr $lenFile - 4 )
