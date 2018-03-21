@@ -39,6 +39,7 @@ printHelp <- function() {
       "  -na_string: Character string indicating how to represent missing correlations in output file. Default NA.",
       "  -ts_out_file <filename for time series output>: Output a file containing the average time series for each region before computing correlations.",
       "  -ts_only: stop before running correlations. useful with -ts_out_file",
+      "  -roi_diagnostics <file>: Create a file with information about the number of voxels per ROI in the mask versus the data, including the proportion missing.",
       "",
       "If the -ts file does not match the -rois file, the -ts file will be resampled to match the -rois file using 3dresample. This requires that the images be coregistered,",
       "  in the same stereotactic space, and have the same grid size.",
@@ -73,10 +74,11 @@ if (length(args) == 0L) {
 }
 
 #for testing
-#fname_rsproc <- "/gpfs/group/mnh5174/default/Raj/Preprocess_Rest/10638_20140507/brnswudktm_rest_5.nii.gz" #name of preprocessed fMRI data
-#fname_roimask <- "/gpfs/group/mnh5174/default/Raj/Preprocess_Rest/power264_mni2.3mm.nii.gz"
+#fname_rsproc <- "/gpfs/group/mnh5174/default/MMClock/MR_Proc/11336_20141204/mni_nosmooth_aroma_hp/rest1/rnfawuktm_rest1.nii.gz" #name of preprocessed fMRI data
+#fname_roimask <- "/gpfs/group/mnh5174/default/lab_resources/parcellation/final_combined/7_Networks/Schaefer421_full_final_revised2018_groupmask95.nii.gz"
 #fname_brainmask <- "/gpfs/group/mnh5174/default/lab_resources/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_2.3mm.nii"
 #fname_censor1D <- "/gpfs/group/mnh5174/default/MMClock/MR_Proc/10637_20140304/mni_5mm_wavelet/clock1/motion_info/censor_union.1D"
+
 
 #defaults
 njobs <- 4
@@ -89,6 +91,7 @@ cm_partial <- FALSE #TRUE for partial correlation methods
 pm <- c()
 pm_partial <- c()
 roi_reduce <- "pca"
+roi_diagnostics_fname <- NULL
 fisherz <- FALSE
 dropvols <- 0
 pcorr_cvsplit <- 10 #default 10-fold cross-validation for parcor functions
@@ -125,6 +128,9 @@ while (argpos <= length(args)) {
     njobs <- as.integer(args[argpos + 1])
     argpos <- argpos + 2
     if (is.na(njobs)) { stop("-njobs must be an integer") }
+  } else if (args[argpos] == "-roi_diagnostics") {
+    roi_diagnostics_fname <- args[argpos + 1]
+    argpos <- argpos + 2
   } else if (args[argpos] == "-roi_reduce") {
     roi_reduce <- args[argpos + 1]
     argpos <- argpos + 2
@@ -350,6 +356,7 @@ if (!is.null(fname_brainmask)) {
   #brain mask and roi mask must be of same dimension
   stopifnot(identical(dim(brainmask)[1:3], dim(roimask)[1:3]))
 
+  roimask_prebrainmask <- roimask #for tracking filtering
   message("  ROI voxels before applying brainmask: ", sum(roimask > 0, na.rm=TRUE))
   
   #remove non-brain voxels
@@ -412,11 +419,24 @@ roimats <- lapply(maskvals, function(v) {
   t(mat) #transpose matrix so that it is time x voxels
 })
 
+#add numeric index of mask (1:max) for keeping track of number of good voxels inside roimats loop
+#this is necessary if there is discontinuity in the mask values (e.g., jumps between 10 and 12)
+roimats <- lapply(1:length(roimats), function(i) {
+  attr(roimats[[i]], "maskindex") <- i
+  return(roimats[[i]])
+})
+
 rm(rsproc) #clear imaging file from memory now that we have obtained the roi time series 
+
+
+if (!is.null(roi_diagnostics_fname)) {
+  nvox_observed_per_roi <- sapply(roimats, ncol)
+  nvox_good_per_roi <- rep(NA, length(nvox_observed_per_roi))
+}
 
 message("Obtaining a single time series within each ROI using: ", roi_reduce)
 roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, .noexport=c("rsproc")) %do% { #minimal time savings from dopar here, and it prevents message output
-  ##roivox is a time x voxels matrix
+  ##roivox is a time x voxels matrix for a single ROI
   ##data cleaning steps: remove voxels that are 1) partially or completely missing; 2) all 0; 3) variance = 0 (constant)
   ##leave out variance > mean check because bandpass-filtered data are demeaned
   badvox <- apply(roivox, 2, function(voxts) {
@@ -427,6 +447,8 @@ roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, 
     else FALSE #good voxel
   })
 
+  if (!is.null(roi_diagnostics_fname)) { nvox_good_per_roi[attr(roivox, "maskindex")] <- sum(!badvox) }
+  
   if (sum(!badvox) < 5) {
     ##only reduce if there are at least 5 voxels to average over after reduction above
     ##otherwise return NA time series
@@ -456,6 +478,18 @@ roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, 
   }
 
   return(ts)
+}
+
+if (!is.null(roi_diagnostics_fname)) {
+  tt <- as.data.frame(table(roimask_prebrainmask))
+  names(tt) <- c("maskval", "nvox_total")
+  tt$maskval <- as.numeric(as.character(tt$maskval))
+  tt <- subset(tt, maskval != 0)
+  roi_diagnostics <- data.frame(dataset=fname_rsproc, maskval=maskvals, nvox_good=nvox_good_per_roi, nvox_observed=nvox_observed_per_roi)
+  roi_diagnostics <- merge(roi_diagnostics, tt, by="maskval")
+  roi_diagnostics$prop_masked <- with(roi_diagnostics, 1 - nvox_observed/nvox_total)
+  roi_diagnostics$prop_missing <- with(roi_diagnostics, 1 - nvox_good/nvox_observed)
+  write.csv(file=roi_diagnostics_fname, roi_diagnostics, row.names=FALSE)
 }
 
 #need to print roi problems outside of foreach since stdout is dumped
