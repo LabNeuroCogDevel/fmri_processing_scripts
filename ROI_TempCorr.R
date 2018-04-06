@@ -40,6 +40,7 @@ printHelp <- function() {
       "  -ts_out_file <filename for time series output>: Output a file containing the average time series for each region before computing correlations.",
       "  -ts_only: stop before running correlations. useful with -ts_out_file",
       "  -roi_diagnostics <file>: Create a file with information about the number of voxels per ROI in the mask versus the data, including the proportion missing.",
+      "  -write_header 1/0: Whether to include a header row with variable names in the output. Variables are named according to their corresponding mask values. Default: 0",
       "",
       "If the -ts file does not match the -rois file, the -ts file will be resampled to match the -rois file using 3dresample. This requires that the images be coregistered,",
       "  in the same stereotactic space, and have the same grid size.",
@@ -96,7 +97,7 @@ fisherz <- FALSE
 dropvols <- 0
 pcorr_cvsplit <- 10 #default 10-fold cross-validation for parcor functions
 ts_only <- FALSE # only compute timeseries, not correlation matrix
-
+write_header <- FALSE #whether to include mask value as a header row in outputs
 na_string <- "NA"
 clustersocketport <- 10290
 
@@ -166,6 +167,11 @@ while (argpos <= length(args)) {
     clustersocketport <- as.integer(args[argpos + 1])
     argpos <- argpos + 2
     if (is.na(njobs)) { stop("-port must be an integer") }
+  } else if (args[argpos] == "-write_header") {
+    write_header <- as.integer(args[argpos + 1])
+    argpos <- argpos + 2
+    if (is.na(write_header) || (!write_header %in% c(0,1))) { stop("-write_header must be 1 or 0")
+    } else { write_header <- as.logical(write_header) }
   } else {
     stop("Not sure what to do with argument: ", args[argpos])
   }
@@ -527,7 +533,7 @@ if (nchar(ts_out_file) > 0L) {
   } else {
     df <- cbind(censor=censorvec, roiavgmat)
   }
-  write.table(df, file=ts_out_file, col.names=F, row.names=F)
+  write.table(df, file=ts_out_file, col.names=write_header, row.names=FALSE)
 }
 
 #If we only want the timeseries, quit before computing correlations
@@ -545,10 +551,10 @@ for (m in 1:length(corr_method)) {
   if (grepl(".*\\.gz$", this_out_file, perl=TRUE)) {
     ##write compressed
     gzf <- gzfile(this_out_file, "w")
-    write.table(cormat, file=gzf, col.names=FALSE, row.names=FALSE, na=na_string)
+    write.table(cormat, file=gzf, col.names=write_header, row.names=FALSE, na=na_string)
     close(gzf)    
   } else {
-    write.table(cormat, file=this_out_file, col.names=FALSE, row.names=FALSE, na=na_string)
+    write.table(cormat, file=this_out_file, col.names=write_header, row.names=FALSE, na=na_string)
   }
 }
 

@@ -67,6 +67,7 @@ function resetcfg {
     preproc_resume=0 #whether to prefer preprocessFunctional -resume
     functional_dirpattern=
     functional_dicompattern=
+    functional_walltime=
     detect_refimg=0
     use_job_array=0 #whether to use PBS job array
     use_moab=0 #whether to use Moab to handle job arrays (instead of torque)
