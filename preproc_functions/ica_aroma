@@ -52,7 +52,7 @@ function ica_aroma {
 
 	    local warpsuffix=
 	    [ $no_warp -eq 1 ] && local warpsuffix="-warp func_to_${templateName}_warpfield"
-	    rel "python \"${scriptDir}/ica_aroma/ICA_AROMA.py\" -in \"${preAroma}\" -out ica_aroma -mc motion.par $warpsuffix"
+	    rel "python \"${scriptDir}/ica_aroma/ICA_AROMA.py\" -tr ${tr} -in \"${funcdir}/${preAroma}${ext}\" -out \"${funcdir}/ica_aroma\" -mc \"${funcdir}/motion.par\" $warpsuffix"
 	else
 	    rel "ICA-AROMA support only provided for FSL and Fonov MNI templates at the moment." c
 	    rel "Must use -template_brain <MNI_2mm|MNI_2.3mm|MNI_3mm|MNI_FSL_3mm>" c
