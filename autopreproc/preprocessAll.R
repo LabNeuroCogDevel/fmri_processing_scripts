@@ -46,12 +46,13 @@ library(iterators)
 #pull in cfg environment variables from bash script
 mprage_dirpattern = Sys.getenv("mprage_dirpattern") #wildcard pattern defining names of relevant structural scans
 mprage_dicompattern = Sys.getenv("mprage_dicompattern")
-functional_dirpattern = Sys.getenv("functional_dirpattern")
-functional_dicompattern = Sys.getenv("functional_dicompattern")
+functional_dirpattern = strsplit(Sys.getenv("functional_dirpattern"), ",")[[1L]]
+functional_dicompattern = strsplit(Sys.getenv("functional_dicompattern"), ",")[[1L]]
+if (identical(functional_dicompattern, character(0))) { functional_dicompattern = "MR*" }
 
 preprocessed_dirname = Sys.getenv("preprocessed_dirname") #name of subdirectory output for each processed fMRI scan
-paradigm_name = Sys.getenv("paradigm_name") #name of paradigm used as a prefix for processed run directories
-n_expected_funcruns = Sys.getenv("n_expected_funcruns") #number of runs per subject of the task
+paradigm_name = strsplit(Sys.getenv("paradigm_name"), ",")[[1L]] #name of paradigm used as a prefix for processed run directories
+n_expected_funcruns = strsplit(Sys.getenv("n_expected_funcruns"), ",")[[1]] #number of runs per subject of the task
 preproc_call = Sys.getenv("preproc_call") #parameters passed forward to preprocessFunctional
 preprocessMprage_call = Sys.getenv("preprocessMprage_call") #parameters passed forward to preprocessMprage
 MB_src = Sys.getenv("loc_mb_root") #Name of directory containing offline-reconstructed fMRI data (only relevant for Tae Kim sequence Pittburgh data)
@@ -60,6 +61,13 @@ useOfflineMB = ifelse(nchar(MB_src) > 0, TRUE, FALSE) #whether to use offline-re
 proc_freesurfer = as.numeric(Sys.getenv("proc_freesurfer")) #whether to run the structural scan through FreeSurferPipeline after preprocessMprage
 preproc_resume = as.numeric(Sys.getenv("preproc_resume"))
 if (is.na(preproc_resume)) { preproc_resume <- FALSE } else if (preproc_resume==0) { preproc_resume <- FALSE } else if (preproc_resume==1) { preproc_resume <- TRUE }
+
+#handle situation where we have multiple paradigms
+if (length(functional_dirpattern) != length(paradigm_name)) { stop("Length of functional_dirpattern does not match length of paradigm_name") }
+if (length(paradigm_name) > 1L) {
+  if (length(n_expected_funcruns) == 1L) { n_expected_funcruns <- rep(n_expected_funcruns, length(paradigm_name)) } #replicate number of expected runs per paradigm
+  if (length(functional_dicompattern) == 1L) { functional_dicompattern <- rep(functional_dicompattern, length(paradigm_name)) } #replicate dicom pattern expectation per paradigm  
+}
 
 fs_subjects_dir = NULL
 if (is.na(proc_freesurfer)) {
@@ -155,7 +163,7 @@ if (is.na(detect_refimg)) {
 
 #setup default parameters
 if (mprage_dicompattern == "") { mprage_dicompattern = "MR*" }
-if (functional_dicompattern == "") { functional_dicompattern = "MR*" }
+
 if (preprocessMprage_call == "") { preprocessMprage_call = paste0("-delete_dicom archive -template_brain MNI_2mm") }
 
 #add dicom pattern into the mix
@@ -216,7 +224,7 @@ cat("  Process structurals through FreeSurferPipeline: ", as.character(proc_free
 cat("  Process functional data: ", as.character(proc_functional), "\n")
 cat("  Destination root directory for processed MRI files:", loc_mrproc_root, "\n")
 cat("  Destination subdirectory for each subject:", preprocessed_dirname, "\n")
-cat("  Name of paradigm folder:", paradigm_name, ", expected runs:", n_expected_funcruns, "\n")
+cat("  Name of paradigm folder:", paste(paradigm_name, collapse=","), ", expected runs:", paste(n_expected_funcruns, collapse=","), "\n")
 cat("  Prefer preprocessFunctional -resume for directories in process: ", as.character(preproc_resume), "\n")
 
 if (useOfflineMB) {
@@ -531,18 +539,26 @@ for (d in subj_dirs) {
   if (!file.exists(outdir)) { #create preprocessed root folder if absent
     dir.create(outdir, showWarnings=FALSE, recursive=TRUE)
   } else {
-    ##preprocessed folder exists, check for .preprocessfunctional_complete files
-    extant_funcrundirs <- list.dirs(path=outdir, pattern=paste0("^", paradigm_name,"[0-9]+$"), full.names=TRUE, recursive=FALSE)
-    if (length(extant_funcrundirs) > 0L &&
-          length(extant_funcrundirs) >= n_expected_funcruns &&
-          all(sapply(extant_funcrundirs, function(x) { file.exists(file.path(x, ".preprocessfunctional_complete")) }))) {
-      cat("   preprocessing already complete for all functional run directories in: ", outdir, "\n\n")
+    ##preprocessed folder exists, check for .preprocessfunctional_complete files for all paradigms
+    paradigms_complete <- 0
+    for (p in 1:length(paradigm_name)) {      
+      extant_funcrundirs <- list.dirs(path=outdir, pattern=paste0("^", paradigm_name[p],"[0-9]+$"), full.names=TRUE, recursive=FALSE)
+      if (length(extant_funcrundirs) > 0L &&
+            length(extant_funcrundirs) >= n_expected_funcruns[p] &&
+            all(sapply(extant_funcrundirs, function(x) { file.exists(file.path(x, ".preprocessfunctional_complete")) }))) {
+        cat("   preprocessing already complete for all functional run directories for paradigm:", paradigm_name[p], "in: ", outdir, "\n\n")
+        paradigms_complete <- paradigms_complete + 1
+      }
+    }
+    if (paradigms_complete == length(paradigm_name)) {
+      cat("   preprocessing already complete for all paradigm run directories in: ", outdir, "\n\n")
       next
     }
   }
 
   #Handle the use of offline-reconstructed hdr/img files as the starting point of preprocessFunctional (Tae Kim Pittsburgh data)
   if (useOfflineMB) {
+    ##NB. Offline MB processing does not currently support multi-paradigm execution using the comma-separated argument approach
     ##identify original reconstructed flies for this subject
     mbraw_dirs <- list.dirs(path=MB_src, recursive = FALSE, full.names=FALSE) #all original recon directories, leave off full names for grep
 
@@ -645,58 +661,61 @@ for (d in subj_dirs) {
 
   } else {
     ##check for existing run directories and setup copy queue as needed
-    funcdirs <- sort(normalizePath(Sys.glob(file.path(d, functional_dirpattern))))
-
-    if (length(funcdirs) == 0L) {
-      message("Cannot find any functional runs directories in ", d, " for pattern ", functional_dirpattern)
-      message("Skipping participant for now")
-      next
-    } else if (length(funcdirs) != n_expected_funcruns) {
-      message("Cannot find the expected number of functional run directories in ", d, " for pattern ", functional_dirpattern)
-      message("Skipping participant for now")
-      next
-    }
-
-    if (detect_refimg) {
-      refimgs <- d #pass forward subject's raw directory to preprocessFunctional to have refimg detected
-    } else  {
-      refimgs <- NA #need to handle Prisma CMRR MB data here where reference images are placed in separate directory
-      ##because of the unsophisticated cp -rp approach for dicoms, we cannot do the dir.create step above and then
-      ##list.dirs below. This works in the MB case because of the more careful checks on number of runs etc.
-    }
-    
-    subjdf <- c()
-    for (r in 1:n_expected_funcruns) {
-
-      funcdir <- file.path(outdir, paste0(paradigm_name, r))
-      funcnifti <- paste0(paradigm_name, r, ".nii.gz")
-      expectedNIfTI <- file.path(funcdir, funcnifti)
+    for (p in 1:length(paradigm_name)) {
       
-      if (!file.exists(funcdir)) {
-        ##for now, the script only handles the case where the whole directory is missing
-        ##below is some scaffolding for a more sophisticated variant that checks for the unprocessed NIfTI etc.
-        ##but not going to put in time to perfect it right now
+      funcdirs <- sort(normalizePath(Sys.glob(file.path(d, functional_dirpattern[p]))))
 
-        ##expectedNIfTI <- file.path(outdir, paste0(paradigm_name, r), paste0(paradigm_name, r, ".nii.gz"))
-        ##cat("Searching for file: ", expectedNIfTI, "\n")
-        ##if (!file.exists(expectedNIfTI)) {
-        ##    ##Check for existence of at least one matching DICOM file in folder (in case DICOM->NIfTI hasn't run yet)
-        ##    ndicoms <- list.files(path=file.path(outdir, paste0(paradigm_name, r)), pattern=functional_dicompattern, full.names = TRUE)
-        ##    if (length(ndicoms==0L)) {
-        ##        message("Cannot find matching DICOMs in directory", 
-        ##    }
-
-        ##add raw DICOM directory to copy queue
-        ##dir.create(funcdir) #create empty run directory for now
-        functional_src_queue <- c(functional_src_queue, funcdirs[r])
-        functional_dest_queue <- c(functional_dest_queue, funcdir)
+      if (length(funcdirs) == 0L) {
+        message("Cannot find any functional runs directories in ", d, " for pattern ", functional_dirpattern[p])
+        message("Skipping participant for now")
+        next
+      } else if (length(funcdirs) != n_expected_funcruns[p]) {
+        message("Cannot find the expected number of functional run directories,", n_expected_funcruns[p], "in", d, " for pattern ", functional_dirpattern[p])
+        message("Skipping participant for now")
+        next
       }
 
-      subjdf <- rbind(subjdf, data.frame(funcdir=funcdir, funcnifti=funcnifti, refimgs=refimgs, magdir=magdir, phasedir=phasedir, posdir=posdir, negdir=negdir, mpragedir=mpragedir, stringsAsFactors=FALSE))
+      if (detect_refimg) {
+        refimgs <- d #pass forward subject's raw directory to preprocessFunctional to have refimg detected
+      } else  {
+        refimgs <- NA #need to handle Prisma CMRR MB data here where reference images are placed in separate directory
+        ##because of the unsophisticated cp -rp approach for dicoms, we cannot do the dir.create step above and then
+        ##list.dirs below. This works in the MB case because of the more careful checks on number of runs etc.
+      }
+      
+      subjdf <- c()
+      for (r in 1:n_expected_funcruns[p]) {
+
+        funcdir <- file.path(outdir, paste0(paradigm_name[p], r))
+        funcnifti <- paste0(paradigm_name[p], r, ".nii.gz")
+        expectedNIfTI <- file.path(funcdir, funcnifti)
+        
+        if (!file.exists(funcdir)) {
+          ##for now, the script only handles the case where the whole directory is missing
+          ##below is some scaffolding for a more sophisticated variant that checks for the unprocessed NIfTI etc.
+          ##but not going to put in time to perfect it right now
+
+          ##expectedNIfTI <- file.path(outdir, paste0(paradigm_name, r), paste0(paradigm_name, r, ".nii.gz"))
+          ##cat("Searching for file: ", expectedNIfTI, "\n")
+          ##if (!file.exists(expectedNIfTI)) {
+          ##    ##Check for existence of at least one matching DICOM file in folder (in case DICOM->NIfTI hasn't run yet)
+          ##    ndicoms <- list.files(path=file.path(outdir, paste0(paradigm_name, r)), pattern=functional_dicompattern, full.names = TRUE)
+          ##    if (length(ndicoms==0L)) {
+          ##        message("Cannot find matching DICOMs in directory", 
+          ##    }
+
+          ##add raw DICOM directory to copy queue
+          ##dir.create(funcdir) #create empty run directory for now
+          functional_src_queue <- c(functional_src_queue, funcdirs[r])
+          functional_dest_queue <- c(functional_dest_queue, funcdir)
+        }
+
+        subjdf <- rbind(subjdf, data.frame(funcdir=funcdir, funcnifti=funcnifti, funcdcm=functional_dicompattern[p], refimgs=refimgs, magdir=magdir, phasedir=phasedir, posdir=posdir, negdir=negdir, mpragedir=mpragedir, stringsAsFactors=FALSE))
+      }
+      
+      all_funcrun_dirs[[ paste0(d, "_", paradigm_name[p]) ]] <- subjdf
     }
-    
-    all_funcrun_dirs[[d]] <- subjdf
-  }  
+  }
 }
 
 #handle functional file i/o before initiating preprocessFunctional
@@ -717,7 +736,7 @@ if (useOfflineMB) {
         ##use 3dcopy to copy dataset as .nii.gz
         system(paste0("3dcopy \"", mb_src_queue[fnum], "\" \"", mb_dest_queue[fnum], "\""), wait=TRUE)     
       }
-    }   
+    }
   }
 } else {
   if (length(functional_src_queue) > 0L) {
@@ -748,29 +767,29 @@ if (asynchronous_processing) {
 
 if (!is.null(all_funcrun_dirs) && nrow(all_funcrun_dirs) > 0L) {
   #loop over directories to process
-  ##for (cd in all_funcrun_dirs) {
+  ##for (curdir in all_funcrun_dirs) {
   f <- foreach(i=1:nrow(all_funcrun_dirs), .inorder=FALSE) %dopar% {
-    cd <- all_funcrun_dirs[i,]
+    curdir <- all_funcrun_dirs[i,]
     
     resumepart <- funcpart <- mpragepart <- fmpart <- separt <- refimgpart <- ""
-    if (dir.exists(cd$funcdir) && file.exists(file.path(cd$funcdir, ".preprocessfunctional_incomplete")) && preproc_resume) {
+    if (dir.exists(curdir$funcdir) && file.exists(file.path(curdir$funcdir, ".preprocessfunctional_incomplete")) && preproc_resume) {
       resumepart <- "-resume"
       preproc_call <- "" #clear other settings
     } else {
       if (useOfflineMB) {
-        funcpart <- paste("-4d", cd$funcnifti)
+        funcpart <- paste("-4d", curdir$funcnifti)
       } else {
-        funcpart <- paste0("-dicom \"", functional_dicompattern, "\" -delete_dicom archive -output_basename ", basename(cd$funcdir)) #assuming archive here
+        funcpart <- paste0("-dicom \"", curdir$funcdcm, "\" -delete_dicom archive -output_basename ", basename(curdir$funcdir)) #assuming archive here
       }
       
-      mpragepart <- paste("-mprage_bet", file.path(cd$mpragedir, "mprage_bet.nii.gz"), "-warpcoef", file.path(cd$mpragedir, paste0("mprage_warpcoef", gradunwarpsuffix, ".nii.gz")))
+      mpragepart <- paste("-mprage_bet", file.path(curdir$mpragedir, "mprage_bet.nii.gz"), "-warpcoef", file.path(curdir$mpragedir, paste0("mprage_warpcoef", gradunwarpsuffix, ".nii.gz")))
 
-      if (!is.na(cd$magdir)) { fmpart <- paste0("-fm_phase \"", cd$phasedir, "\" -fm_magnitude \"", cd$magdir, "\" -fm_cfg ", fieldmap_cfg) }
+      if (!is.na(curdir$magdir)) { fmpart <- paste0("-fm_phase \"", curdir$phasedir, "\" -fm_magnitude \"", curdir$magdir, "\" -fm_cfg ", fieldmap_cfg) }
 
       #-epi_pedir and -epi_echospacing need to be specified in preproc_call of config file
-      if (!is.na(cd$posdir)) { separt <- paste0("-se_phasepos \"", cd$posdir, "\" -se_phaseneg \"", cd$negdir, "\"") }
+      if (!is.na(curdir$posdir)) { separt <- paste0("-se_phasepos \"", curdir$posdir, "\" -se_phaseneg \"", curdir$negdir, "\"") }
       
-      if (!is.na(cd$refimgs)) { refimgpart <- paste0("-func_refimg \"", cd$refimgs, "\" ") }
+      if (!is.na(curdir$refimgs)) { refimgpart <- paste0("-func_refimg \"", curdir$refimgs, "\" ") }
     }
 
     ##run preprocessFunctional
@@ -778,13 +797,13 @@ if (!is.null(all_funcrun_dirs) && nrow(all_funcrun_dirs) > 0L) {
 
     if (asynchronous_processing) {
       output_script <- c(preproc_one,
-                         paste("cd", cd$funcdir),
+                         paste("cd", curdir$funcdir),
                          paste("preprocessFunctional", args, ">preprocessFunctional_stdout 2>preprocessFunctional_stderr"))
       cat(output_script, sep="\n", file=file.path(qsubdir, paste0("qsub_one_preprocessFunctional_", i)))
     } else {
-      setwd(cd$funcdir)
+      setwd(curdir$funcdir)
       ret_code <- system2("preprocessFunctional", args, stderr="preprocessFunctional_stderr", stdout="preprocessFunctional_stdout")
-      if (ret_code != 0) { message("preprocessFunctional failed in directory: ", cd$funcdir) }
+      if (ret_code != 0) { message("preprocessFunctional failed in directory: ", curdir$funcdir) }
     }
   }
 
