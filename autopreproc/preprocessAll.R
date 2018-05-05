@@ -333,7 +333,8 @@ for (d in mprage_dirs) {
         } else {
           message("Job id in .preprocessMprage_jobid, but appears not to be running:", jj)
           message("You should probably delete this directory (not doing this for now:", d)
-        }          
+        }         
+      }
     }
   } else if (!file.exists(file.path(outdir, "mprage")) ||   #output directory exists, but mprage subdirectory does not
                !file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {   #mprage subdirectory exists, but complete file does not
