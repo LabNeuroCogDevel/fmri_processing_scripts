@@ -277,16 +277,17 @@ mprage_dirs_byid <- split(mprage_dirs, subids)
 mprage_dirs <- unlist(lapply(mprage_dirs_byid, function(subject) {
   #making assumptions that series numbers fall either first or last and that the last series number should be preferred
   if (length(subject) > 1L) {
+    fname <- basename(subject)
     message("Multiple mprage folders identified for a single subject. Will prefer the one with the highest series number")
-    print(subject, row.names=FALSE)
-    have_leading_digits <- grepl("^\\d+.*", subject, perl=TRUE)
-    have_trailing_digits <- grepl(".*[^\\d]+\\d+$", subject, perl=TRUE)
+    print(fname, row.names=FALSE)
+    have_leading_digits <- grepl("^\\d+.*", fname, perl=TRUE)
+    have_trailing_digits <- grepl(".*[^\\d]+\\d+$", fname, perl=TRUE)
     if (all(have_trailing_digits)) {
       #require at least one preceding non-digit character to avoid .* greedy matching all but last digit
-      sernum <- as.numeric(sub(".*[^\\d]+(\\d+)$", "\\1", subject, perl=TRUE))
+      sernum <- as.numeric(sub(".*[^\\d]+(\\d+)$", "\\1", fname, perl=TRUE))
     } else if (all(have_leading_digits)) {
-      sernum <- as.numeric(sub("^(\\d+).*", "\\1", subject, perl=TRUE))
-    } else { stop("Unable to parse series numbers from inputs: ", subject) }
+      sernum <- as.numeric(sub("^(\\d+).*", "\\1", fname, perl=TRUE))
+    } else { stop("Unable to parse series numbers from inputs: ", fname) }
 
     return(subject[which.max(sernum)])
   } else { return(subject) }
@@ -303,6 +304,8 @@ mprage_dirs <- unlist(lapply(mprage_dirs_byid, function(subject) {
 ##figure out which mprage scans need to be processed
 ##then process in parallel below
 mprage_toprocess <- c()
+mprage_jobid <- c() #for job array tracking of preprocessMprage
+
 for (d in mprage_dirs) {
   subid <- basename(dirname(d))
   outdir <- file.path(loc_mrproc_root, subid)
@@ -311,13 +314,33 @@ for (d in mprage_dirs) {
     ##create preprocessed folder if absent
     dir.create(outdir, showWarnings=FALSE, recursive=TRUE)
     mprage_toprocess <- c(mprage_toprocess, d)
+  } else if (file.exists(file.path(d, ".preprocessmprage_incomplete"))) {
+    ff <- file.info(file.path(d, ".preprocessmprage_incomplete"))
+    if (difftime(Sys.time(), as.POSIXct(ff[,"mtime"]), units="hours") > 48) {
+      message("Mprage directory is incomplete, but was last updated more than 48 hours ago. Restarting processing.")
+      print(d)
+      system(paste("rm -rf", d))
+      mprage_toprocess <- c(mprage_toprocess, d)
+    } else {
+      message("Mprage directory appears to be in process: .preprocessmprage_incomplete last modified < 48 hours ago")
+      print(d)
+      if (file.exists(file.path(d, ".preprocessMprage_jobid"))) {
+        jj <- readLines(file.path(d, ".preprocessMprage_jobid"))
+        jobrunning <- system2("qstat", jj, stdout=NULL, stderr=NULL)
+        if (jobrunning == 0) {
+          message("Adding current job to mprage dependency: ", jj)
+          mprage_jobid <- c(mprage_jobid, jj)
+        } else {
+          message("Job id in .preprocessMprage_jobid, but appears not to be running:", jj)
+          message("You should probably delete this directory (not doing this for now:", d)
+        }          
+    }
   } else if (!file.exists(file.path(outdir, "mprage")) ||   #output directory exists, but mprage subdirectory does not
                !file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {   #mprage subdirectory exists, but complete file does not
     mprage_toprocess <- c(mprage_toprocess, d)
   }
 }
 
-mprage_jobid <- NULL #for job array tracking of preprocessMprage
 mprage_copy_jobid <- NULL #for job array tracking of mprage file copy
 if (length(mprage_toprocess) > 0L) {
   cat("About to process the following mprage directories:\n")
@@ -355,15 +378,22 @@ if (length(mprage_toprocess) > 0L) {
         preprocessMprage_call <- paste(preprocessMprage_call, "-nifti mprage.nii.gz")
       }
 
-      if (file.exists("need_analyze")) { unlink("need_analyze") } #remove dummy file
-      if (file.exists("analyze")) { unlink("analyze") } #remove dummy file
+      if (file.exists(file.path(mpragedir, "need_analyze"))) { unlink(file.path(mpragedir, "need_analyze")) } #remove dummy file
+      if (file.exists(file.path(mpragedir, "analyze"))) { unlink(file.path(mpragedir, "analyze")) } #remove dummy file
 
       if (asynchronous_processing) {
-        #create preprocessing script for the ith dataset
-        output_script <- c(preproc_one,
-                           paste("cd", mpragedir),
-                           paste("preprocessMprage", preprocessMprage_call, ">preprocessMprage_stdout 2>preprocessMprage_stderr"))
-        cat(output_script, sep="\n", file=file.path(qsubdir, paste0("qsub_one_preprocessMprage_", i)))
+        if (file.exists(file.path(mpragedir, ".preprocessMprage_jobid"))) {
+          #this should only fire if the checks above queue the mprage, but then it starts in the meantime... is this unlikely/stupid?
+          message("Weird: getting stuck because this exists: ", file.path(mpragedir, ".preprocessMprage_jobid"))
+        } else {
+          #create preprocessing script for the ith dataset
+          output_script <- c(preproc_one,
+            paste("cd", mpragedir),
+            paste("echo $PBS_JOBID > .preprocessMprage_jobid"),
+            paste("preprocessMprage", preprocessMprage_call, ">preprocessMprage_stdout 2>preprocessMprage_stderr"),
+            paste("[ -r .preprocessMprage_jobid ] && rm .preprocessMprage_jobid"))
+          cat(output_script, sep="\n", file=file.path(qsubdir, paste0("qsub_one_preprocessMprage_", i)))
+        }
       } else {
         setwd(mpragedir)
         ret_code <- system2("preprocessMprage", preprocessMprage_call, stderr="preprocessMprage_stderr", stdout="preprocessMprage_stdout")
@@ -380,9 +410,11 @@ if (length(mprage_toprocess) > 0L) {
 
   if (asynchronous_processing) {
     #execute mprage array job
-    mprage_jobid <- exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=length(mprage_toprocess), jobprefix="qsub_one_preprocessMprage_", allscript="qsub_all_mprage.bash",
+    mprage_jobid <- c(mprage_jobid,
+      exec_pbs_array(max_concurrent_jobs=njobs, njobstorun=length(mprage_toprocess), jobprefix="qsub_one_preprocessMprage_", allscript="qsub_all_mprage.bash",
       qsubdir=qsubdir, job_array_preamble=job_array_preamble, walltime=mprage_walltime, waitfor=mprage_copy_jobid,
       use_moab=use_moab, use_massive_qsub=use_massive_qsub)
+    )
   }
 }
 
@@ -418,13 +450,15 @@ if (proc_freesurfer) {
       if (asynchronous_processing) {
         #create preprocessing script for the ith dataset
         output_script <- c(preproc_one,
-                           paste0("[ ! -d \"", fs_toprocess[d], "\" ] && { echo \"Cannot find directory: ", fs_toprocess[d], ". Aborting.\"; exit 0; }"),
-                           paste0("[ ! -r \"", file.path(fs_toprocess[d], ".preprocessmprage_complete"),
-                                  "\" ] && { echo \"Cannot find .preprocessmprage_complete in: ", fs_toprocess[d], ". Aborting.\"; exit 0; }"),
-                           paste("cd", fs_toprocess[d]),
-                           "[ -r \"mprage_biascorr_postgdc.nii.gz\" ] && t1=mprage_biascorr_postgdc.nii.gz || t1=mprage_biascorr.nii.gz",
-                           "[ -r \"mprage_bet_postgdc.nii.gz\" ] && t1brain=mprage_bet_postgdc.nii.gz || t1brain=mprage_bet.nii.gz",
-                           paste("FreeSurferPipeline -subject", ids_toproc[d], "-subjectDir", fs_subjects_dir, "-T1 $t1 -T1brain $t1brain >FreeSurferPipeline_stdout 2>FreeSurferPipeline_stderr"))
+          paste("echo $PBS_JOBID > .FreeSurferPipeilne_jobid"),          
+          paste0("[ ! -d \"", fs_toprocess[d], "\" ] && { echo \"Cannot find directory: ", fs_toprocess[d], ". Aborting.\"; exit 0; }"),
+          paste0("[ ! -r \"", file.path(fs_toprocess[d], ".preprocessmprage_complete"),
+            "\" ] && { echo \"Cannot find .preprocessmprage_complete in: ", fs_toprocess[d], ". Aborting.\"; exit 0; }"),
+          paste("cd", fs_toprocess[d]),
+          "[ -r \"mprage_biascorr_postgdc.nii.gz\" ] && t1=mprage_biascorr_postgdc.nii.gz || t1=mprage_biascorr.nii.gz",
+          "[ -r \"mprage_bet_postgdc.nii.gz\" ] && t1brain=mprage_bet_postgdc.nii.gz || t1brain=mprage_bet.nii.gz",
+          paste("FreeSurferPipeline -subject", ids_toproc[d], "-subjectDir", fs_subjects_dir, "-T1 $t1 -T1brain $t1brain >FreeSurferPipeline_stdout 2>FreeSurferPipeline_stderr"),
+          "[ -r .FreeSurferPipeline_jobid ] && rm .FreeSurferPipeline_jobid")
         cat(output_script, sep="\n", file=file.path(qsubdir, paste0("qsub_one_FreeSurferPipeline_", d)))
       } else {
         setwd(fs_toprocess[d])

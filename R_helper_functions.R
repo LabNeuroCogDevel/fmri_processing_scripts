@@ -28,7 +28,7 @@ runAFNICommand <- function(args, afnidir=NULL, stdout=NULL, stderr=NULL, ...) {
 ##https://docs.loni.org/wiki/PBS_Job_Chains_and_Dependencies
 exec_pbs_array <- function(max_concurrent_jobs, njobstorun, max_cores_per_node=40,
                            jobprefix="qsub_one_", allscript="qsub_all.bash", qsubdir=tempdir(),
-                           job_array_preamble=NULL, waitfor=NULL, walltime="24:00:00", use_moab=FALSE, use_massive_qsub=FALSE) {
+                           job_array_preamble=NULL, waitfor=c(), walltime="24:00:00", use_moab=FALSE, use_massive_qsub=FALSE) {
 
   if (is.null(job_array_preamble)) { stop("Require job_array_preamble for exec_pbs_array") }
   
@@ -36,7 +36,7 @@ exec_pbs_array <- function(max_concurrent_jobs, njobstorun, max_cores_per_node=4
   nnodes <- ceiling(array_concurrent_jobs/max_cores_per_node)
   ppn <- ceiling(array_concurrent_jobs/nnodes)
 
-  if (!is.null(waitfor)) {
+  if (length(waitfor) > 0L) {
     #do we need another PBS job to finish successfully before this executes?
 
     if (use_moab || use_massive_qsub) {
