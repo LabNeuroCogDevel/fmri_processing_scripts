@@ -347,7 +347,7 @@ funcdir=$(pwd) #define working directory for functional processing
 
 [ ! -d "${funcdir}/qa_images" ] && mkdir "${funcdir}/qa_images"
 [ ! -d "${funcdir}/transforms" ] && mkdir "${funcdir}/transforms"
-qa_imgdir="${funcdir}/qa_images"
+export qa_imgdir="${funcdir}/qa_images" #use export so that TopupPreprocessingAll picks up the directory
 
 ##load necessary modules if running on cluster (specific to ACI at the moment)
 if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then
@@ -590,8 +590,10 @@ if [ -n "$qa_imgdir" ]; then
     rel "Moving registration-related NIfTIs to $qa_imgdir" c
     [ $(imtest epiref_to_template) -eq 1 ] && rel "immv epiref_to_template $qa_imgdir"
     [ $(imtest epiref_to_struct) -eq 1 ] && rel "immv epiref_to_struct $qa_imgdir"
+    [ $(imtest epiref_to_struct_init) -eq 1 ] && rel "immv epiref_to_struct_init $qa_imgdir"
     [ $(imtest func_to_epiref) -eq 1 ] && rel "immv func_to_epiref $qa_imgdir"
     [ $(imtest func_to_struct) -eq 1 ] && rel "immv func_to_struct $qa_imgdir"
+    [ $(imtest unwarp/fmap_to_struct) -eq 1 ] && rel "immv unwarp/fmap_to_struct $qa_imgdir"
 fi
 
 # write finish time, mv incomplete to complete

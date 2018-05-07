@@ -303,44 +303,79 @@ mprage_dirs <- unlist(lapply(mprage_dirs_byid, function(subject) {
 
 ##figure out which mprage scans need to be processed
 ##then process in parallel below
-mprage_toprocess <- c()
+mprage_tocopy <- c() #what directories need to be copied from raw
+mprage_toprocess <- c() #what directories need to be processed
 mprage_jobid <- c() #for job array tracking of preprocessMprage
 
 for (d in mprage_dirs) {
   subid <- basename(dirname(d))
-  outdir <- file.path(loc_mrproc_root, subid)
-  #should probably just use short circuit || here instead of compound if elses
+  outdir <- file.path(loc_mrproc_root, subid) #expected root of subject's directory in MR_Proc
+  expected_mprage_dir <- file.path(loc_mrproc_root, subid, "mprage") #expected mprage directory
+
   if (!file.exists(outdir)) {
     ##create preprocessed folder if absent
     dir.create(outdir, showWarnings=FALSE, recursive=TRUE)
+    mprage_tocopy <- c(mprage_tocopy, d)
+    mprage_toprocess <- c(mprage_toprocess, d)    
+  } else if (!file.exists(expected_mprage_dir)) {
+    ##subject root directory exists in processed folder, but mprage subdirectory does not
+    mprage_tocopy <- c(mprage_tocopy, d)
     mprage_toprocess <- c(mprage_toprocess, d)
-  } else if (file.exists(file.path(d, ".preprocessmprage_incomplete"))) {
-    ff <- file.info(file.path(d, ".preprocessmprage_incomplete"))
-    if (difftime(Sys.time(), as.POSIXct(ff[,"mtime"]), units="hours") > 48) {
-      message("Mprage directory is incomplete, but was last updated more than 48 hours ago. Restarting processing.")
-      print(d)
-      system(paste("rm -rf", d))
-      mprage_toprocess <- c(mprage_toprocess, d)
-    } else {
-      message("Mprage directory appears to be in process: .preprocessmprage_incomplete last modified < 48 hours ago")
-      print(d)
-      if (file.exists(file.path(d, ".preprocessMprage_jobid"))) {
-        jj <- readLines(file.path(d, ".preprocessMprage_jobid"))
-        jobrunning <- system2("qstat", jj, stdout=NULL, stderr=NULL)
-        if (jobrunning == 0) {
-          message("Adding current job to mprage dependency: ", jj)
-          mprage_jobid <- c(mprage_jobid, jj)
-        } else {
-          message("Job id in .preprocessMprage_jobid, but appears not to be running:", jj)
-          message("You should probably delete this directory (not doing this for now:", d)
-        }         
+  } else if (file.exists(file.path(expected_mprage_dir, ".preprocessmprage_complete"))) {
+    next #this directory is already complete, nothing needs to be done (even the next is superfluous)
+  } else {
+    #things get more complicated here
+    
+    #Expected mprage directory exists, but processing is not complete
+    #Figure out whether we need to copy files, reprocess, or just skip out altogether
+    ndicoms <- length(normalizePath(Sys.glob(file.path(expected_mprage_dir, mprage_dicompattern))))
+    has_nii <- length(Sys.glob(file.path(expected_mprage_dir, "mprage.nii.gz"))) > 0L
+    has_jobid <- file.exists(file.path(expected_mprage_dir, ".preprocessMprage_jobid"))
+    preprocessmprage_incomplete <- file.exists(file.path(expected_mprage_dir, ".preprocessmprage_incomplete"))
+
+    #check whether the torque job is running
+    job_running <- FALSE
+    if (has_jobid) {
+      jj <- readLines(file.path(expected_mprage_dir, ".preprocessMprage_jobid"))
+      job_retcode <- system2("qstat", jj, stdout=NULL, stderr=NULL)
+      if (job_recode == 0) { job_running <- TRUE } #0 exit status from qstat indicates that job is active; non-zero means it is not in queue
+      if (!job_running) {
+        message("Job id in .preprocessMprage_jobid, but appears not to be running:", jj)
+        message("You should probably delete this directory (not doing this for now):", expected_mprage_dir)
       }
     }
-  } else if (!file.exists(file.path(outdir, "mprage")) ||   #output directory exists, but mprage subdirectory does not
-               !file.exists(file.path(outdir, "mprage", ".preprocessmprage_complete"))) {   #mprage subdirectory exists, but complete file does not
-    mprage_toprocess <- c(mprage_toprocess, d)
+    
+    if (job_running) {
+      message("Adding currently running job to mprage dependency: ", jj)
+      mprage_jobid <- c(mprage_jobid, jj)      
+      #we shouldn't do any further processing
+    } else if (ndicoms == 0L && !has_nii) {
+      #if we get here, a job is not running and we are missing DICOMs or NIfTI
+      mprage_tocopy <- c(mprage_tocopy, d)
+      mprage_toprocess <- c(mprage_toprocess, d)
+
+      message("Mprage directory exists, but is missing DICOMs and unprocessed NIfTI. Restarting processing.")
+      print(expected_mprage_dir)
+      system(paste("rm -rf", expected_mprage_dir))      
+    } else if (preprocessmprage_incomplete) {
+      #this implies that 1) processing either in progress, 2) the torque job has died, or 3) we aren't using torque
+      ff <- file.info(file.path(expected_mprage_dir, ".preprocessmprage_incomplete"))
+      if (difftime(Sys.time(), as.POSIXct(ff[,"mtime"]), units="hours") > 48) {
+        message("Mprage directory is incomplete, but was last updated more than 48 hours ago. Restarting processing.")
+        print(expected_mprage_dir)
+        system(paste("rm -rf", expected_mprage_dir))
+        mprage_tocopy <- c(mprage_tocopy, d)
+        mprage_toprocess <- c(mprage_toprocess, d)
+      } else {
+        message("Mprage directory appears to be in process: .preprocessmprage_incomplete last modified < 48 hours ago")
+        print(expected_mprage_dir)
+        #nothing further to do here
+      }
+    }    
   }
 }
+
+##TODO: create jobid file when we qsub, not when the job runs
 
 mprage_copy_jobid <- NULL #for job array tracking of mprage file copy
 if (length(mprage_toprocess) > 0L) {

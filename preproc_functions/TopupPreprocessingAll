@@ -387,7 +387,7 @@ rel "convert_xfm -omat transforms/epiref_to_sefmap.mat -concat ${WD}/MotionMatri
 rel "convert_xfm -omat transforms/sefmap_to_epiref.mat -inverse transforms/epiref_to_sefmap.mat" #compute SE -> EpiRef
 
 #create epiref -> fmap image
-qa_image "${WD}/${setarget}" "${WD}/epiref_to_${setarget}" epiref_to_sefmap.png "SE Magnitude overlaid with co-registered epiref (in TopupPreprocessingAll)"
+qa_image "${WD}/${setarget}" "${WD}/epiref_to_${setarget}" "epiref_to_${setarget}.png" "Same-phase SE image overlaid with coregistered epiref (in TopupPreprocessingAll)"
 
 #setup the relevant unwarping coefficients
 #removing the epiref -> sefmap transform from HCP pipeline
