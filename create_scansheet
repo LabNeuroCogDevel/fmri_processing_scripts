@@ -1,0 +1,67 @@
+#!/usr/bin/env Rscript
+library(jsonlite)
+library(data.table)
+
+#read in command line arguments.
+args <- commandArgs(trailingOnly = FALSE)
+
+scriptpath <- dirname(sub("--file=", "", grep("--file=", args, fixed=TRUE, value=TRUE), fixed=TRUE))
+argpos <- grep("--args", args, fixed=TRUE)
+if (length(argpos) > 0L) {
+   args <- args[(argpos+1):length(args)]
+} else {
+  args <- c()
+}
+
+if (length(args) == 0L) {
+  message("create_scansheet expects the root of the MR_Raw directory as the first parameter.\n")
+  #printHelp()
+  quit(save="no", 1, FALSE)
+}
+
+rawdir <- args[1]
+#rawdir <- "/gpfs/group/mnh5174/default/PANDAA/MR_Raw"
+
+setwd(rawdir)
+alldf <- list()
+#make sure we have directories that exist, not symbolic links or other weird things
+subjdirs <- unlist(sapply(list.dirs(rawdir, full.names=TRUE, recursive=FALSE), function(d) {
+  i <- file.info(d)
+  if (!is.na(i$isdir) && i$isdir) { return(d)
+  } else { return(NULL)
+  }
+}))
+
+for (s in subjdirs) {
+  setwd(s)
+  rundirs <- sort(grep("\\d+_", list.dirs(s, full.names=TRUE, recursive=FALSE), perl=TRUE, value=TRUE))
+  for (r in rundirs) {
+    setwd(r)
+    subjid <- basename(dirname(r))
+    run_name <- basename(r)
+    jsonfile <- file.path(r, paste0(run_name, ".json"))
+    if (!file.exists(jsonfile)) {
+      system(paste("dcm2niix -ba n -b o -f", run_name, ".")) #create the json file if missing
+    }
+
+    j <- read_json(jsonfile)
+    alldf[[paste0(subjid, "_", run_name)]] <- list(ID=subjid, run_name=run_name, location=j$InstitutionName,
+      protocol_name=j$ProtocolName, series_number=j$SeriesNumber,
+      acq_date_time=j$AcquisitionDateTime, dcm_PatientName=j$PatientName, dcm_PatientID=j$PatientID,
+      tr=j$RepetitionTime, echo_time=j$EchoTime, flip_angle=j$FlipAngle,
+      slice_thickness=j$SliceThickness, in_plane_voxels=j$BaseResolution,
+      phase_encoding_direction=j$PhaseEncodingDirection,
+      effective_echo_spacing=j$EffectiveEchoSpacing,
+      bandwidth=j$PixelBandwidth)
+  }
+  
+}
+
+
+#if fields are missing in the json, we will get NULLs. Replace these with NAs to make it friendly to a data.frame structure.
+alldf <- lapply(alldf, function(run) {
+  lapply(run, function(x) ifelse(is.null(x), NA, x))
+})
+alldf_bound <- rbindlist(alldf)
+
+write.csv(alldf_bound, file=file.path(rawdir, "scansheet.csv"), col.names=TRUE, row.names=FALSE)

@@ -166,8 +166,11 @@ function compute_nuisance_regressors {
 		    #thr 0.6 works best here: 193 voxels
 		    rel "fslmaths \"$stddir/spm8_mni/csf.nii\" -thr 0.6 -bin -eroF .template_csf_prob"	    
 		elif [ $templateName = MNI_FSL_3mm ]; then
-		    #for the FSL MNI, thr 0.5 with erosion works well visually: 87 voxels
+		    #for the FSL MNI, thr 0.7 works well visually: 87 voxels
 		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_csf_3mm.nii\" -thr 0.7 -bin .template_csf_prob"	    
+		elif [ $templateName = MNI_FSL_2mm ]; then
+		    #for the FSL MNI 2mm, thr 0.75 works well visually: 193 voxels
+		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_csf_2mm.nii\" -thr 0.75 -bin .template_csf_prob"
 		else
 		    rel "Unsupported template brain for CSF extraction: $templateName" c
 		    exit 1
@@ -240,6 +243,9 @@ function compute_nuisance_regressors {
 		elif [ $templateName = MNI_FSL_3mm ]; then
 		    #0.8 with erosion: 659 voxels
 		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_white_3mm.nii\" -thr 0.8 -bin -eroF .template_wm_prob"	    
+		elif [ $templateName = MNI_FSL_2mm ]; then
+		    #0.85 with erosion: 3113 voxels
+		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_white_2mm.nii\" -thr 0.85 -bin -eroF .template_wm_prob"	    
 		else
 		    rel "Unsupported template brain for WM extraction: $templateName" c
 		    exit 1
@@ -538,8 +544,12 @@ function nuisance_regression {
 
     # bandpass and regress
     elif [ "$todo" = "br" ]; then
-        rel "3dBandpass -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
-		-prefix \"$postNRBP\" -ort ${nuisance_file} $bpLow $bpHigh"
+	rel "3dTproject -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
+		-prefix \"$postNRBP\" -polort 2 -ort ${nuisance_file} -passband $bpLow $bpHigh"
+
+	#Deprecated -- 3dTproject performs true simultaneous approach, not filter all -> bandpass
+        #rel "3dBandpass -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
+	#	-prefix \"$postNRBP\" -ort ${nuisance_file} $bpLow $bpHigh"
 
 	rel "date > .bandpass_filter_complete"
 	rel "date > .nuisance_regression_complete"

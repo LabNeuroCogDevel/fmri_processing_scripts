@@ -36,7 +36,7 @@ Recommended:
 Command line options:
   -4d: The 4d file containing unprocessed functional volumes for a single subject. Required.
   -4d_slice_motion: use 4d simultaneous slice-timing motion correction algorithm (calls sliceMotion4D)
-  -bandpass_filter: Apply bandpass filter to fMRI data using 3dBandpass. Specify low and high cutoff frequencies in Hz.
+  -bandpass_filter: Apply bandpass filter to fMRI data using 3dTproject. Specify low and high cutoff frequencies in Hz.
         Example: -bandpass_filter 0.009 .08
   -bet_frac: fractional intensity threshold for skull-stripping mean functional (used in func-to-struc warp). Default 0.3.
   -cleanup: Deletes all files used in preprocessing that are unlikely to be needed for analysis, see -keep_motion_files 
@@ -108,7 +108,7 @@ Command line options:
         Comma-delimited list (no spaces!) that can include: 6motion, rx, ry, rz, tx, ty, tz, wm (white matter), csf (cerebrospinal fluid), 
         gs (global signal). Derivatives of any of these can be added by using the prefix "d" (e.g., dcsf).
         Motion regressors can also be prefixed with q for quadratic and qd for deriv of quad (e.g. qd6motion)
-        If bandpass filtering is specified, nuisance regression is done by 3dBandpass (Hallquist et al. 2013, NeuroImage). Otherwise, use 3dDetrend.
+        If bandpass filtering is specified, nuisance regression is done by 3dTproject (Hallquist et al. 2013, NeuroImage). Otherwise, use 3dDetrend.
         If a number follows csf or wm (e.g., csf5), then an anatomical CompCor approach is taken with the desired number of principal components
 	   computed using AFNI 3dmaskSVD.
         Example: -nuisance_regression 6motion,csf,wm,dcsf,dwm
@@ -138,6 +138,7 @@ Command line options:
 	-template_brain MNI_2.3mm (MNI152 brain, 2.3mm isotropic voxels, template from MNI Fonov et al. 2009). For 2.3mm MB sequence.
         -template_brain MNI_3mm (MNI152 brain, 3mm isotropic voxels, template from MNI Fonov et al. 2009)
         -template_brain MNI_FSL_3mm (MNI152 brain, 3mm isotropic voxels, template from FSL standard)
+        -template_brain MNI_FSL_2mm (MNI152 brain, 2mm isotropic voxels, template from FSL standard)
         -template_brain SPM_2mm (MNI brain from spm8 canonical template)
         -template_brain Tal_3mm (Talairach brain, 3mm isotropic voxels. Brain built by resampling MNI template in Tal space)
   -threshold: The method to use for thresholding/masking low intensity voxels. Options are:
@@ -195,10 +196,16 @@ EndOfHelp
 }
 
 #Written: 2010/5/18
-#Last updated: 2017/7/5
+#Last updated: 2018/2/12
 #Last defaults change: 2017/7/5
 #
 #Changelog:
+#
+#3/12/2018 (MH)
+# - Switch to 3dTproject over 3dBandpass for nuisance regression and bandpass filtering. Implements true simultaneous approach and censoring.
+#2/12/2018 (MH)
+# - Implement ICA AROMA + no smooth option. Because AROMA benefits from smoothed data to increase SNR, the data are smoothed for AROMA, but then
+#    motion components are applied to unsmoothed data, and the pipeline proceeds from there (unsmoothed). Occurs -no_smooth and -ica_aroma are requested.
 #7/5/2017 (MH)
 # - support TOPUP distortion correction using S-E images (-se_phasepos, -se_phaseneg, -epi_echospacing, -epi_pedir)
 # - Switch to 3dSkullStrip for epiref and mc_target due to weak performance of bet in several datasets
@@ -340,7 +347,7 @@ funcdir=$(pwd) #define working directory for functional processing
 
 [ ! -d "${funcdir}/qa_images" ] && mkdir "${funcdir}/qa_images"
 [ ! -d "${funcdir}/transforms" ] && mkdir "${funcdir}/transforms"
-qa_imgdir="${funcdir}/qa_images"
+export qa_imgdir="${funcdir}/qa_images" #use export so that TopupPreprocessingAll picks up the directory
 
 ##load necessary modules if running on cluster (specific to ACI at the moment)
 if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then
@@ -583,8 +590,10 @@ if [ -n "$qa_imgdir" ]; then
     rel "Moving registration-related NIfTIs to $qa_imgdir" c
     [ $(imtest epiref_to_template) -eq 1 ] && rel "immv epiref_to_template $qa_imgdir"
     [ $(imtest epiref_to_struct) -eq 1 ] && rel "immv epiref_to_struct $qa_imgdir"
+    [ $(imtest epiref_to_struct_init) -eq 1 ] && rel "immv epiref_to_struct_init $qa_imgdir"
     [ $(imtest func_to_epiref) -eq 1 ] && rel "immv func_to_epiref $qa_imgdir"
     [ $(imtest func_to_struct) -eq 1 ] && rel "immv func_to_struct $qa_imgdir"
+    [ $(imtest unwarp/fmap_to_struct) -eq 1 ] && rel "immv unwarp/fmap_to_struct $qa_imgdir"
 fi
 
 # write finish time, mv incomplete to complete

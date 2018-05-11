@@ -28,16 +28,18 @@ runAFNICommand <- function(args, afnidir=NULL, stdout=NULL, stderr=NULL, ...) {
 ##https://docs.loni.org/wiki/PBS_Job_Chains_and_Dependencies
 exec_pbs_array <- function(max_concurrent_jobs, njobstorun, max_cores_per_node=40,
                            jobprefix="qsub_one_", allscript="qsub_all.bash", qsubdir=tempdir(),
-                           job_array_preamble=NULL, waitfor=NULL, walltime="24:00:00", use_moab=FALSE) {
+                           job_array_preamble=NULL, waitfor=c(), walltime="24:00:00", use_moab=FALSE, use_massive_qsub=FALSE) {
+
   if (is.null(job_array_preamble)) { stop("Require job_array_preamble for exec_pbs_array") }
+  
   array_concurrent_jobs <- min(max_concurrent_jobs, njobstorun) #don't request more than we need
   nnodes <- ceiling(array_concurrent_jobs/max_cores_per_node)
   ppn <- ceiling(array_concurrent_jobs/nnodes)
 
-  if (!is.null(waitfor)) {
+  if (length(waitfor) > 0L) {
     #do we need another PBS job to finish successfully before this executes?
 
-    if (use_moab) {
+    if (use_moab || use_massive_qsub) {
       waitfor <- paste0("afterok:", paste(waitfor, collapse=":")) #moab does not use afterokarray signals, treats arrays and regular jobs the same
       job_array_preamble <- c(job_array_preamble, paste0("#PBS -l depend=", waitfor)) #waitfor can be a vector, which is then a colon-separated list of jobs to wait for
     } else {
@@ -61,26 +63,54 @@ exec_pbs_array <- function(max_concurrent_jobs, njobstorun, max_cores_per_node=4
     }
   }
 
-  qsub_all <- c(job_array_preamble,
-                paste0("#PBS -t 1-", njobstorun, "%", array_concurrent_jobs), #number of total datasets and number of concurrent jobs
-                ##paste0("#PBS -l nodes=", nnodes, ":ppn=", ppn, ":himem"), #this is a misunderstanding of the use of job arrays. we need to request resources *per job* as below
-                paste0("#PBS -l nodes=1:ppn=1:himem"), #each individual run is a single-threaded job
-                paste0("#PBS -l walltime=", walltime), #max time for each job to run
-                paste("cd", qsubdir), #cd into the directory with preproc_one scripts
-                paste0("bash ", jobprefix, "${PBS_ARRAYID}")
-                )
+  #worker subfunction to submit a single job and return the jobid
+  qsub_file <- function(script, echo=TRUE) {
+    stopifnot(file.exists(script))
+    qsubstdout <- paste0(tools::file_path_sans_ext(script), "_stdout")
+    qsubstderr <- paste0(tools::file_path_sans_ext(script), "_stderr")
+    setwd(qsubdir) #execute qsub from the temporary directory so that output files go there
+    jobres=system2("qsub", args=script, stdout=qsubstdout, stderr=qsubstderr) #submit the qsub script and return the jobid
+    if (jobres != 0) { stop("qsub submission failed: ", script) }
+    jobid <- scan(file=qsubstdout, what="char", sep="\n", quiet=TRUE)
+    return(jobid)
+  }
 
-  tosubmit <- file.path(qsubdir, allscript)
-  cat(qsub_all, sep="\n", file=tosubmit)
-  qsubstdout <- paste0(tools::file_path_sans_ext(tosubmit), "_stdout")
-  qsubstderr <- paste0(tools::file_path_sans_ext(tosubmit), "_stderr")
-  setwd(qsubdir) #execute qsub from the temporary directory so that output files go there
-  jobres=system2("qsub", args=tosubmit, stdout=qsubstdout, stderr=qsubstderr) #submit the preproc_all job and return the jobid
-  if (jobres != 0) { stop("qsub submission failed: ", tosubmit) }
-  jobid <- scan(file=qsubstdout, what="char", sep="\n", quiet=TRUE)
+  if (use_massive_qsub) {
+    #This is a bit of a hack. The initial logic of arrays was that we have one script to qsub that calls individual execution scripts
+    #Thus, those execution scripts are not expected to have a qsub preamble. Under the massive qsub approach, we need to prepend the individual
+    #run scripts with the qsub preamble and then qsub each one.
 
+    jobid <- c()
+    for (i in 1:njobstorun) {
+      qsub_preamble <- c(job_array_preamble,
+        paste0("#PBS -l nodes=1:ppn=1:himem"), #each individual run is a single-threaded job
+      paste0("#PBS -l walltime=", walltime) #max time for each job to run
+      )
+
+      tosubmit <- file.path(qsubdir, paste0(jobprefix, i))
+      script_i <- scan(file=tosubmit, what="char", sep="\n", quiet=TRUE)
+      script_i <- c(qsub_preamble, script_i)
+      writeLines(script_i, con=tosubmit)
+      jobid <- c(jobid, qsub_file(tosubmit))
+    }
+  } else {
+    qsub_all <- c(job_array_preamble,
+      paste0("#PBS -t 1-", njobstorun, "%", array_concurrent_jobs), #number of total datasets and number of concurrent jobs
+      ##paste0("#PBS -l nodes=", nnodes, ":ppn=", ppn, ":himem"), #this is a misunderstanding of the use of job arrays. we need to request resources *per job* as below
+      paste0("#PBS -l nodes=1:ppn=1:himem"), #each individual run is a single-threaded job
+      paste0("#PBS -l walltime=", walltime), #max time for each job to run
+      paste("cd", qsubdir), #cd into the directory with preproc_one scripts
+      paste0("bash ", jobprefix, "${PBS_ARRAYID}")
+    )
+    
+    tosubmit <- file.path(qsubdir, allscript)
+    cat(qsub_all, sep="\n", file=tosubmit)
+    jobid <- qsub_file(tosubmit)
+  }
+  
   return(jobid)
 }
+
 
 ##overload built-in list.dirs function to support pattern match
 list.dirs <- function(...) {
@@ -119,6 +149,7 @@ exec_pbs_iojob <- function(srclist, destlist, cpcmd="cp -Rp", njobs=12, qsubdir=
   "#PBS -j oe",
   "#PBS -m n", #no email
   paste0("#PBS -l nodes=1:ppn=",njobs,":himem"),
+  "#PBS -W group_list=mnh5174_collab",
   "source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash #setup environment",
   paste0("src_queue=(\"", paste(srclist, collapse="\" \""), "\")"),
   "  ",

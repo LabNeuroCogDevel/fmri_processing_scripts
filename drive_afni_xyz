@@ -21,6 +21,8 @@ iscol=3
 lpi=1 #only support LPI coords at the moment...
 comment_char="#" #default to # as comment
 image_file=
+delim="\t" #default
+
 while [ _$1 != _ ] ; do
     if [ $1 = -coord_file ]; then
 	coord_file="$2"
@@ -40,6 +42,9 @@ while [ _$1 != _ ] ; do
     elif [[ $1 = -lpi || $1 = -spm ]]; then
 	lpi=1
 	shift 1
+    elif [ $1 = -delim ]; then
+	delim="$2"
+	shift 2
     elif [ $1 = -comment_char ]; then
 	comment_char="$2"
 	shift 2
@@ -80,8 +85,10 @@ curline=0
 
 while [ $curline -lt $nlines ]
 do
-    echo "$((curline+1)): $( echo ${lines[$curline]} | tr '\t' ' ' )"
-    xyz=$( echo "${lines[$curline]}" | awk "{print \$${lrcol},\$${pacol},\$${iscol}}" )
+    repline=$( echo "${lines[$curline]}" | perl -pe "s/${delim}/ /g")
+    echo "$((curline+1)): ${repline}"
+    echo ""
+    xyz=$( echo "${lines[$curline]}" | awk -F"${delim}" "{print \$${lrcol},\$${pacol},\$${iscol}}" )
     plugout_drive -com "SET_SPM_XYZ ${xyz}" -quit 2>&1 >/dev/null
     read -sn1 -p "Press # to enter rownum, n for next, p for previous, r for reload, q for quit" key
     echo ""

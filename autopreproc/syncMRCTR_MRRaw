@@ -17,7 +17,7 @@ set -ex
 
 [ -z "${remote_host}" ] && echo "Expect remote_host variable to be set in environment" && exit 1
 [ -z "${remote_mrraw_root}" ] && echo "Expect remote_mrraw_root variable to be set in environment" && exit 1
-[ -z "${remote_folder_depth}"] && remote_folder_depth=1 #how many subfolders beneath remote_mrraw_root to look for subjects
+[ -z "${remote_folder_depth}" ] && remote_folder_depth=1 #how many subfolders beneath remote_mrraw_root to look for subjects
 [ -z "${remote_subid_regex}" ] && echo "Expect remote_subid_regex variable to be set in environment" && exit 1
 [ -z "${loc_mrraw_root}" ] && echo "Expect loc_mrraw_root variable to be set in environment" && exit 1
 

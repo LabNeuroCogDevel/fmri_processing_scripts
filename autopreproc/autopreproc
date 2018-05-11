@@ -67,9 +67,11 @@ function resetcfg {
     preproc_resume=0 #whether to prefer preprocessFunctional -resume
     functional_dirpattern=
     functional_dicompattern=
+    functional_walltime=
     detect_refimg=0
     use_job_array=0 #whether to use PBS job array
     use_moab=0 #whether to use Moab to handle job arrays (instead of torque)
+    use_massive_qsub=0 #whether to use a massive submission of individual qsub jobs
 }
 
 njobs=8 #default to 8 parallel jobs
@@ -110,8 +112,8 @@ while [ _$1 != _ ] ; do
 
 	if [ ${sync_raw_data} -eq 1 ]; then
             #2) sync MR_Raw directory (Dicoms)
-	    echo "./syncMRCTR_MRRAW"
-	    ./syncMRCTR_MRRAW #reads necessary variables from environment
+	    echo "./syncMRCTR_MRRaw"
+	    ./syncMRCTR_MRRaw #reads necessary variables from environment
 	fi
 
 	#3) preprocess all data in mr directory: R script relies on environment variables sourced above for configuration

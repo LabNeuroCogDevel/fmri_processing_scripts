@@ -2,20 +2,20 @@
 
 # expects helpers has been sourced
 
-# run fast on image (no extention!)
+# run fast on image (no extension!)
 # binarise wm segment (.5 thres)
 # used for boundary based registration (bbr) by register_func2struct if not earlier by prepare_fieldmaps
 # makes ${mprageBet_base}_fast_wmseg
 fast_wmseg() {
-       rel "Using fast to create white matter mask" c
-       [ -z "$1" ] && warn "$FUNCNAME: need mprageBet_base as input" && return 1
-       ! imtestln "$1" &&  warn "'$1' does not exist in '$(pwd)'" && return 1
-	mprageBet_base="$(imglob "$1")" # this will make sure we dont have .nii.gz or .nii
-	imtestln "${mprageBet_base}_fast_wmseg" && return 0
+    [ -z "$1" ] && warn "$FUNCNAME: need mprageBet_base as input" && return 1
+    ! imtestln "$1" &&  warn "'$1' does not exist in '$(pwd)'" && return 1
+    mprageBet_base="$(imglob "$1")" # this will make sure we dont have .nii.gz or .nii
+    imtestln "${mprageBet_base}_fast_wmseg" && return 0 #don't resegment if the expected file exists
 
-	# create binary WM mask. copy-pasted code from register_func2struct. 
-	[ $( imtest "${mprageBet_base}_fast_seg" )   -eq 0 ] && rel "fast -g -o \"${mprageBet_base}_fast\" \"${mprageBet_base}\"" t
-	[ $( imtest "${mprageBet_base}_fast_wmseg" ) -eq 0 ] && rel "fslmaths ${mprageBet_base}_fast_pve_2 -thr 0.5 -bin ${mprageBet_base}_fast_wmseg" 
-       return 0
+    # create binary WM mask. copy-pasted code from register_func2struct.
+    rel "Using fast to create white matter mask" c
+    [ $( imtest "${mprageBet_base}_fast_seg" )   -eq 0 ] && rel "fast -g -o \"${mprageBet_base}_fast\" \"${mprageBet_base}\"" t
+    [ $( imtest "${mprageBet_base}_fast_wmseg" ) -eq 0 ] && rel "fslmaths ${mprageBet_base}_fast_pve_2 -thr 0.5 -bin ${mprageBet_base}_fast_wmseg" 
+    return 0
 }
 # vim: set tabstop=7:
