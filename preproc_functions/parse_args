@@ -30,6 +30,7 @@ function parse_args {
     funcRefimg=
     funcStructFlirtDOF="bbr" #boundary-based registration in FSL 5.0+
     funcWarpInterp="spline"
+    gsr_in_prefix=0
     hpFilter=120s #default to 120s hp filter
     ica_aroma=0 #whether to run smoothed data through ICA-AROMA
     logFile="preprocessFunctional.log"
@@ -288,6 +289,9 @@ function parse_args {
 	elif [ $1 = -hp_filter ]; then
 	    hpFilter="${2}"
 	    shift 2
+	elif [ $1 = -gsr ]; then
+	    gsr_in_prefix=1
+	    shift 1
 	elif [ $1 = -ica_aroma ]; then
 	    ica_aroma=1
 	    shift 1
@@ -530,6 +534,12 @@ function parse_args {
     if [[ $autocorr_with_basis -eq 1 && $bandpass_filter -eq 0 ]]; then
 	echo "Cannot request -rmautocorr without -bandpass_filter "
 	exit 1
+    fi
+
+    # Not legal to use -gsr without also having it in regression
+    if [[ $gsr_in_prefix -eq 1 && ! $nuisance_regression =~ (^|,| )gs( |,|$) ]]; then
+       echo "Cannot request -gsr without having gs in -nuisance_regression or -nuisance_compute"
+       exit 1
     fi
 
     #whether to use a fieldmap, either GRE or TOPUP

@@ -26,7 +26,10 @@ motionderiv() {
   return 0
 }
 
-COMPUTE_NUISANCE_REGRESSORS_GLOBALS=(nuisance_file nuisance_regressors no_warp postWarp postDespike postSS templateName mprageBet_base ext tr prefix bpLow bpHigh)
+COMPUTE_NUISANCE_REGRESSORS_GLOBALS=(nuisance_file nuisance_regressors no_warp \
+   postWarp postDespike postSS \
+   templateName mprageBet_base ext tr prefix bpLow bpHigh \
+   gsr_in_prefix)
 
 # give
 # - a nifti get basis functions to remove autocorrelation
@@ -504,12 +507,14 @@ function nuisance_regression {
     local todo=
     [ $autocorr_with_basis -eq 1 ] && todo="${todo}A"
     [ $bandpass_filter     -eq 1 ] && todo="${todo}b"
+    [ $gsr_in_prefix       -eq 1 ] && todo="${todo}g"
     [ $nuisance_regression -eq 1 ] && todo="${todo}r"
 
     # todo is 
     #  only: A b r 
     #  combined: Ab Abr br
     #  'A' alone is not allowed, will throw error -- checked by parseargs or preprocessFunctional
+    #  gsr_in_prefix (-gsr) must have gs in $nuisance_regressors, check by parseargs
     
     prefix="${todo}${prefix}"
     postNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
@@ -534,7 +539,7 @@ function nuisance_regression {
 	rel "date > .bandpass_filter_complete"
 
     # regress only
-    elif [ "$todo" = "r" ]; then
+    elif [[ "$todo" =~ ^g?r$ ]]; then
         rel "3dDetrend -overwrite -verb -polort 2 -vector ${nuisance_file} \
 		-prefix \"$postNRBP\" \"$preNRBP\""
 	
@@ -543,7 +548,7 @@ function nuisance_regression {
 	rel "date > .nuisance_regression_complete"
 
     # bandpass and regress
-    elif [ "$todo" = "br" ]; then
+    elif [[ $todo =~ ^bg?r$ ]]; then
 	rel "3dTproject -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
 		-prefix \"$postNRBP\" -polort 2 -ort ${nuisance_file} -passband $bpLow $bpHigh"
 
