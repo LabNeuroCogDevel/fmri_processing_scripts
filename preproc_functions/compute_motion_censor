@@ -1,11 +1,15 @@
 #!/bin/bash
 
+COMPUTE_MOTION_CENSOR_GLOBALS=(motionCensor despike postDespike postMC)
 function compute_motion_censor {
     #parse -censor_motion syntax
 
     [ -z "$motionCensor" ] && return 0
 
     [ -f .motion_censor_complete ] && return 0
+
+    # print our globals to a file (continue even if this fails)
+    print_vars_in COMPUTE_MOTION_CENSOR_GLOBALS || :
 
     local allmats=        #names of all spike regressor matrices output by fsl_motion_outliers
     local allcensor=      #names of all AFNI-style censor single-column files
