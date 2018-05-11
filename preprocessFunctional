@@ -120,6 +120,7 @@ Command line options:
         -rescaling_method 100_voxelmean (Rescale each voxel by 100/[voxel 4d mean]. In principle, approximates % change)
   -resume: Instructs script to resume preprocessing from the last completed step. Should be passed in as the only parameter: preprocessFunctional -resume.
   -rmautocorr: use 3dREMLfit to remove nuisance regressors and filtered frequencies (1dBport) using an ARMA(1,1) model to account for autocorrelation.
+  -rmgroup_component: provide a group 1D ts to remove from 4D ts after warping (add c to prefix after warp)
   -se_phasepos: The spin-echo image (or directory) with positive phase encoding direction (typically P>>A or R>>L) to be used in TOPUP distortion correction
   -se_phaseneg: The spin-echo image (or directory) with negative phase encoding direction (typically A>>P or L>>R) to be used in TOPUP distortion correction
   -slice_acquisition: The order in which slices were acquired.
@@ -170,14 +171,15 @@ The major steps in the processing pipeline are, in order:
   4)   Intensity/wavelet despiking (optional) - d
   5)   Field map unwarping (optional) - u
   6)   Co-registration and warping to standard space - w
-  7)   Smoothing - s
-  8)   ICA-AROMA (optional) - a
-  9)   High-pass filtering - f
-  10)  Intensity normalization - n
-  11)  Nuisance regression (optional) - r
-  11.5) Global signal regression (optional, label optional) - g
-  12)  Bandpass filtering (optional) - b
-  13)  Auto Correlation removal (optional) - A [requires bandpass]
+  7)   Remove group level components (optional) - c  [requires warp]
+  8)   Smoothing - s
+  9)   ICA-AROMA (optional) - a
+  10)   High-pass filtering - f
+  11)  Intensity normalization - n
+  12)  Nuisance regression (optional) - r
+  12.5) Global signal regression (optional, label optional) - g
+  13)  Bandpass filtering (optional) - b
+  14)  Auto Correlation removal (optional) - A [requires bandpass]
 
 Note that if the slice acquisition order is sequential, then the default is to appply motion correction before slice timing correction, whereas for
 interleaved acquisition, the default is slice timing first. The order of these steps can be explicitly specified using -st_first, -mc_first, or -no_st.
@@ -205,6 +207,7 @@ EndOfHelp
 #
 #5/11/2018 (WF)
 # - add -gsr option to expliclty label gsr in regression step. prefix "rnswktm" becomes "grnswktm"
+# - add -rmgroup_component (prefix c) to remove group components after warping
 #3/12/2018 (MH)
 # - Switch to 3dTproject over 3dBandpass for nuisance regression and bandpass filtering. Implements true simultaneous approach and censoring.
 #2/12/2018 (MH)
@@ -345,6 +348,9 @@ source "${scriptDir}/preproc_functions/intensity_normalization"
 source "${scriptDir}/preproc_functions/nuisance_regression"
 source "${scriptDir}/preproc_functions/ica_aroma"
 source "${scriptDir}/preproc_functions/prepare_mc_target"
+source "${scriptDir}/preproc_functions/remove_group_components"
+
+
 
 #TODO: read dirname from the input and cd to that directory
 funcdir=$(pwd) #define working directory for functional processing
@@ -492,6 +498,10 @@ compute_motion_censor
 # NOTE: When relevant, this step also incorporates motion correction and fieldmap correction.
 # These steps are combined so that there is a single interpolation into template space.
 warp_to_template               # preproc_functions/warp_to_template
+
+# 20180511 (WF) method for FC/DM to remove top group PCAs
+# if we have a group componet to remove, now's the time
+remove_group_components 
 
 # handle request for computing, but not applying, warp to standard space.
 # This is useful if one wishes to warp files to template space later (e.g., after GLM),

@@ -52,6 +52,7 @@ function parse_args {
     [ -z "$MATLAB_single_thread" ] &&MATLAB_single_thread=
     ref_vol=  #don't set a motion correction reference volume by default
     rescalingMethod="10000_globalmedian" #scale whole brain 4D by single constant to normalize median to 10000.
+    rmgroup_component_1d=""
     se_phasepos=
     se_phaseneg=
     signallossthresh=0.9 # Areas with 90% or more signal loss in fieldmap are masked out. Will be overridden by an fmcfg file if specified
@@ -359,6 +360,9 @@ function parse_args {
        elif [ $1 = -rmautocorr ]; then
            autocorr_with_basis=1
            shift
+       elif [ $1 = -rmgroup_component ]; then
+           rmgroup_component_1d="$2"
+           shift 2
 	elif [ $1 = -rescaling_method ]; then
 	    if [[ $2 = "10000_globalmedian" || $2 = "100_voxelmean" ]]; then
 		rescalingMethod="${2}"
@@ -537,8 +541,14 @@ function parse_args {
     fi
 
     # Not legal to use -gsr without also having it in regression
-    if [[ $gsr_in_prefix -eq 1 && ! $nuisance_regression =~ (^|,| )gs( |,|$) ]]; then
-       echo "Cannot request -gsr without having gs in -nuisance_regression or -nuisance_compute"
+    if [[ $gsr_in_prefix -eq 1 && ! $nuisance_regressors =~ (^|,| )gs( |,|$) ]]; then
+       echo "Cannot request -gsr without having gs in -nuisance_regressors ($nuisance_regressors)"
+       exit 1
+    fi
+
+    # Not legal to use -rm_completefiles without warping
+    if [[ -n "$rmgroup_component_1d" && $no_warp -ge 1 ]]; then
+       echo "Cannot request -rmgroup_component and not preform a warp!"
        exit 1
     fi
 

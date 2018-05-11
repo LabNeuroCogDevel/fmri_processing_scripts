@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# expects helpers has been sourced
+
+#
+# remove group components 
+# lots of overhead to run
+#    3dTproject -input $ts -ort $ort -prefix $out
+#
+# exit entire script early but without error if $ort 1d file does not exist yet 
+# rerun when it exists
+REMOVE_GROUP_COMPONENTS_GLOBALS=(prefix funcFile rmgroup_component_1d)
+remove_group_components() {
+   # skip if we have nothing to do
+   [ -z "$rmgroup_component_1d" ] && return 0
+
+   # write what we use to a file (and do nothing if it fails)
+   print_vars_in REMOVE_GROUP_COMPONENTS_GLOBALS || :
+
+   # use 3dTproject to remove
+   _remove_group_components "${prefix}${funcFile}" "$rmgroup_component_1d" "c$prefix${funcFile}" || return 1
+
+   # update prefix
+   prefix="c$prefix"
+}
+
+
+#USAGE: remove_group_components warp.nii.gz ort.1d output.nii.gz
+_remove_group_components() {
+    # have flag file, continue without question
+    local flag=.remove_group_components 
+    [ -r "$flag" ] && return 0 
+    rel "Removing group components" c
+
+    ## check -- bigger problems if any of these fail
+    # input nifti timeseries
+    local ts="$1"; shift
+    ! imtestln "$ts" && warn "$FUNCNAME: need first argument ('$ts') to be nifti " && return 1
+    # ort 1D file
+    local ort="$1"; shift
+    ort_exists "$ort" && warn "$FUNCNAME: need second argument ('$ort') to be 1d file" && return 1
+    # output
+    local out="$1"
+    [ -z "$out" ] && warn "$FUNCNAME: third arg ('$1') should be output filename" && return 1
+
+    if imtestln "$out"; then 
+       warn "Have $out but not $flag! that's wierd! I'll make it for you"
+       touch .remove_group_components 
+       return 0
+    fi
+
+    # actually do it
+    rel "3dTproject -input $ts -ort $ort -prefix $out"
+    date +%s > $flag
+    return 0
+}
+
+# we need to warp everyone before we can get a group stat
+# we'll use the same pipeline before and after group compoenent remove
+# so we dont necessarily want to exit with error when 1d doesn't exit
+ort_exists() {
+ ort="$1"
+ # error if ort var is empty
+ [ -z "$ort" ] && return 1
+ # if file doesn't exist, exit early (but without error)
+ if [ ! -r "$ort" ]; then
+    rel "INCOMPLETE but succesfully exiting early" c
+    rel "  group component 1d file '$ort' does not exist yet" c
+    rel "  run 'yes|preprocessFunctional' when it does" c
+    exit 0
+ fi
+ return 0 
+}
+# vim: set tabstop=7:

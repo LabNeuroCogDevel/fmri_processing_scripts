@@ -4,11 +4,12 @@
 # test arg parsing #
 ####################
 
-testdir=batsparseargstest
+export testdir=batsparseargstest
+export funcdir=./
 # go into a special temp dir
 setup() {
- source ../preproc_functions/helper_functions
  source ../preproc_functions/parse_args
+ source ../preproc_functions/helper_functions
  [ ! -d $testdir ] && mkdir $testdir
  cd $testdir
  touch fake.nii.gz
@@ -23,6 +24,7 @@ teardown() {
 
 # check default is to not trunc
 @test "no trunc" {
+ pwd
  parse_args -4d fake.nii.gz
  [ $n_rm_firstvols -eq 0 ]
  [ $funcFile == "fake" ]
@@ -63,8 +65,25 @@ teardown() {
 }
 
 
+@test "fail if gsr but not in regression" {
+ run parse_args -4d fake.nii.gz -gsr 
+ [ $status -ne 0 ]
+}
+@test "gsr and nuisance_regression" {
+ run parse_args -4d fake.nii.gz -gsr -nuisance_regression gs
+ [ $status -eq 0 ]
+ parse_args -4d fake.nii.gz -gsr -nuisance_regression gs
+ [ $gsr_in_prefix -eq 1 ]
+ parse_args -4d fake.nii.gz -gsr -nuisance_regression dwm,gs,wm
+ [ $gsr_in_prefix -eq 1 ]
+ [ $nuisance_regressors = "dwm,gs,wm" ]
+}
 
-
-
-
-
+@test "-rmgroup_component" {
+ parse_args -4d fake.nii.gz -rmgroup_component test.1d -tr 1
+ [ $rmgroup_component_1d == "test.1d" ]
+}
+@test "fail if -rmgroup_components and -no_warp" {
+ run parse_args -4d fake.nii.gz -rmgroup_component test.1d -no_warp
+ [ $status -ne 0 ]
+}
