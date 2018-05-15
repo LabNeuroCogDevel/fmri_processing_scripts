@@ -414,6 +414,8 @@ fi
 [ $n_rm_firstvols -gt 0 ] && remove_first_volumes
 
 
+# TODO: remove middleVol calc. Not used anywhere?
+imtestln $prefix${funcFile} || echo "ERROR: $prefix${funcFile} DNE, middleVol calulation will be off!"
 numVols=$( fslhd $prefix${funcFile} | grep '^dim4' | perl -pe 's/dim4\s+(\d+)/\1/' )
 middleVol=$( echo "$numVols/2" | bc )
 
