@@ -65,24 +65,21 @@ Here is an example of setting up a separate script to loop over several contrast
 #!/bin/bash
 set -e
 
-defaults=$(cat <<_EOF_
- -statbrik_dir ../sepemo_remlfitAll -statbrik_suffix _emoconStats_hrf_REML+tlrc -cov_file memacov.txt -exclude_subjs 005_sb
- -mask ~/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_3mm.nii
- -model_outliers -jobs 8 -covariates_center mean -covariates_model center=different slope=different -HKtest -residual_Z
-_EOF_
-)
+defaults="-statbrik_dir ../sepemo_remlfitAll -statbrik_suffix _emoconStats_hrf_REML+tlrc -cov_file memacov.txt -exclude_subjs 005_sb \\
+ -mask ~/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_mask_3mm.nii \\
+ -model_outliers -jobs 8 -covariates_center mean -covariates_model center=different slope=different -HKtest -residual_Z"
 
 for contrast in AngI_gt_AngC FeaI_gt_FeaC HapI_gt_HapC AllI_gt_AllC Err_gt_AllC
 do
 
-    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,age -run
-    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,paiaffe -run
-    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,paiharm -run
-    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,bpddiag -run
-    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,paiaffe,paiharm -run
-    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,age,paiaffe,paiharm -run
-    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,age,paiaffe,paiharm,dep -run
-    setup3dMEMA -glm_contrast $contrast $defaults -covs subj,bpddiag,dep -run
+    setup3dMEMA -glm_contrast \$contrast \$defaults -covs subj,age -run
+    setup3dMEMA -glm_contrast \$contrast \$defaults -covs subj,paiaffe -run
+    setup3dMEMA -glm_contrast \$contrast \$defaults -covs subj,paiharm -run
+    setup3dMEMA -glm_contrast \$contrast \$defaults -covs subj,bpddiag -run
+    setup3dMEMA -glm_contrast \$contrast \$defaults -covs subj,paiaffe,paiharm -run
+    setup3dMEMA -glm_contrast \$contrast \$defaults -covs subj,age,paiaffe,paiharm -run
+    setup3dMEMA -glm_contrast \$contrast \$defaults -covs subj,age,paiaffe,paiharm,dep -run
+    setup3dMEMA -glm_contrast \$contrast \$defaults -covs subj,bpddiag,dep -run
 
 done
 
@@ -252,7 +249,7 @@ mv .3dMEMA_cov "$dirOut"
 
 #create a subj + group file
 if [ -n "$groupColname" ]; then
-    groupColnumber=$( /usr/bin/env Rscript -e "f<- scan(\"${covFile}\", what=\"character\", sep='\\\t', nlines=1, quiet=TRUE); cat(which(f == \"$groupColname\"))" )
+    groupColnumber=$( /usr/bin/env Rscript -e "f<- scan(\"${covFile}\", what=\"character\", sep='\t', nlines=1, quiet=TRUE); cat(which(f == \"$groupColname\"))" )
     awk '{print $1}' "${covFile}" > "${dirOut}/.3dMEMA_subjcol"
     awk "{print \$$groupColnumber}" "${covFile}" > "${dirOut}/.3dMEMA_groupcol"
     paste "${dirOut}/.3dMEMA_subjcol" "${dirOut}/.3dMEMA_groupcol" > "${dirOut}/.3dMEMA_grouplookup"
@@ -337,8 +334,8 @@ if [ -n "$groupColname" ]; then
     #need to sort .3dMEMA_cov by group
     rcmd1="covfile <- read.table('${dirOut}/.3dMEMA_grouplookup', header=TRUE); covfile\$$groupColname <- as.character(covfile\$$groupColname);"
     rcmd2="covfile <- subset(covfile, $groupColname %in% c(\"$g1val\",\"$g2val\")); covfile <- covfile[order(covfile\$$groupColname),];"
-    rcmd3="write.table(subset(covfile, $groupColname == \"$g1val\"), file=\"${dirOut}/.3dMEMA_cov_g1\", row.names=FALSE, col.names=TRUE, quote=FALSE, sep='\\\t');"
-    rcmd4="write.table(subset(covfile, $groupColname == \"$g2val\"), file=\"${dirOut}/.3dMEMA_cov_g2\", row.names=FALSE, col.names=TRUE, quote=FALSE, sep='\\\t')"
+    rcmd3="write.table(subset(covfile, $groupColname == \"$g1val\"), file=\"${dirOut}/.3dMEMA_cov_g1\", row.names=FALSE, col.names=TRUE, quote=FALSE, sep='\t');"
+    rcmd4="write.table(subset(covfile, $groupColname == \"$g2val\"), file=\"${dirOut}/.3dMEMA_cov_g2\", row.names=FALSE, col.names=TRUE, quote=FALSE, sep='\t')"
     #echo "rcmd: $rcmd1 $rcmd2 $rcmd3 $rcmd4"
     /usr/bin/env Rscript -e "$rcmd1 $rcmd2 $rcmd3 $rcmd4"
 
