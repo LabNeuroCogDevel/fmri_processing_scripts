@@ -49,7 +49,7 @@ function parse_args {
     nuisance_file=.nuisance_regressors
     output_basename=functional #base prefix of NIfTI file after dicom -> NIfTI conversion
     [ -z "$MATLAB_RAM_limit" ] && MATLAB_RAM_limit=3 #3GB wavelet despike RAM limit by default (more is faster, but can be a hog when processing in parallel).
-    [ -z "$MATLAB_single_thread" ] &&MATLAB_single_thread=
+    [ -z "$MATLAB_single_thread" ] && MATLAB_single_thread=
     ref_vol=  #don't set a motion correction reference volume by default
     rescalingMethod="10000_globalmedian" #scale whole brain 4D by single constant to normalize median to 10000.
     rmgroup_component_1d=""
