@@ -56,7 +56,7 @@ TSNR_onerun(){
 
    cnt=0
    # grab all files matching the suffix with the same number of trs as first file
-   for file in $(3dinfo -iname -nt *_$suffix | awk "(\$2 == $ntr){print \$1}"); do
+   for file in $(3dinfo -iname -nt *_${suffix/.nii.gz/}*.nii.gz | awk "(\$2 == $ntr){print \$1}"); do
       [ ! -r $file ] && echo "UTOH! bad expected file $file" >&2 && continue
 
       let ++cnt # count files we expect to have
@@ -104,7 +104,12 @@ TSNR_onerun(){
             [ ! -r $pdir/tsnr/$prefix.det.nii.gz ] && 3dDetrend -prefix $pdir/tsnr/$prefix.det.nii.gz -polort 4 $pdir/$prefix.nii.gz
             #calcualte SD on detrended data
             [ ! -r $pdir/tsnr/$prefix.det.stdev.nii.gz ] && 3dTstat -stdev -prefix $pdir/tsnr/$prefix.det.stdev.nii.gz $pdir/tsnr/$prefix.det.nii.gz
-            [ ! -r $pdir/tsnr/$outname ] && 3dcalc -a $pdir/tsnr/${prefix:2}.tmean.nii.gz -b $pdir/tsnr/$prefix.det.stdev.nii.gz -expr 'a/b' -float -prefix $pdir/tsnr/$outname
+
+            # need to put back mean, use norm tmean -- this may have been calculated earlier
+            normprefix=n${prefix#*n}     # e.g. nswudktm_func_5 from brgnswudktm_func_5
+            [ ! -r $pdir/tsnr/$normprefix.tmean.nii.gz ] && 3dTstat -mean -prefix $pdir/tsnr/$normprefix.tmean.nii.gz $pdir/${normprefix}.nii.gz  
+
+            [ ! -r $pdir/tsnr/$outname ] && 3dcalc -a $pdir/tsnr/${normprefix}.tmean.nii.gz -b $pdir/tsnr/$prefix.det.stdev.nii.gz -expr 'a/b' -float -prefix $pdir/tsnr/$outname
          else
 
             [ ! -r $pdir/tsnr/$prefix.tmean.nii.gz ] && 3dTstat -mean -prefix $pdir/tsnr/$prefix.tmean.nii.gz $pdir/$prefix.nii.gz
