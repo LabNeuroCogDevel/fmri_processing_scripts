@@ -3,9 +3,9 @@
 gm_mni="/opt/ni_tools/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_gm_tal_nlin_asym_09c_2.3mm.nii"
 
 usage() {
-    [ -n "$@" ] && echo "ERROR: $@" 
-    echo USAGE: $0 path/to/preprocessFunctional
-    echo "   creates tsnr directory with *_tsnr.txt for each preprocessing step"
+    [ -n "$@" ] && echo "ERROR:  $@" 
+    echo "USAGE:  $0 path/to/preprocessFunctional"
+    echo "OUTPUT: tsnr directory with *_tsnr.txt for each preprocessing step"
     exit 1
 }
 
@@ -24,7 +24,7 @@ find_final() {
 TSNR_onerun(){
    pdir="$1" 
    [ ! -d "$pdir" ] && usage "directory $1 does not exist"
-   [ ! -r "$pdir/.preprocessfunctional_complete" ] && usage "$(pwd) is not complete"
+   [ ! -r "$pdir/.preprocessfunctional_complete" ] && usage "$(pwd) is not a preproc out dir or does not contain a preprocessfunctional_complete flag file"
 
    cd $pdir
    pdir=$(pwd)
