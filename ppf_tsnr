@@ -1,10 +1,16 @@
 #!/bin/bash
 
 gm_mni="/opt/ni_tools/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_gm_tal_nlin_asym_09c_2.3mm.nii"
+[ -z "$CLEANUP" ] && CLEANUP=yes # remove ~850MB of nifti files when we are done
+
+# dont give warnings about oblique datasets (3dDetrend, 3dTstats, maskave on native space data)
+export AFNI_NO_OBLIQUE_WARNING=YES 
 
 usage() {
     [ -n "$@" ] && echo "ERROR:  $@" 
-    echo "USAGE:  $0 path/to/preprocessFunctional"
+    echo "USAGE:  "
+    echo "        $0 path/to/preprocessFunctional"
+    echo "        CLEANUP=no $0 path/to/preprocessFunctional # keep nii.gz files around"
     echo "OUTPUT: tsnr directory with *_tsnr.txt for each preprocessing step"
     exit 1
 }
@@ -32,7 +38,7 @@ TSNR_onerun(){
 
 
    # find pipeline's first imaging file (nii.gz starts with _, has more than 10 trs) 
-   firstfile=$(3dinfo -iname -nt _*.nii.gz |awk '{$2>10}(print $1;exit)')
+   firstfile=$(3dinfo -iname -nt _*.nii.gz |awk '($2>10){print $1;exit}')
    [ -z "$firstfile" -o ! -r "$firstfile" ] && usage "cannot find first file in pipeline ($(pwd)/_*.nii.gz w/more than 10 trs)" 
    # suffix is all but the first _, includes .nii.gz
    suffix=${firstfile:1:${#firstfile}} 
@@ -40,77 +46,83 @@ TSNR_onerun(){
 
    # make sure we are using the correct mask
    [ ! -r func_to_standard_warp_allv.nii.gz ] && usage "do not have computed warp (func_to_standard_warp_allv.nii.gz)"
-   [ $(3dinfo -same_grid template_brain.nii.gz $gm_mni ) -ne 1 ] &&
-	   usage "template_brain.nii.gz does not match grid of mask ($gm_mni), maybe different templates!?"
+   [ ! -r template_brain.nii ] && usage "do not have template_brain.nii"
+   [ $(3dinfo -same_grid template_brain.nii $gm_mni|sort|sed 1q ) -ne 1 ] &&
+      usage "template_brain.nii.gz does not match grid of mask ($gm_mni), maybe different templates!?"
    #finalfile=$(find_final $suffix $ntr)
    #[ $(3dinfo -same_grid $finalfile $gm_mni ) -ne 1 ] &&
    #   usage "final file ($finalfile) does not match grid of mask ($gm_mni)"
 
+
+   cnt=0
    # grab all files matching the suffix with the same number of trs as first file
-   for file in $(3dinfo -iname -nt *_$suffix | grep $ntr\$); do
-        [ ! -r $file ] && echo "UTOH! bad expected file $file" >&2 && continue
-    	#header="${header}$conditions $conditions" #will this even be right? #producing text file...
-    	fname=$(basename $file) #the file name of 'file'
-    	prefix=${fname//.nii.gz/} #the file name of 'file' without the extension
+   for file in $(3dinfo -iname -nt *_$suffix | awk "(\$2 == $ntr){print \$1}"); do
+      [ ! -r $file ] && echo "UTOH! bad expected file $file" >&2 && continue
 
-        #echo "start with $fname"
-    	outname=${fname//_${suffix}/}_tsnr.nii.gz
-        #echo $outname
-    	outfull=tsnr/$outname #the entire output name+directory
+      let ++cnt # count files we expect to have
 
-    	
-    	##DO WORK
-    	##gray matter mask in standard space
-        #gm_mni="/opt/ni_tools/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_gm_tal_nlin_asym_09c_brain_2.3mm.nii"
-   	
-   	if [ ! -r tsnr/gm_mask_native.nii.gz ]; then
-   		#gray matter mask in native space -need this once for each subject
-   		#make the warp
-   		invwarp -w func_to_standard_warp_allv.nii.gz -o standard_to_func_warp.nii.gz -r $firstfile
-   		#apply the warp
-   		applywarp --in="$gm_mni" \
-   			--out=tsnr/gm_mask_native \
-   			--warp=standard_to_func_warp.nii.gz \
-   			--ref=${firstfile} \
-   			--rel \
-   			--interp=spline
-   	fi
-   	echo tsnr/$outname
-        #check to see what space you are in
-        space=$(3dinfo -space ${prefix}.nii.gz)
-        if [ $space == "MNI" ]; then
-        	gm_mask=$gm_mni
-        else
-        	gm_mask=$pdir/tsnr/gm_mask_native.nii.gz
-        fi
+      #header="${header}$conditions $conditions" #will this even be right? #producing text file...
+      fname=$(basename $file) #the file name of 'file'
+      prefix=${fname//.nii.gz/} #the file name of 'file' without the extension
+      outname=${fname//_${suffix}/}_tsnr.nii.gz
 
-        tsnrout=$pdir/tsnr/$outname 
-        #echo "checking $tsnrout"
-	if [ ! -r "$tsnrout" ] ; then
-           # need to put mean back in for tsnr calc
-	   if [ ${file:0:1} == "b" ]; then
-	   	#remove drift, this artificially inflate your SD, make SD look bigger than what it is
-	        [ ! -r $pdir/tsnr/$prefix.det.nii.gz ] && 3dDetrend -prefix $pdir/tsnr/$prefix.det.nii.gz -polort 4 $pdir/$prefix.nii.gz
-	   	#calcualte SD on detrended data
-	        [ ! -r $pdir/tsnr/$prefix.det.stdev.nii.gz ] && 3dTstat -stdev -prefix $pdir/tsnr/$prefix.det.stdev.nii.gz $pdir/tsnr/$prefix.det.nii.gz
-	   	[ ! -r $pdir/tsnr/$outname ] && 3dcalc -a $pdir/tsnr/${prefix:2}.tmean.nii.gz -b $pdir/tsnr/$prefix.det.stdev.nii.gz -expr 'a/b' -float -prefix $pdir/tsnr/$outname
-	   else
+      # remove nii.gz from txt filename
+      prefix_=${prefix%%_*}
+      stepnum=$(printf "%02d" ${#prefix_})
+      txtout=$pdir/tsnr/$stepnum-$prefix.txt
+      # dont do anything if we already have txt file
+      [ -s "$txtout" ] && continue
+       
+      #check to see what space you are in
+      space=$(3dinfo -space ${prefix}.nii.gz)
+      if [ $space == "MNI" ]; then
+         gm_mask=$gm_mni
+      else
+         gm_mask=$pdir/tsnr/gm_mask_native.nii.gz
+         # we need native space gm mask
+         if [ ! -r tsnr/gm_mask_native.nii.gz ]; then
+            #gray matter mask in native space -need this once for each subject
+            #make the warp
+            invwarp -w func_to_standard_warp_allv.nii.gz -o standard_to_func_warp.nii.gz -r $firstfile
+            #apply the warp
+            applywarp --in="$gm_mni" \
+               --out=tsnr/gm_mask_native \
+               --warp=standard_to_func_warp.nii.gz \
+               --ref=${firstfile} \
+               --rel \
+               --interp=spline
+         fi
+      fi
 
-	   	 [ ! -r $pdir/tsnr/$prefix.tmean.nii.gz ] && 3dTstat -mean -prefix $pdir/tsnr/$prefix.tmean.nii.gz $pdir/$prefix.nii.gz
-	   	 [ ! -r $pdir/tsnr/$prefix.det.nii.gz ] && 3dDetrend -prefix $pdir/tsnr/$prefix.det.nii.gz -polort 4 $pdir/$prefix.nii.gz
-	   	 [ ! -r $pdir/tsnr/$prefix.det.stdev.nii.gz ] && 3dTstat -stdev -prefix $pdir/tsnr/$prefix.det.stdev.nii.gz $pdir/tsnr/$prefix.det.nii.gz
-	   	 [ ! -r $pdir/tsnr/$outname ] && 3dcalc -a $pdir/tsnr/$prefix.tmean.nii.gz -b $pdir/tsnr/$prefix.det.stdev.nii.gz -expr 'a / b' -float -prefix $pdir/tsnr/$outname
-	   fi
+      tsnrout=$pdir/tsnr/$outname 
+      #echo "checking $tsnrout"
+      if [ ! -r "$tsnrout" ] ; then
+         echo "creating tsnr image $outname w/mask $gm_mask"
+         # need to put mean back in for tsnr calc
+         if [ ${file:0:1} == "b" ]; then
+            #remove drift, this artificially inflate your SD, make SD look bigger than what it is
+            [ ! -r $pdir/tsnr/$prefix.det.nii.gz ] && 3dDetrend -prefix $pdir/tsnr/$prefix.det.nii.gz -polort 4 $pdir/$prefix.nii.gz
+            #calcualte SD on detrended data
+            [ ! -r $pdir/tsnr/$prefix.det.stdev.nii.gz ] && 3dTstat -stdev -prefix $pdir/tsnr/$prefix.det.stdev.nii.gz $pdir/tsnr/$prefix.det.nii.gz
+            [ ! -r $pdir/tsnr/$outname ] && 3dcalc -a $pdir/tsnr/${prefix:2}.tmean.nii.gz -b $pdir/tsnr/$prefix.det.stdev.nii.gz -expr 'a/b' -float -prefix $pdir/tsnr/$outname
+         else
 
-        fi
-        outfile=$pdir/tsnr/${outname}.txt
-        if [ ! -s $outfile ]; then
-          echo "createing $outfile"
-	  3dmaskave -quiet -mask $gm_mask $pdir/tsnr/${outname} > $outfile
-        fi
-        [ ! -s $outfile ] && echo "FAILED! 3dmaskave -quiet -mask $gm_mask $pdir/tsnr/${outname} has no output?" >&2 
-        echo $outfile
+            [ ! -r $pdir/tsnr/$prefix.tmean.nii.gz ] && 3dTstat -mean -prefix $pdir/tsnr/$prefix.tmean.nii.gz $pdir/$prefix.nii.gz
+            [ ! -r $pdir/tsnr/$prefix.det.nii.gz ] && 3dDetrend -prefix $pdir/tsnr/$prefix.det.nii.gz -polort 4 $pdir/$prefix.nii.gz
+            [ ! -r $pdir/tsnr/$prefix.det.stdev.nii.gz ] && 3dTstat -stdev -prefix $pdir/tsnr/$prefix.det.stdev.nii.gz $pdir/tsnr/$prefix.det.nii.gz
+            [ ! -r $pdir/tsnr/$outname ] && 3dcalc -a $pdir/tsnr/$prefix.tmean.nii.gz -b $pdir/tsnr/$prefix.det.stdev.nii.gz -expr 'a / b' -float -prefix $pdir/tsnr/$outname
+         fi
+      fi
+      echo "creating txt output '$txtout'"
+      3dmaskave -quiet -mask "$gm_mask" "$tsnrout" |tee "$txtout"
+      [ ! -s "$txtout" ] && echo -e "FAILED "$txtout" is empty!\n\t3dmaskave -quiet -mask '$gm_mask' '$tsnrout'" >&2  && continue
    done
+
+   # return success if we have as many txt files as expected
+   txtcnt=$(ls $pdir/tsnr/*.txt|wc -l)
+   echo "# expect $cnt tsnr/*.txt files have $txtcnt"
+   [ $cnt -eq $txtcnt ] && return 0
+   return 1
 }
 
 
@@ -118,4 +130,8 @@ TSNR_onerun(){
 [[ "$1" =~ ^-h ]] && usage ""
 rundir="$1"
 [ -z "$rundir" ] && rundir="$(pwd)"
-TSNR_onerun $rundir 
+# run and cleanup if needed
+TSNR_onerun $rundir && 
+ [ "$CLEANUP" = yes ] &&
+ [ $(find $rundir/tsnr/ -iname '*.nii.gz'|wc -l) -gt 0 ] && 
+ rm $rundir/tsnr/*.nii.gz
