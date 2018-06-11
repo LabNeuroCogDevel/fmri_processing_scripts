@@ -3,27 +3,51 @@
 gm_mni="/opt/ni_tools/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_gm_tal_nlin_asym_09c_2.3mm.nii"
 
 usage() {
-    echo "$@" 
+    [ -n "$@" ] && echo "ERROR: $@" 
     echo USAGE: $0 path/to/preprocessFunctional
+    echo "   creates tsnr directory with *_tsnr.txt for each preprocessing step"
     exit 1
 }
 
-TSNR_onerun(){
+find_final() {
+   # list all sufixes with the same (or greater) tr
+   # sort by lenght of prefix. print only the longests (lastest)
+   suffix=$1;shift
+   ntr=$1; shift
+   3dinfo -iname -nt *_$suffix |
+     $suffix// |awk "(\$2 >= $ntr){print length(\$1), \$1}"  |
+     sort -nr |uniq |
+     sed 1q
+}
 
+
+TSNR_onerun(){
    pdir="$1" 
    [ ! -d "$pdir" ] && usage "directory $1 does not exist"
    [ ! -r "$pdir/.preprocessfunctional_complete" ] && usage "$(pwd) is not complete"
+
    cd $pdir
    pdir=$(pwd)
+   [ ! -d tsnr ] && mkdir -p tsnr
 
 
-   firstfile=$(ls _*.nii.gz|grep -v T1w |sed 1q)
-   [ -z "$firstfile" -o ! -r "$firstfile" ] && echo "cannot find first file in pipeline ($(pwd)/_*.nii.gz)" >&2 && return 1
-   suffix=${firstfile:1:${#firstfile}}
+   # find pipeline's first imaging file (nii.gz starts with _, has more than 10 trs) 
+   firstfile=$(3dinfo -iname -nt _*.nii.gz |awk '{$2>10}(print $1;exit)')
+   [ -z "$firstfile" -o ! -r "$firstfile" ] && usage "cannot find first file in pipeline ($(pwd)/_*.nii.gz w/more than 10 trs)" 
+   # suffix is all but the first _, includes .nii.gz
+   suffix=${firstfile:1:${#firstfile}} 
    ntr=$(3dinfo -nt $firstfile)
 
-    ##FIGURE OUT SOME NAMING CONVENTIONS##
-    for file in $(3dinfo -iname -nt *_$suffix | grep $ntr\$); do
+   # make sure we are using the correct mask
+   [ ! -r func_to_standard_warp_allv.nii.gz ] && usage "do not have computed warp (func_to_standard_warp_allv.nii.gz)"
+   [ $(3dinfo -same_grid template_brain.nii.gz $gm_mni ) -ne 1 ] &&
+	   usage "template_brain.nii.gz does not match grid of mask ($gm_mni), maybe different templates!?"
+   #finalfile=$(find_final $suffix $ntr)
+   #[ $(3dinfo -same_grid $finalfile $gm_mni ) -ne 1 ] &&
+   #   usage "final file ($finalfile) does not match grid of mask ($gm_mni)"
+
+   # grab all files matching the suffix with the same number of trs as first file
+   for file in $(3dinfo -iname -nt *_$suffix | grep $ntr\$); do
         [ ! -r $file ] && echo "UTOH! bad expected file $file" >&2 && continue
     	#header="${header}$conditions $conditions" #will this even be right? #producing text file...
     	fname=$(basename $file) #the file name of 'file'
@@ -34,7 +58,6 @@ TSNR_onerun(){
         #echo $outname
     	outfull=tsnr/$outname #the entire output name+directory
 
-        [ ! -d tsnr ] && mkdir -p tsnr
     	
     	##DO WORK
     	##gray matter mask in standard space
@@ -80,7 +103,6 @@ TSNR_onerun(){
 	   fi
 
         fi
-	#3dcopy -overwrite $pdir/tsnr/${prefix}_tsnr.nii.gz $pdir/tsnr/${prefix}_tsnr.nii.gz
         outfile=$pdir/tsnr/${outname}.txt
         if [ ! -s $outfile ]; then
           echo "createing $outfile"
@@ -88,14 +110,12 @@ TSNR_onerun(){
         fi
         [ ! -s $outfile ] && echo "FAILED! 3dmaskave -quiet -mask $gm_mask $pdir/tsnr/${outname} has no output?" >&2 
         echo $outfile
-done
+   done
 }
 
 
-set -e # uncomment for troubleshooting
 
-[ -z "$1" ] && usage ""
-TSNR_onerun $1 
-# file=${MHproc_dir}/${Subject}/${Session}/rsfMRI_${run}/
-# waitForJobs $CFGFILE
-
+[[ "$1" =~ ^-h ]] && usage ""
+rundir="$1"
+[ -z "$rundir" ] && rundir="$(pwd)"
+TSNR_onerun $rundir 
