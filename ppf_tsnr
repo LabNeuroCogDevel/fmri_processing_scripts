@@ -1,17 +1,35 @@
 #!/bin/bash
 
-gm_mni="/opt/ni_tools/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_gm_tal_nlin_asym_09c_2.3mm.nii"
-[ -z "$CLEANUP" ] && CLEANUP=yes # remove ~850MB of nifti files when we are done
+# default files -- also can be set by command switches
+[ -z $GM_MNI ]      && GM_MNI="/opt/ni_tools/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_gm_tal_nlin_asym_09c_2.3mm.nii"
+[ -z "$TEMPLATE" ]  && TEMPLATE=template_brain.nii # what does mni look like
+[ -z "$WARPCOEF" ]  && WARPCOEF=func_to_standard_warp_allv.nii.gz  # how to warp native to mni
+[ -z "$STARTFILE" ] && STARTFILE="_*.nii.gz"
+# insturction settingts
+[ -z "$CLEANUP" ]   && CLEANUP=yes   # remove ~850MB of nifti files when we are done
+[ -z "$CHECKFLAG" ] && CHECKFLAG=yes # should we check for complete file flag .preprocessfunctional_complete?
+PDIR=""
+VERBOSE=0
 
 # dont give warnings about oblique datasets (3dDetrend, 3dTstats, maskave on native space data)
 export AFNI_NO_OBLIQUE_WARNING=YES 
 
 usage() {
-    [ -n "$@" ] && echo "ERROR:  $@" 
+    [ -n "$1" ] && echo "ERROR:  $@" 
+    me=$(basename $0)
     echo "USAGE:  "
-    echo "        $0 path/to/preprocessFunctional"
-    echo "        CLEANUP=no $0 path/to/preprocessFunctional # keep nii.gz files around"
-    echo "OUTPUT: tsnr directory with *_tsnr.txt for each preprocessing step"
+    echo "    $me path/to/preprocessFunctional"
+    echo "    $me  # if already in path/to/preprocessFunctional"
+    echo "OPTIONS: "
+    echo "   -g MASK      MNI greymatter mask ($GM_MNI)"
+    echo "   -t TEMPLATE  MNI template ($TEMPLATE)"
+    echo "   -w WARPCOEF  native to mni warp ($WARPCOEF)"
+    echo "   -s STARTFILE example (#tr, suffix) file to use ($STARTFILE)"
+    echo "   -f   do not look for flag file"
+    echo "   -c   do not clean up"
+    echo "   -v   be verbose, repeat for more text (-v -v)"
+    echo "OUTPUT:"
+    echo "    tsnr directory with *_tsnr.{nii.gz,txt} for each preprocessing step"
     exit 1
 }
 
@@ -28,34 +46,40 @@ find_final() {
 
 
 TSNR_onerun(){
-   pdir="$1" 
-   [ ! -d "$pdir" ] && usage "directory $1 does not exist"
-   [ ! -r "$pdir/.preprocessfunctional_complete" ] && usage "$(pwd) is not a preproc out dir or does not contain a preprocessfunctional_complete flag file"
-
-   cd $pdir
+   [ -z "$PDIR" -o ! -d "$PDIR" ] && echo "$FUNCNAME: something went badly!" && exit 1
+   cd $PDIR
    pdir=$(pwd)
+
+   # some checks
+   firstfile=$(3dinfo -iname -nt $STARTFILE |awk '($2>10){print $1;exit}')
+   [ -z "$firstfile" -o ! -r "$firstfile" ] && usage "cannot find first file in pipeline ($(pwd)/$STARTFILE w/more than 10 trs -- or file given as first argument)" 
+   [ "$CHECKFLAG" == "yes" -a ! -r "$pdir/.preprocessfunctional_complete" ] && usage "$(pwd) is not a preproc out dir or does not contain a preprocessfunctional_complete flag file"
+   for v in TEMPLATE GM_MNI WARPCOEF; do
+      [ ! -r "${!v}" ] && usage "cannot find $v ($(pwd)/${!v})"
+   done
    [ ! -d tsnr ] && mkdir -p tsnr
 
-
    # find pipeline's first imaging file (nii.gz starts with _, has more than 10 trs) 
-   firstfile=$(3dinfo -iname -nt _*.nii.gz |awk '($2>10){print $1;exit}')
-   [ -z "$firstfile" -o ! -r "$firstfile" ] && usage "cannot find first file in pipeline ($(pwd)/_*.nii.gz w/more than 10 trs)" 
-   # suffix is all but the first _, includes .nii.gz
-   suffix=${firstfile:1:${#firstfile}} 
+
+   # suffix is all but the first _, includes .nii.gz: _func.nii.gz -> func.nii.gz; brnswdktm_func_5.nii.gz -> func_5.nii.gz
+   suffix=${firstfile#*_} #suffix=${firstfile:1:${#firstfile}}  # does not work if firstfile is not _
    ntr=$(3dinfo -nt $firstfile)
+   [ $VERBOSE -gt 0 ] && echo "first file $firstfile, pipeline suffix $suffix, $ntr trs"
 
    # make sure we are using the correct mask
-   [ ! -r func_to_standard_warp_allv.nii.gz ] && usage "do not have computed warp (func_to_standard_warp_allv.nii.gz)"
-   [ ! -r template_brain.nii ] && usage "do not have template_brain.nii"
-   [ $(3dinfo -same_grid template_brain.nii $gm_mni|sort|sed 1q ) -ne 1 ] &&
-      usage "template_brain.nii.gz does not match grid of mask ($gm_mni), maybe different templates!?"
+   [ $(3dinfo -same_grid $TEMPLATE $GM_MNI|sort|sed 1q ) -ne 1 ] &&
+      usage "$TEMPLATE does not match grid of mask ($GM_MNI), maybe different templates!?"
    #finalfile=$(find_final $suffix $ntr)
-   #[ $(3dinfo -same_grid $finalfile $gm_mni ) -ne 1 ] &&
-   #   usage "final file ($finalfile) does not match grid of mask ($gm_mni)"
+   #[ $(3dinfo -same_grid $finalfile $GM_MNI ) -ne 1 ] &&
+   #   usage "final file ($finalfile) does not match grid of mask ($GM_MNI)"
 
+
+   # grab all files matching the suffix with the same number of trs as first file
+   [ $VERBOSE -gt 1 ] && echo "looking for '*${suffix/.nii.gz/}*' w/$ntr trs:" && \
+      3dinfo -nt -space -iname  *_${suffix/.nii.gz/}*.nii.gz |
+      sort -n |sed 's/^/\t/'
 
    cnt=0
-   # grab all files matching the suffix with the same number of trs as first file
    for file in $(3dinfo -iname -nt *_${suffix/.nii.gz/}*.nii.gz | awk "(\$2 == $ntr){print \$1}"); do
       [ ! -r $file ] && echo "UTOH! bad expected file $file" >&2 && continue
 
@@ -76,16 +100,16 @@ TSNR_onerun(){
       #check to see what space you are in
       space=$(3dinfo -space ${prefix}.nii.gz)
       if [ $space == "MNI" ]; then
-         gm_mask=$gm_mni
+         gm_mask=$GM_MNI
       else
          gm_mask=$pdir/tsnr/gm_mask_native.nii.gz
          # we need native space gm mask
          if [ ! -r tsnr/gm_mask_native.nii.gz ]; then
             #gray matter mask in native space -need this once for each subject
             #make the warp
-            invwarp -w func_to_standard_warp_allv.nii.gz -o standard_to_func_warp.nii.gz -r $firstfile
+            invwarp -w $WARPCOEF -o standard_to_func_warp.nii.gz -r $firstfile
             #apply the warp
-            applywarp --in="$gm_mni" \
+            applywarp --in="$GM_MNI" \
                --out=tsnr/gm_mask_native \
                --warp=standard_to_func_warp.nii.gz \
                --ref=${firstfile} \
@@ -129,14 +153,55 @@ TSNR_onerun(){
    [ $cnt -eq $txtcnt ] && return 0
    return 1
 }
+parse_args(){
+
+   while [ -n "$1" ]; do
+      case "$1" in
+         # files
+         -t |-temp )   TEMPLATE="$2"; shift 2;;
+         -g |-gm_mni )   GM_MNI="$2"; shift 2;;
+         -s |-start )  STARTFILE="$2"; shift 2;;
+         -w |-warp )   WARPCOEF="$2"; shift 2;;
+         # flags
+         -c |-no-clean)  CLEANUP="no"; shift 1;;
+         -f |-no-flag) CHECKFLAG="no"; shift 1;;
+         -v ) let ++VERBOSE; shift;;
+         # help
+         -h ) usage "";;
+         -*) usage "unkown option: $1";;
+         # non switch arg is preprocess directory
+         *) PDIR="$1"; shift; echo p;;
+      esac
+   done
+
+   # if we have no input, input is the current directory
+   [ -z "$PDIR" ] && PDIR="$(pwd)"
+   #[ -f "$PDIR" ] && PDIR=$(dirname "$INPUT") && STARTFILE="$(basename $PDIR)"
+   [ ! -d "$PDIR" ] && usage "bad preprocdir: $PDIR"
+
+   # files can be relative to rundir so don't panic if we cannot find them
+   # but make absolute path if they are relative to exec dir
+   for v in TEMPLATE GM_MNI WARPCOEF; do
+      f="${!v}"
+      [ ! -r "$f" ] && continue
+      fd="$(cd $(dirname $f);pwd)"
+      fb="$(basename $f)"
+      printf -v $v "$fd/$fb"
+   done
+
+   if [ $VERBOSE -gt 1 ]; then
+      for v in PDIR TEMPLATE GM_MNI WARPCOEF STARTFILE CHECKFLAG CLEANUP VERBOSE; do
+         echo "$v: ${!v}"
+      done
+   fi
+}
 
 
+parse_args $@
+# rundir is dir of input if input is a file, otherwise rundir is input
+# setup other options (cleanup, flag, etc)
 
-[[ "$1" =~ ^-h ]] && usage ""
-rundir="$1"
-[ -z "$rundir" ] && rundir="$(pwd)"
 # run and cleanup if needed
-TSNR_onerun $rundir && 
+TSNR_onerun && 
  [ "$CLEANUP" = yes ] &&
- [ $(find $rundir/tsnr/ -iname '*.nii.gz'|wc -l) -gt 0 ] && 
- rm $rundir/tsnr/*.nii.gz
+ find $PDIR/tsnr/ -maxdepth 1 -type f -iname "*.nii.gz" -not -iname "*_tsnr.nii.gz" -delete
