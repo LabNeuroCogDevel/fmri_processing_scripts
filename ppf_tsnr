@@ -15,12 +15,16 @@ VERBOSE=0
 export AFNI_NO_OBLIQUE_WARNING=YES 
 
 usage() {
-    [ -n "$1" ] && echo "ERROR:  $@" 
+    [ -n "$1" ] && echo "ERROR:  $@" && echo -n "USAGE:  "
     me=$(basename $0)
-    echo "USAGE:  "
-    echo "    $me path/to/preprocessFunctional"
-    echo "    $me  # if already in path/to/preprocessFunctional"
-    echo "OPTIONS: "
+    echo -n "$me [options] [path/to/preprocessFunctional]"
+    # if error message, dont print everything
+    if [ -n "$1" ]; then
+       echo "; see $me -h"
+       exit 1
+    fi
+    echo
+    echo " OPTIONS: "
     echo "   -g MASK      MNI greymatter mask ($GM_MNI)"
     echo "   -t TEMPLATE  MNI template ($TEMPLATE)"
     echo "   -w WARPCOEF  native to mni warp ($WARPCOEF)"
@@ -28,9 +32,14 @@ usage() {
     echo "   -f   do not look for flag file"
     echo "   -c   do not clean up"
     echo "   -v   be verbose, repeat for more text (-v -v)"
-    echo "OUTPUT:"
-    echo "    tsnr directory with *_tsnr.{nii.gz,txt} for each preprocessing step"
-    exit 1
+    echo "   -h   this help message"
+    echo " OUTPUT:"
+    echo "   tsnr directory with *_tsnr.{nii.gz,txt} for each preprocessing step"
+    echo " EXAMPLE:"
+    echo "   cd /Volumes/Hera/preproc/cog_task/rest_spikemin/10124_20070829/snip"
+    echo "   o=\$(dirname \$(readlink -f _func.nii.gz ))"
+    echo "   ppf_tsnr -f -s wdktm_func.nii.gz  -t  \$o/template_brain.nii -w \$o/func_to_standard_warp_allv.nii.gz -v -v"
+    exit 0
 }
 
 find_final() {
@@ -52,10 +61,10 @@ TSNR_onerun(){
 
    # some checks
    firstfile=$(3dinfo -iname -nt $STARTFILE |awk '($2>10){print $1;exit}')
-   [ -z "$firstfile" -o ! -r "$firstfile" ] && usage "cannot find first file in pipeline ($(pwd)/$STARTFILE w/more than 10 trs -- or file given as first argument)" 
-   [ "$CHECKFLAG" == "yes" -a ! -r "$pdir/.preprocessfunctional_complete" ] && usage "$(pwd) is not a preproc out dir or does not contain a preprocessfunctional_complete flag file"
+   [ -z "$firstfile" -o ! -r "$firstfile" ] && usage "cannot find start file ($(pwd)/$STARTFILE w/more than 10 trs); use '-s STARTFILE' option" 
+   [ "$CHECKFLAG" == "yes" -a ! -r "$pdir/.preprocessfunctional_complete" ] && usage "$(pwd) does not contain a preprocessfunctional_complete flag file (use '-f' to ignore)"
    for v in TEMPLATE GM_MNI WARPCOEF; do
-      [ ! -r "${!v}" ] && usage "cannot find $v ($(pwd)/${!v})"
+      [ ! -r "${!v}" ] && usage "cannot find $v (${!v}), consider changing with command options"
    done
    [ ! -d tsnr ] && mkdir -p tsnr
 
