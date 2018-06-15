@@ -53,6 +53,10 @@ find_final() {
      sed 1q
 }
 
+is_same_grid() {
+  [ $(3dinfo -same_grid $@|sort|sed 1q ) -eq 1 ] && return 0
+  return 1
+}
 
 TSNR_onerun(){
    [ -z "$PDIR" -o ! -d "$PDIR" ] && echo "$FUNCNAME: something went badly!" && exit 1
@@ -76,7 +80,7 @@ TSNR_onerun(){
    [ $VERBOSE -gt 0 ] && echo "first file $firstfile, pipeline suffix $suffix, $ntr trs"
 
    # make sure we are using the correct mask
-   [ $(3dinfo -same_grid $TEMPLATE $GM_MNI|sort|sed 1q ) -ne 1 ] &&
+   ! is_same_grid $TEMPLATE $GM_MNI &&
       usage "$TEMPLATE does not match grid of mask ($GM_MNI), maybe different templates!?"
    #finalfile=$(find_final $suffix $ntr)
    #[ $(3dinfo -same_grid $finalfile $GM_MNI ) -ne 1 ] &&
@@ -90,6 +94,7 @@ TSNR_onerun(){
 
    cnt=0
    for file in $(3dinfo -iname -nt *_${suffix/.nii.gz/}*.nii.gz | awk "(\$2 == $ntr){print \$1}"); do
+      [ $VERBOSE -gt 1 ] && echo "# looking at $file"
       [ ! -r $file ] && echo "UTOH! bad expected file $file" >&2 && continue
 
       let ++cnt # count files we expect to have
@@ -104,7 +109,7 @@ TSNR_onerun(){
       stepnum=$(printf "%02d" ${#prefix_})
       txtout=$pdir/tsnr/$stepnum-$prefix.txt
       # dont do anything if we already have txt file
-      [ -s "$txtout" ] && continue
+      [ -s "$txtout" -a $(wc -l < $txtout ) -gt 0 ] && continue
        
       #check to see what space you are in
       space=$(3dinfo -space ${prefix}.nii.gz)
@@ -113,17 +118,28 @@ TSNR_onerun(){
       else
          gm_mask=$pdir/tsnr/gm_mask_native.nii.gz
          # we need native space gm mask
-         if [ ! -r tsnr/gm_mask_native.nii.gz ]; then
+         if [ ! -r $gm_mask ]; then
+            [ $VERBOSE -gt 0 ] && echo "# making native space grey matter mask using $file (as resp for all)"
+            WARPEXAMPLE=$file
             #gray matter mask in native space -need this once for each subject
             #make the warp
-            invwarp -w $WARPCOEF -o standard_to_func_warp.nii.gz -r $firstfile
+            invwarp -w $WARPCOEF -o standard_to_func_warp.nii.gz -r $file
             #apply the warp
             applywarp --in="$GM_MNI" \
-               --out=tsnr/gm_mask_native \
+               --out=$gm_mask \
                --warp=standard_to_func_warp.nii.gz \
-               --ref=${firstfile} \
+               --ref=${file} \
                --rel \
                --interp=spline
+         fi
+         # check mask
+         #  initially used '$firstfile' for warp
+         #  but that file could have not been in native space!
+         if ! is_same_grid $file $gm_mask; then 
+             echo "BAD WARP mask/file mismatch!!"
+             echo "  $gm_mask does not match $file (used '$WARPEXAMPLE' as template [empty means not created here])" 
+             echo "   consider 'rm $gm_mask'"
+             continue
          fi
       fi
 
