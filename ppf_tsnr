@@ -109,7 +109,7 @@ TSNR_onerun(){
       stepnum=$(printf "%02d" ${#prefix_})
       txtout=$pdir/tsnr/$stepnum-$prefix.txt
       # dont do anything if we already have txt file
-      [ -s "$txtout" -a $(wc -l < $txtout ) -gt 0 ] && continue
+      [ -s "$txtout" ] && [ $(cat "$txtout" | wc -l  ) -gt 0 ] && continue
        
       #check to see what space you are in
       space=$(3dinfo -space ${prefix}.nii.gz)
