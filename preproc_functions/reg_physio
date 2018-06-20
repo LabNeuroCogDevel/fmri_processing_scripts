@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# expects helpers has been sourced
+
+#
+# use retroicor on pre-slice/motion functional input
+#
+
+REG_PHYSIO_GLOBALS=(prefix funcFile use_physio physio_resp physio_card physio_func_info)
+reg_physio() {
+   # skip if we have nothing to do
+   [ -z "$use_physio" ] && return 0
+   [ -r .reg_physio_complete ] && return 0
+
+   # write what we use to a file (and do nothing if it fails)
+   print_vars_in REG_PHYSIO_GLOBALS || :
+
+   rel "#### Removing physio" c
+   # check everything is sane
+   [ ! -r "$physio_resp" ] && rel "-physio_resp '${physio_resp}' does not exist!" c && return 1
+   [ ! -r "$physio_card" ] && rel "-physio_card '${physio_card}' does not exist!" c && return 1
+   [ ! -r "$physio_func_info" ] && rel "-physio_func_info '${physio_func_info}' does not exist!" c && return 1
+
+   # extract time -- this is likely to fail. physio is often bad
+   local spfix=siemphys_retrots_
+   rel "siemphysdat  $physio_resp $physio_card  $physio_func_info -t all -o $spfix"
+
+   # file with our prefix modified in the last 3 minutes
+   local retrots=$(find -maxdepth 1 -type f -iname "$spfix*" -mmin -3 -print -quit)
+   [ -z "$retrots " -o ! -r "$retrots" ] && rel "retroTS of physio failed: no recent $(pwd)/$spfix*" c && return 1
+
+   # regress like afni. see $afnidir/db_mod.py and the created proc.xx
+   # this makes a useless 3dTcat copy as part of afni's autoblock section
+   rel "afni_proc.py -blocks ricor -ricor_regs $retrots -subj_id xx_retroicor -dsets '${prefix}$funcFile.nii.gz'"
+   # actually run and then cleanup
+   tcsh -xef proc.xx_retroicor
+   3dcopy xx_retroicor.results/pb01.xx_retroicor.r01.ricor+*.HEAD "p$prefix$funcFile.nii.gz" 
+   rm -r xx_retroicor.results
+
+
+   # update prefix
+   prefix="p$prefix"
+   # create flag file
+   date > .reg_physio_complete
+   return 0
+
+
+   # afni_proc block does: 
+   #   * polort=7 based on number of trs?
+   #   * slibase.1D[0..12] is all of s0 ?
+   #   # ------ overview
+   #   3dDetrend polort from regressors
+   #   1dcat all s0 regressors together for "dummy" in regress process block
+   #   3dD -input ALL -polort -x1D -x1D_stop
+   #   3dREMLfit -input -matrix -Rerrts -Rbeta? -slibase_sm -verb?
+   #   3dSynthesize -matrix -cbucket -select baseline -prefix
+   #   3dcalc -a errts -b baseline -expr a+b -prefix pbXX.ricor
+   #   # ------ /
+   #
+   #   mkdir stimuli
+   #   3dDetrend -polort 7 -prefix rm.ricor.1D  $retrots 
+   #   1dtranspose rm.ricor.1D stimuli/ricor_det_rall.1D
+   #   1dcat stimuli/ricor_det_rall.1D'[0..12]' > stimuli/ricor_s0_rall.1D
+   #   3dDeconvolve -polort 7 -input ${prefix}$funcFile.nii.gz -x1D_stop -x1D pb01.ricor.xmat.1D
+   #   # regress out the detrended RETROICOR regressors
+   #   # (matrix from 3dD does not have slibase regressors)
+   #   3dREMLfit -input "${prefix}$funcFile.nii.gz"                                  \
+   #       -matrix pb01.ricor.xmat.1D                             \
+   #       -Obeta pb01.ricor.betas                                \
+   #       -Oerrts pb01.ricor.errts                               \
+   #       -slibase_sm stimuli/ricor_det_rall.1D
+   #   # re-create polynomial baseline
+   #   3dSynthesize -matrix pb01.ricor.xmat.1D                    \
+   #       -cbucket pb01.ricor.betas+orig'[0..7]'                 \
+   #       -select polort -prefix pb01.ricor.polort
+   #   # final result: add REML errts to polynomial baseline
+   #   # (and separate back into individual runs)
+   #   3dcalc -a pb01.ricor.errts+orig  \
+   #          -b pb01.ricor.polort+orig \
+   #          -datum short -nscale      \
+   #          -expr a+b -prefix p$prefix$funcFile.nii.gz
+     
+}
+
