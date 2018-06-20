@@ -114,6 +114,9 @@ Command line options:
 	   computed using AFNI 3dmaskSVD.
         Example: -nuisance_regression 6motion,csf,wm,dcsf,dwm
   -output_basename: Base name of file output during DICOM -> NIfTI conversion. Default: functional
+  -physio_resp: respitory file (1D or .resp [siemens])
+  -physio_card: pulse file (1D or .puls [siemens])
+  -physio_func_info: dicom directory/bidsjson file, used for timing info to extract resp+puls files
   -ref_vol: Reference volume to be used in motion correction. Will default to mean volume if not passed.should be a volume (time step) number or either mean or median
   -rescaling_method: The method used to normalize voxel intensities. Options are:
         -rescaling_method 10000_globalmedian (FSL's default, rescale the 4d file by a single quantity: 10000/[global median])
@@ -164,22 +167,23 @@ Command line options:
   -wavelet_threshold: This is the coefficient threshold value used during maxima and minima coefficient definition. Default: 10. See BWT_Documentation.pdf for details.
 
 The major steps in the processing pipeline are, in order:
-  0)   fslorient (_) and optionally truncate (0)
-  1)   Slice timing correction - t
-  2)   Motion correction - m
-  3)   Skull stripping and intensity thresholding - k
-  4)   Intensity/wavelet despiking (optional) - d
-  5)   Field map unwarping (optional) - u
-  6)   Co-registration and warping to standard space - w
-  7)   Remove group level components (optional) - c  [requires warp]
-  8)   Smoothing - s
-  9)   ICA-AROMA (optional) - a
-  10)   High-pass filtering - f
-  11)  Intensity normalization - n
-  12)  Nuisance regression (optional) - r
-  12.5) Global signal regression (optional, label optional) - g
-  13)  Bandpass filtering (optional) - b
-  14)  Auto Correlation removal (optional) - A [requires bandpass]
+  0)    fslorient (_) and optionally truncate (0)
+  1)    Physio/retroicor (optional) - p
+  2)    Slice timing correction - t
+  3)    Motion correction - m
+  4)    Skull stripping and intensity thresholding - k
+  5)    Intensity/wavelet despiking (optional) - d
+  6)    Field map unwarping (optional) - u
+  7)    Co-registration and warping to standard space - w
+  8)    Remove group level components (optional) - c  [requires warp]
+  9)    Smoothing - s
+  10)   ICA-AROMA (optional) - a
+  11)   High-pass filtering - f
+  12)   Intensity normalization - n
+  13)   Nuisance regression (optional) - r
+  13.5) Global signal regression (optional, label optional) - g
+  14)   Bandpass filtering (optional) - b
+  15)   Auto Correlation removal (optional) - A [requires bandpass]
 
 Note that if the slice acquisition order is sequential, then the default is to appply motion correction before slice timing correction, whereas for
 interleaved acquisition, the default is slice timing first. The order of these steps can be explicitly specified using -st_first, -mc_first, or -no_st.
@@ -449,6 +453,10 @@ if [[ -z $st_first && -z $mc_first && $sliceMotion4D -eq 0 && $no_st -eq 0 ]]; t
 	st_first=0
     fi
 fi
+
+# regress out physio (init: 20180620WF)
+# afni_proc.py puts the 'ricor' before 'tshift' (and before 'volreg'), but after 'despike'.
+reg_physio
 
 # add fm config settings to gobal environment (incase we already ran prepare_fieldmap, but need it for register_func2struct
 [ -n "$fm_cfg" ] && find_and_source_fmconfig $fm_cfg

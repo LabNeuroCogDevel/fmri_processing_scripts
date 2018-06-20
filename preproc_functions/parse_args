@@ -47,9 +47,13 @@ function parse_args {
     nuisance_regression=0
     nuisance_compute=0
     nuisance_file=.nuisance_regressors
-    output_basename=functional #base prefix of NIfTI file after dicom -> NIfTI conversion
     [ -z "$MATLAB_RAM_limit" ] && MATLAB_RAM_limit=3 #3GB wavelet despike RAM limit by default (more is faster, but can be a hog when processing in parallel).
     [ -z "$MATLAB_single_thread" ] && MATLAB_single_thread=
+    output_basename=functional #base prefix of NIfTI file after dicom -> NIfTI conversion
+    use_physio=""
+    physio_resp="" # respitory file (1D or .resp [siemens])
+    physio_card="" #pulse file (1D or .puls [siemens])
+    physio_func_info="" # dicom directory/json file, used for timing info to extract resp+puls files
     ref_vol=  #don't set a motion correction reference volume by default
     rescalingMethod="10000_globalmedian" #scale whole brain 4D by single constant to normalize median to 10000.
     rmgroup_component_1d=""
@@ -354,6 +358,19 @@ function parse_args {
 	elif [ $1 = -output_basename ]; then
 	    output_basename="${2}"
 	    shift 2
+	elif [ $1 = -physio_resp ]; then
+           physio_resp="$(abspath "${2}")"
+           use_physio=1
+	    shift 2
+	elif [ $1 = -physio_card ]; then
+           physio_card="$(abspath "${2}")"
+           use_physio=1
+	    shift 2
+	elif [ $1 = -physio_func_info ]; then
+	    physio_func_info="${2}"
+           [ -r "$physio_func_info" ] && physio_func_info="$(abspath "$physio_func_info")"
+           use_physio=1
+	    shift 2
 	elif [ $1 = -ref_vol ] ; then
             ref_vol="${2}"
             shift 2
@@ -550,6 +567,29 @@ function parse_args {
     if [[ -n "$rmgroup_component_1d" && $no_warp -ge 1 ]]; then
        echo "Cannot request -rmgroup_component and not preform a warp!"
        exit 1
+    fi
+
+    # Not legal to give just pulse or card
+    #  as well as way to get func slice info 
+    if [ -n "$use_physio" ]; then 
+       if [ -z "$(which siemphysdat 2>/dev/null)" ];then
+          echo "siemphysdat is not in your path! must install for physio preprocessing"
+          echo "   see https://github.com/LabNeuroCogDevel/siemphysdat"
+          exit 1
+       fi
+       # have all we need
+       if [ -z "$physio_card" -o -z "$physio_resp" ]; then
+          echo "-physio_resp and -physio_card must both be specified if any -physio_* option is used!"
+          exit 1
+       fi
+       if [ -z "$physio_func_info" -o ! -r "$physio_func_info" ]; then
+          echo "-physio_func_info must point to a dcm directory, dicom file, BIDS json file, or give a date string"
+          exit 1
+       fi
+       # is a json file, will be passed to siemphysdat with -j
+       if [ ! -d "$physio_func_info" ]; then
+          physio_func_info="-j $physio_func_info" 
+       fi
     fi
 
     #whether to use a fieldmap, either GRE or TOPUP

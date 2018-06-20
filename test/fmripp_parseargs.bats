@@ -22,6 +22,27 @@ teardown() {
  return 0
 }
 
+# physio usage
+@test "physio input: expected" {
+ touch junk.txt junk.puls junk.json
+ mkdir mrdir
+ run parse_args -4d fake.nii.gz -physio_card junk.puls -physio_resp junk.txt -physio_func_info junk.json
+ [ $status -eq 0 ]
+ run parse_args -4d fake.nii.gz -physio_card junk.puls -physio_resp junk.txt -physio_func_info mrdir 
+ [ $status -eq 0 ]
+}
+@test "physio input: fails" {
+ touch junk.txt junk.puls junk.json
+ # need both card and resp
+ run parse_args -4d fake.nii.gz -physio_card junk.txt 
+ [ $status -ne 0 ]
+ run parse_args -4d fake.nii.gz -physio_resp junk.txt 
+ [ $status -ne 0 ]
+ # need phsio_func_info
+ run parse_args -4d fake.nii.gz -physio_card junk.puls -physio_resp junk.txt
+ [ $status -ne 0 ]
+}
+
 # check default is to not trunc
 @test "no trunc" {
  pwd
@@ -68,6 +89,9 @@ teardown() {
 @test "fail if gsr but not in regression" {
  run parse_args -4d fake.nii.gz -gsr 
  [ $status -ne 0 ]
+
+ run parse_args -4d fake.nii.gz -gsr -nuisance_regression wm,dwm
+ [ $status -ne 0 ]
 }
 @test "gsr and nuisance_regression" {
  run parse_args -4d fake.nii.gz -gsr -nuisance_regression gs
@@ -87,3 +111,4 @@ teardown() {
  run parse_args -4d fake.nii.gz -rmgroup_component test.1d -no_warp
  [ $status -ne 0 ]
 }
+
