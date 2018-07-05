@@ -1,5 +1,5 @@
 #!/bin/bash
-#set -x
+set -x
 set -e
 
 function printHelp() {
@@ -250,6 +250,11 @@ mv .3dMEMA_cov "$dirOut"
 #create a subj + group file
 if [ -n "$groupColname" ]; then
     groupColnumber=$( /usr/bin/env Rscript -e "f<- scan(\"${covFile}\", what=\"character\", sep='\t', nlines=1, quiet=TRUE); cat(which(f == \"$groupColname\"))" )
+    if [ -z "$groupColnumber" ]; then
+	echo "Could not find specified group column $groupColname in ${covFile}. Check your header and make sure the file is tab-separated."
+	exit 1
+    fi
+    
     awk '{print $1}' "${covFile}" > "${dirOut}/.3dMEMA_subjcol"
     awk "{print \$$groupColnumber}" "${covFile}" > "${dirOut}/.3dMEMA_groupcol"
     paste "${dirOut}/.3dMEMA_subjcol" "${dirOut}/.3dMEMA_groupcol" > "${dirOut}/.3dMEMA_grouplookup"
