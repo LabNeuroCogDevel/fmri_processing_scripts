@@ -338,7 +338,7 @@ for (d in mprage_dirs) {
     if (has_jobid) {
       jj <- readLines(file.path(expected_mprage_dir, ".preprocessMprage_jobid"))
       job_retcode <- system2("qstat", jj, stdout=NULL, stderr=NULL)
-      if (job_recode == 0) { job_running <- TRUE } #0 exit status from qstat indicates that job is active; non-zero means it is not in queue
+      if (job_retcode == 0) { job_running <- TRUE } #0 exit status from qstat indicates that job is active; non-zero means it is not in queue
       if (!job_running) {
         message("Job id in .preprocessMprage_jobid, but appears not to be running:", jj)
         message("You should probably delete this directory (not doing this for now):", expected_mprage_dir)
