@@ -527,10 +527,10 @@ function parse_args {
 	exit 1
     fi
 
-    if [[ $autocorr_with_basis -eq 1 && $bandpass_filter -eq 0 ]]; then
-	echo "Cannot request -rmautocorr without -bandpass_filter "
-	exit 1
-    fi
+#    if [[ $autocorr_with_basis -eq 1 && $bandpass_filter -eq 0 ]]; then
+#	echo "Cannot request -rmautocorr without -bandpass_filter "
+#	exit 1
+#    fi
 
     #whether to use a fieldmap, either GRE or TOPUP
     use_fm=0

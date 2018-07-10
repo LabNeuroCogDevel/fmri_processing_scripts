@@ -78,7 +78,7 @@ function remove_autocorr_and_br(){
       local filter_file=""
   fi
   
-  reml_in_file=$nuisance_file.rmautcorr
+  reml_in_file=$nuisance_file.rmautocorr
   
   if [ "$nuisance_regression" -eq 1 ]; then
       rel "paste $nuisance_file .legendre.1D ${filter_file} > $reml_in_file"
@@ -563,7 +563,7 @@ function nuisance_regression {
 	rel "date > .bandpass_filter_complete"
 	rel "date > .nuisance_regression_complete"
 
-    elif [[ "$todo" =~ ^a ]]; then
+    elif [[ "$todo" =~ ^A ]]; then
 	# 20170420WF -- added for MJ w/MH suggestions
 	# remove autocorrelation + bandpass and regress
 
