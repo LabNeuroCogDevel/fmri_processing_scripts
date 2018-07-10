@@ -58,8 +58,14 @@ function ica_aroma {
 	    rel "Must use -template_brain <MNI_2mm|MNI_2.3mm|MNI_3mm|MNI_FSL_3mm>" c
 	    exit 1
 	fi
-
-	 #rename AROMA output to dummy, then regress melodic mixing matrix onto unsmoothed data
+ 
+	#Handle case of fslregfilt crash when there are many (many) components. Put this above undo smooth since that assumes the outputs exist
+	if [ ! -f "ica_aroma/denoised_func_data_nonaggr.nii.gz" ]; then
+            rel "Missing denoised output. Assuming crash and using slow R script version." c
+	    rel "Rscript fslRegFilt.R \"${funcdir}/${preAroma}${ext}\" \"${funcdir}/ica_aroma/melodic.ica/melodic_mix\" \"${funcdir}/motion.par\" 1"
+	fi
+	
+	#rename AROMA output to dummy, then regress melodic mixing matrix onto unsmoothed data
         if [ $undo_smooth -eq 1 ]; then
             #only apply AROMA components to unsmoothed data if any of them was flagged as noise. Otherwise, simply update symbolic links to point to unsmoothed data
             rel "immv ica_aroma/denoised_func_data_nonaggr ica_aroma/denoised_func_data_nonaggr_withsmooth"
