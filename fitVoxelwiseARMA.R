@@ -110,7 +110,7 @@ arimafit <- function(ts, search_pdq=TRUE, max.p=12, max.d=0, max.q=5, fit.p=NULL
     whitechecks <- c()
   }
   
-  return(list(resid_ts=mout$residuals, arima_order=forecast::arimaorder(mout), white_bg_pvals=setNames(whitechecks, paste0("bg_p_", 1:length(whitechecks)), arima_coefs=coef(mout))))
+  return(list(resid_ts=mout$residuals, arima_order=forecast::arimaorder(mout), white_bg_pvals=setNames(whitechecks, paste0("bg_p_", 1:length(whitechecks))), arima_coefs=coef(mout)))
   #arima_ses=sqrt(diag(mout$var.coef)) #omitting arma coefficient standard errors for now for computational speed (not using them for anything)
 }
 

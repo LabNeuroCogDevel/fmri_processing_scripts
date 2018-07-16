@@ -1,5 +1,12 @@
 #!/bin/bash
 
+function run_regfilt_in_r() {
+    if [ ! -f "ica_aroma/denoised_func_data_nonaggr.nii.gz" ]; then
+        rel "Missing denoised output. Assuming crash and using (very) slow R script version with 1 job." c
+	rel "Rscript ${scriptDir}/fsl_regfilt.R \"${funcdir}/${preAroma}${ext}\" \"${funcdir}/ica_aroma/melodic.ica/melodic_mix\" \"${funcdir}/ica_aroma/classified_motion_ICs.txt\" 1"
+    fi
+}
+
 function ica_aroma {
     
     #Run ICA-AROMA on data after spatial smoothing is complete
@@ -42,7 +49,7 @@ function ica_aroma {
 		local warptoFSL="$stddir/mni_icbm152_nlin_asym_09c/fonov_mni152_to_fsl_mni152_warpcoef.nii.gz"
 	    fi
 
-	    rel "python \"${scriptDir}/ica_aroma/ICA_AROMA.py\" -tr ${tr} -in \"${funcdir}/${preAroma}${ext}\" -out \"${funcdir}/ica_aroma\" -mc \"${funcdir}/motion.par\" -warp \"$warptoFSL\""
+	    rel "python \"${scriptDir}/ica_aroma/ICA_AROMA.py\" -overwrite -tr ${tr} -in \"${funcdir}/${preAroma}${ext}\" -out \"${funcdir}/ica_aroma\" -mc \"${funcdir}/motion.par\" -warp \"$warptoFSL\""
 
 	    [ $no_warp -eq 1 ] && rel "imrm func_to_fsl_warpfield"
 
@@ -52,19 +59,16 @@ function ica_aroma {
 
 	    local warpsuffix=
 	    [ $no_warp -eq 1 ] && local warpsuffix="-warp func_to_${templateName}_warpfield"
-	    rel "python \"${scriptDir}/ica_aroma/ICA_AROMA.py\" -tr ${tr} -in \"${funcdir}/${preAroma}${ext}\" -out \"${funcdir}/ica_aroma\" -mc \"${funcdir}/motion.par\" $warpsuffix"
+	    rel "python \"${scriptDir}/ica_aroma/ICA_AROMA.py\" -overwrite -tr ${tr} -in \"${funcdir}/${preAroma}${ext}\" -out \"${funcdir}/ica_aroma\" -mc \"${funcdir}/motion.par\" $warpsuffix"
 	else
 	    rel "ICA-AROMA support only provided for FSL and Fonov MNI templates at the moment." c
 	    rel "Must use -template_brain <MNI_2mm|MNI_2.3mm|MNI_3mm|MNI_FSL_3mm>" c
 	    exit 1
 	fi
- 
-	#Handle case of fslregfilt crash when there are many (many) components. Put this above undo smooth since that assumes the outputs exist
-	if [ ! -f "ica_aroma/denoised_func_data_nonaggr.nii.gz" ]; then
-            rel "Missing denoised output. Assuming crash and using slow R script version." c
-	    rel "Rscript fslRegFilt.R \"${funcdir}/${preAroma}${ext}\" \"${funcdir}/ica_aroma/melodic.ica/melodic_mix\" \"${funcdir}/motion.par\" 1"
-	fi
-	
+
+	#Handle case of fsl_regfilt crash when there are many (many) components. Put this above undo smooth since that assumes the outputs exist
+	run_regfilt_in_r
+
 	#rename AROMA output to dummy, then regress melodic mixing matrix onto unsmoothed data
         if [ $undo_smooth -eq 1 ]; then
             #only apply AROMA components to unsmoothed data if any of them was flagged as noise. Otherwise, simply update symbolic links to point to unsmoothed data
@@ -72,6 +76,9 @@ function ica_aroma {
 
             if [ -f "${funcdir}/ica_aroma/classified_motion_ICs.txt" ]; then
                 rel "fsl_regfilt -i ${preSmooth} -o ica_aroma/denoised_func_data_nonaggr -d ${funcdir}/ica_aroma/melodic.ica/melodic_mix -f $( cat ${funcdir}/ica_aroma/classified_motion_ICs.txt )"
+		
+		#It's likely that if fsl_regfilt crashes on the smoothed data, it will crash again on the unsmoothed. Trap and handle this possibility in R
+		run_regfilt_in_r
             else
                 rel "ln -sfn ../${preSmooth}${ext} ica_aroma/denoised_func_data_nonaggr${ext}" #nothing to denoise. just carry forward unsmoothed data as AROMA 'output'
             fi
