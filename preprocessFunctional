@@ -351,10 +351,6 @@ source "${scriptDir}/preproc_functions/prepare_mc_target"
 #TODO: read dirname from the input and cd to that directory
 funcdir=$(pwd) #define working directory for functional processing
 
-[ ! -d "${funcdir}/qa_images" ] && mkdir "${funcdir}/qa_images"
-[ ! -d "${funcdir}/transforms" ] && mkdir "${funcdir}/transforms"
-export qa_imgdir="${funcdir}/qa_images" #use export so that TopupPreprocessingAll picks up the directory
-
 ##load necessary modules if running on cluster (specific to ACI at the moment)
 if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then
     #setup DEPENd lab environment and programs
@@ -385,6 +381,11 @@ if [ $cleanup_only -eq 1 ]; then
     cleanup_preprocessFunctional
     exit 0
 fi
+
+#setup output directories for transform matrices and qa images
+[ ! -d "${funcdir}/qa_images" ] && mkdir "${funcdir}/qa_images"
+[ ! -d "${funcdir}/transforms" ] && mkdir "${funcdir}/transforms"
+export qa_imgdir="${funcdir}/qa_images" #use export so that TopupPreprocessingAll picks up the directory
 
 # write to an incomplete file (later to be changed to complete if process finishes)
 echo -e "$thiscommandinfo " > ${dotfile}_incomplete
