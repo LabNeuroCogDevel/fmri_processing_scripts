@@ -138,6 +138,7 @@ Command line options:
 	-template_brain MNI_2.3mm (MNI152 brain, 2.3mm isotropic voxels, template from MNI Fonov et al. 2009). For 2.3mm MB sequence.
         -template_brain MNI_3mm (MNI152 brain, 3mm isotropic voxels, template from MNI Fonov et al. 2009)
         -template_brain MNI_FSL_3mm (MNI152 brain, 3mm isotropic voxels, template from FSL standard)
+        -template_brain MNI_FSL_2.3mm (MNI152 brain, 2.3mm isotropic voxels, template from FSL standard)
         -template_brain MNI_FSL_2mm (MNI152 brain, 2mm isotropic voxels, template from FSL standard)
         -template_brain SPM_2mm (MNI brain from spm8 canonical template)
         -template_brain Tal_3mm (Talairach brain, 3mm isotropic voxels. Brain built by resampling MNI template in Tal space)
@@ -196,11 +197,13 @@ EndOfHelp
 }
 
 #Written: 2010/5/18
-#Last updated: 2018/7/01
+#Last updated: 2018/7/18
 #Last defaults change: 2017/7/5
 #
 #Changelog:
 #
+#7/18/2018 (MH)
+# - Support FSL MNI 2.3mm template (also changed the templates so that tissue priors (CSF etc.) are exactly in register.
 #7/1/2018 (MH)
 # - Implement fsl_regfilt approach (partial regression) manually when ICA spits out so many components that fsl_regfilt crashes. See fslRegfilt.R.
 # - Fixes to -rmautocorr to return pre-whitened residuals and not enforce bandpass

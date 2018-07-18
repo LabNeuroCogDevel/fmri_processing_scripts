@@ -220,7 +220,7 @@ case "$reference" in
 	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
     MNI_FSL_2mm) bettedRefBrain=${stddir}/fsl_mni152/MNI152_T1_2mm_brain;
 	unbettedRefBrain=${stddir}/fsl_mni152/MNI152_T1_2mm;
-	refMask=${stddir}/fsl_mni152/MNI152_T1_2mm_brain_mask_dil; #TODO: support the -fnirt_mask argument here
+	refMask=${stddir}/fsl_mni152/MNI152_T1_2mm_brain_mask${refMaskSuffix};
 	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
     SPM_2mm)  bettedRefBrain=${stddir}/spm8_mni/T1_brain;
 	unbettedRefBrain=${stddir}/spm8_mni/T1;

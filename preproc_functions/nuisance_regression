@@ -177,6 +177,9 @@ function compute_nuisance_regressors {
 		elif [ $templateName = MNI_FSL_3mm ]; then
 		    #for the FSL MNI, thr 0.7 works well visually: 87 voxels
 		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_csf_3mm.nii\" -thr 0.7 -bin .template_csf_prob"	    
+		elif [ $templateName = MNI_FSL_2.3mm ]; then
+		    #for the FSL MNI 2.3mm, thr 0.73 works well visually: 189 voxels
+		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_csf_2.3mm.nii\" -thr 0.73 -bin .template_csf_prob"
 		elif [ $templateName = MNI_FSL_2mm ]; then
 		    #for the FSL MNI 2mm, thr 0.75 works well visually: 193 voxels
 		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_csf_2mm.nii\" -thr 0.75 -bin .template_csf_prob"
@@ -251,7 +254,10 @@ function compute_nuisance_regressors {
 		    rel "fslmaths \"$stddir/spm8_mni/white.nii\" -thr 0.85 -bin -eroF .template_wm_prob"
 		elif [ $templateName = MNI_FSL_3mm ]; then
 		    #0.8 with erosion: 659 voxels
-		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_white_3mm.nii\" -thr 0.8 -bin -eroF .template_wm_prob"	    
+		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_white_3mm.nii\" -thr 0.8 -bin -eroF .template_wm_prob"
+		elif [ $templateName = MNI_FSL_2.3mm ]; then
+		    #0.85 with erosion: 1546 voxels
+		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_white_2.3mm.nii\" -thr 0.85 -bin -eroF .template_wm_prob"
 		elif [ $templateName = MNI_FSL_2mm ]; then
 		    #0.85 with erosion: 3113 voxels
 		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_white_2mm.nii\" -thr 0.85 -bin -eroF .template_wm_prob"	    
