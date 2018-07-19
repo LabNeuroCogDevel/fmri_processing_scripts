@@ -527,8 +527,8 @@ function cleanup_preprocessFunctional {
 	deleteFile nf${apre}s${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
     fi
 
-    if [[ "$nuisance_regression" -eq 1 || "$nuisance_compute" -eq 1 ]]; then
-	deleteFile "unfiltered_${nuisance_file}" #remove unfiltered nuisance regressors
+    if [[ ( "$nuisance_regression" -eq 1 || "$nuisance_compute" -eq 1 ) && -f "$nuisance_file" ]]; then
+	deleteFile "unfiltered_${nuisance_file}" #remove unfiltered nuisance regressors if filtered regressors exist
     fi
 
     ## Files left over from Finn's pipeline
