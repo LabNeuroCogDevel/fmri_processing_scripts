@@ -36,17 +36,17 @@ teardown() {
  return 0
 }
 
-# we set autocorr_with_basis with rmautocorr switch
+# we set rmautocorr with rmautocorr switch
 @test "with rmautocorr" {
  parse_args -4d fake.nii.gz -rmautocorr  -bandpass_filter 0.009 .08
- [ $autocorr_with_basis -eq 1 ]
+ [ $rmautocorr -eq 1 ]
  [ $funcFile == "fake" ]
 
 }
 
 @test "rmautocor and nuisance" {
  parse_args -4d fake.nii.gz -rmautocorr  -bandpass_filter 0.009 .08 -nuisance_regression 6motion
- [ $autocorr_with_basis -eq 1 ]
+ [ $rmautocorr -eq 1 ]
  [ $funcFile == "fake" ]
 }
 
@@ -57,7 +57,7 @@ teardown() {
 
 @test "default without rmautocorr" {
  parse_args -4d fake.nii.gz
- [ $autocorr_with_basis -eq 0 ]
+ [ $rmautocorr -eq 0 ]
  [ $funcFile == "fake" ]
 
 }

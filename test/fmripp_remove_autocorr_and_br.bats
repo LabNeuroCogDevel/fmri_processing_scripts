@@ -48,7 +48,7 @@ teardown() {
 @test "autocorr" {
 
   parse_args -4d test.nii.gz -rmautocorr -bandpass_filter 0.009 .08
-  [ "$autocorr_with_basis" -eq 1 ]
+  [ "$rmautocorr" -eq 1 ]
 
 
   # setup for nuisance_regression
@@ -77,7 +77,7 @@ teardown() {
 
 
   parse_args -4d test.nii.gz -bandpass_filter 0.009 .08 -nuisance_regression rx  -rmautocorr  
-  [ "$autocorr_with_basis" -eq 1 ]
+  [ "$rmautocorr" -eq 1 ]
 
 
   # setup for nuisance_regression
@@ -108,7 +108,7 @@ teardown() {
 @test "autocorr + compute nuisance only" {
 
   parse_args -4d test.nii.gz -bandpass_filter 0.009 .08 -nuisance_compute rx  -rmautocorr  
-  [ "$autocorr_with_basis" -eq 1 ]
+  [ "$rmautocorr" -eq 1 ]
 
 
   ntim=$(3dinfo -nt test.nii.gz)

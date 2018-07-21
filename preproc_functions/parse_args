@@ -42,7 +42,8 @@ function parse_args {
     no_st=0
     no_smooth=0
     no_warp=0
-    autocorr_with_basis=0 # -rmautocorr, 20170420WF -- added in nuisance_regression, 3dREMLfit basis 
+    rmautocorr=0 # -rmautocorr, return the -Rwherr -- ARMA(1,1) prewhitened residuals -- from 3dREMLfit when computing nuisance regression. DEFAULT is return unwhitened residuals
+    arma_nuisance_regression=1 #use 3dREMLfit by default when fitting nuisance regression (see Bright & Murphy 2017)
     nuisance_regression=0
     nuisance_compute=0
     nuisance_file=.nuisance_regressors
@@ -352,9 +353,12 @@ function parse_args {
 	elif [ $1 = -ref_vol ] ; then
             ref_vol="${2}"
             shift 2
-       elif [ $1 = -rmautocorr ]; then
-           autocorr_with_basis=1
-           shift
+	elif [ $1 = -rmautocorr ]; then
+	    rmautocorr=1
+	    shift 1
+	elif [ $1 = -ols_nuisance_regression ]; then
+	    arma_nuisance_regression=0
+	    shift 1
 	elif [ $1 = -rescaling_method ]; then
 	    if [[ $2 = "10000_globalmedian" || $2 = "100_voxelmean" ]]; then
 		rescalingMethod="${2}"
@@ -528,11 +532,6 @@ function parse_args {
 	exit 1
     fi
 
-#    if [[ $autocorr_with_basis -eq 1 && $bandpass_filter -eq 0 ]]; then
-#	echo "Cannot request -rmautocorr without -bandpass_filter "
-#	exit 1
-#    fi
-
     #whether to use a fieldmap, either GRE or TOPUP
     use_fm=0
     if [[ -n "$fm_phase" || -n "$se_phasepos" ]]; then
@@ -564,6 +563,12 @@ function parse_args {
 
     #smoothed files include the FHWM as a sufix
     [ $no_smooth -eq 0 ] && smoothing_suffix="_${smoothing_kernel}" || smoothing_suffix=
+
+    if [[ $rmautocorr -eq 1 && $arma_nuisance_regression -eq 0 ]]; then
+	rel "-rmautocorr and -ols_nuisance_regression both specified. This is an invalid combination." c
+	rel "Switching to ARMA(1,1) for nuisance regression and removing autocorrelation by -Rwherr in 3dREMLfit" c
+	arma_nuisance_regression=1
+    fi
     
     if [ -n "${logFile}" ]; then
 	archive_file "${logFile}" #move any existing files out of the way
