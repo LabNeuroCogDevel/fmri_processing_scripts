@@ -17,13 +17,13 @@ function optsOut = parseInOpts(opts,inputs)
 %   
 % CREATED IN:   MATLAB 7.13
 %
-% REVISION:     5
+% REVISION:     6 (06-09-2017)
 %
-% COPYRIGHT:    Ameera X Patel (2013, 2014), University of Cambridge
+% COPYRIGHT:    Ameera X Patel (2017), University of Cambridge
 %
-% TOOLBOX:      BrainWavelet Toolbox v1.1
+% TOOLBOX:      BrainWavelet Toolbox v2.0
 
-% ID: parseInOpts.m 5 30-01-2014 BWTv1.1 axpatel
+% ID: parseInOpts.m 6 06-09-2017 BWTv2.0 axpatel
 
 
 %% check inputs

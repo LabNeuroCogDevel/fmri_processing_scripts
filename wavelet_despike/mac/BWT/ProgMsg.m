@@ -12,13 +12,13 @@ function [] = ProgMsg(pos,Nout)
 %   
 % CREATED IN:   MATLAB 7.13
 %
-% REVISION:     3
+% REVISION:     6 (06-09-2017)
 %
-% COPYRIGHT:    Ameera X Patel (2013, 2014), University of Cambridge
+% COPYRIGHT:    Ameera X Patel (2017), University of Cambridge
 %
-% TOOLBOX:      BrainWavelet Toolbox v1.1
+% TOOLBOX:      BrainWavelet Toolbox v2.0
 
-% ID: ProgMsg.m 3 30-01-2014 BWTv1.1 axpatel
+% ID: ProgMsg.m 6 06-09-2017 BWTv2.0 axpatel
 
 
 %% check number of inputs
@@ -29,25 +29,27 @@ if nargin<1
 end
 
 if chkninput(nargin,[2,2],nargout,[0,0],fname) >=1 || ...
-        chkintype(Nout,'numeric',fname,{'2','3','4'}) >=1 ;
+        chkintype(Nout,'numeric',fname,{'2','3','4','5'}) >=1 ;
     return;
 end
+
+if Nout==5; Nout=4; end
 
 %% main msg struct
 
 msg=struct();
 
-msg.inp='1/%s  Checking inputs                  ...';
-msg.modwt='2/%s  Computing scales and MODWT       ...';
-msg.talc='3/%s  Temporally aligning coefficients ...';
-msg.lmm='4/%s  Searching for local max/min      ...';
-msg.nghbr='5/%s  Computing neighbourhood matrices ...';
-msg.ch='6/%s  Searching for chains             ...';
-msg.pdsh='7/%s  Applying phase-delay shift       ...';
-msg.sn='8/%s  Finding signal and noise coefs   ...';
-msg.imodwt='9/%s  Recomposing time series          ...';
-msg.sp='10/%s Computing Spike Percentage       ...';
-msg.dof='11/%s Computing spatial DOF map        ...';
+msg.inp='+ 1/%s  Checking inputs                  ...';
+msg.modwt='+ 2/%s  Computing scales and MODWT       ...';
+msg.talc='+ 3/%s  Temporally aligning coefficients ...';
+msg.lmm='+ 4/%s  Searching for local max/min      ...';
+msg.nghbr='+ 5/%s  Computing neighbourhood matrices ...';
+msg.ch='+ 6/%s  Searching for chains             ...';
+msg.pdsh='+ 7/%s  Applying phase-delay shift       ...';
+msg.sn='+ 8/%s  Finding signal and noise coefs   ...';
+msg.imodwt='+ 9/%s  Recomposing time series          ...';
+msg.sp='+ 10/%s Computing Spike Percentage       ...';
+msg.dof='+ 11/%s Computing spatial DOF map        ...';
 msg.done='%c\n';
 
 steps=num2str(Nout+7);
