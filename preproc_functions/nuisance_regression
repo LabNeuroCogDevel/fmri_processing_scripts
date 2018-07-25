@@ -566,7 +566,7 @@ function nuisance_regression {
 	
 	rel "date > .nuisance_regression_complete"
     # bandpass and regress
-    elif [[ "$todo" = "br" || "$todo" = "Abr" ]; then
+    elif [[ "$todo" = "br" || "$todo" = "Abr" ]]; then
 	if [ $arma_nuisance_regression -eq 0 ]; then
 	    rel "3dTproject -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
 	    	-prefix \"$postNRBP\" -polort 2 -ort ${nuisance_file} -passband $bpLow $bpHigh"
