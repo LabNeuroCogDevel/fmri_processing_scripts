@@ -107,7 +107,12 @@ function register_func2struct {
 	fi
 
 	#compute func -> epiref -> se fmap transform
-	rel "convert_xfm -omat $funcdir/transforms/func_to_sefmap.mat -concat $funcdir/transforms/epiref_to_sefmap.mat $funcdir/transforms/func_to_epiref.mat"
+	if [ -n "$funcRefimg" ]; then
+	    rel "convert_xfm -omat $funcdir/transforms/func_to_sefmap.mat -concat $funcdir/transforms/epiref_to_sefmap.mat $funcdir/transforms/func_to_epiref.mat"
+	else
+	    #this fires if there is no epiref in the pipeline. TopupPreprocessingAll calls everything 'epiref' regardless of whether it's a single band ref img or not.
+	    rel "cp $funcdir/transforms/epiref_to_sefmap.mat $funcdir/transforms/func_to_sefmap.mat"
+	fi
 	rel "convert_xfm -omat $funcdir/transforms/sefmap_to_func.mat -inverse $funcdir/transforms/func_to_sefmap.mat" #compute SE -> func transform
 	rel "convertwarp --relout --rel -r mc_target --premat=$funcdir/transforms/func_to_sefmap.mat --warp1=topup_undistort/SE_WarpField --postmat=$funcdir/transforms/sefmap_to_func.mat --out=topup_undistort/EF_WarpField"
 	

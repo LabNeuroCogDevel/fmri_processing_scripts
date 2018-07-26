@@ -197,11 +197,16 @@ EndOfHelp
 }
 
 #Written: 2010/5/18
-#Last updated: 2018/7/18
-#Last defaults change: 2017/7/5
+#Last updated: 2018/7/26
+#Last defaults change: 2018/7/26
 #
 #Changelog:
 #
+#7/26/2018 (MH)
+# - Switch to 3dREMLfit as the default for conducting nuisance regression (potentially including bandpass). See Bright & Murphy 2017 for details.
+#    If you further specify -rmautocorr, you will receive the ARMA(1,1) whitened residuals after nuisance regression. I wouldn't necessarily recommend this,
+#    but it does move toward the econometrics/statistics view that cross-correlations are only valid (non-spurious) if you have white time series.
+#    The better/true approach to prewhitening in order to compute region-to-region correlations is implemented in ROI_TempCorr.R at the ROI level.
 #7/18/2018 (MH)
 # - Support FSL MNI 2.3mm template (also changed the templates so that tissue priors (CSF etc.) are exactly in register.
 #7/1/2018 (MH)
