@@ -12,7 +12,14 @@ function check_requirements {
     #c3d provides a tool for transforming an ANTS matrix (itk) to FSL-compatible.mat
     command -v antsRegistrationSyN.sh >/dev/null 2>&1 && have_ants=1 || have_ants=0
     command -v c3d_affine_tool >/dev/null 2>&1 && have_c3d=1 || have_c3d=0
-        
+    if [[ $have_ants -eq 1 && $have_c3d -eq 1 && $prefer_ants -eq 1 ]]; then
+	rel "Using ANTS 6dof coregistration when possible: antsRegistrationSyN.sh" c
+	use_ants=1
+    else
+	rel "Preferring flirt over ANTS when possible" c
+	use_ants=0
+    fi
+    
     #use the saved slice order from dicom_to_nifti conversion
     if [ -f .detect_sliceorder ]; then
 	if [ -n "$sliceAcquisition" ]; then

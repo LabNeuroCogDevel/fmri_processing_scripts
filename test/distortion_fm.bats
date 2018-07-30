@@ -27,7 +27,7 @@ cat > thingstosource <<EOF
  funcdir="$(pwd)"
 
  bbrCapable=1
- funcStructFlirtDOF="bbr"
+ func_struct_dof="bbr"
  sliceMotion4D=1
  mc_first=0
  use_fm=1
@@ -144,7 +144,7 @@ teardown() {
 @test "preprocessDistortion gre (see also prepare_gre_fieldmaps.bats) no bbr for faster runtime" {
  skip
  echo "bbrCapable=''" >> thingstosource
- echo "funcStructFlirtDOF=''" >> thingstosource
+ echo "func_struct_dof=''" >> thingstosource
  source thingstosource
  #SAVETEST=1
  run $BATS_TEST_DIRNAME/../preprocessDistortion -phasedir $phased -magdir $magd -fm_cfg $fm_cfg
