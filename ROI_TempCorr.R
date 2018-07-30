@@ -397,8 +397,10 @@ genCorrMat <- function(roits, method="auto", fisherz=FALSE, partial=FALSE, roi_a
               xreg <- xreg[,grep("^drift$", colnames(xreg), value=TRUE, invert=TRUE)]
               if (ncol(xreg) == 0) { xreg = NULL } #if drift was the only column (no exogenous covariates)
             }
-            input_filtered <- forecast::Arima(nona[, x[input]], order=forecast::arimaorder(filter_model), 
-                                              fixed=newcoefs, xreg=xreg, include.mean=TRUE, include.drift=TRUE)
+
+            input_filtered <- tryCatch(forecast::Arima(nona[, x[input]], order=forecast::arimaorder(filter_model), fixed=newcoefs, xreg=xreg, include.mean=TRUE, include.drift=TRUE, method="CSS-ML"),
+              error=function(e) { print(e); forecast::Arima(nona[, x[input]], order=forecast::arimaorder(filter_model), fixed=newcoefs, xreg=xreg, include.mean=TRUE, include.drift=TRUE, method="ML") })
+              
             ts_input <- residuals(input_filtered)
             cvec[filter_direction] <- corrpair(residuals(input_filtered), ts_response, method=method)
             #cvec[filter_direction] <- cor(residuals(input_filtered), ts_response)
@@ -658,7 +660,8 @@ if (!is.null(fit_p)) {
   tictoc::tic("Fitting ARIMA models to ROI time series")
   #roi_arima_fits <- apply(roiavgmat, 2, function(ts) {
   roi_arima_fits <- foreach(ts=iter(roiavgmat, by="column"), .inorder=TRUE, .noexport="roiavgmat") %dopar% {
-    forecast::Arima(as.vector(ts), order=c(fit_p, fit_d, fit_q), include.drift=TRUE, include.mean=TRUE, xreg=xreg) #fit model of specified order
+    tryCatch(forecast::Arima(as.vector(ts), order=c(fit_p, fit_d, fit_q), include.drift=TRUE, include.mean=TRUE, xreg=xreg, method="CSS-ML"), #fit model of specified order
+      error=function(e) { print(e); forecast::Arima(as.vector(ts), order=c(fit_p, fit_d, fit_q), include.drift=TRUE, include.mean=TRUE, xreg=xreg, method="ML") }) #fall back to full ML
   }
   tictoc::toc()
   
