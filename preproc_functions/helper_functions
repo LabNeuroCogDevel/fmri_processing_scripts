@@ -200,7 +200,7 @@ function rel() {
 	fi	    
     fi
     
-    if [ ${qaout} -eq 0 ]; then
+    if [ ${qaout} -eq 1 ]; then
 	echo -e "${cmd}" >> "${qa_imglog}"
     elif [ -n "${logFile}" ]; then
 	pipesave="|tee -a '$logFile'"

@@ -771,11 +771,11 @@ function preproc_fieldmap {
     # Generate slice images
     rel "slicer fmap+mag -s 3 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
 	-y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
-	-z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png"
+	-z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png" q
 
     #pull these together
-    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/fmap+mag.png"
-    rel "rm sl[a-l].png"
+    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/fmap+mag.png" q
+    rel "rm sl[a-l].png" q
 
     ### STEP 6: Compute a signal loss (sigloss) estimate and make a siglossed magnitude image for forward warp
     rel "Compute signal loss estimate and apply to magnitude image for forward warp" c
@@ -822,10 +822,10 @@ function preproc_fieldmap {
 
     rel "slicer FM_UD_sigloss+mag -s 3 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
     -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
-    -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png"
+    -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png" q
 
-    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/FM_UD_sigloss+mag.png"
-    rel "rm sl[a-l].png"
+    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/FM_UD_sigloss+mag.png" q
+    rel "rm sl[a-l].png" q
 
     ##STEP 8. ALIGN MAGNITUDE WITH EPI
     # This begins to diverge from FSL 5.0+, where the magnitude and EPI are never explicitly aligned
@@ -905,10 +905,10 @@ function preproc_fieldmap {
     rel "overlay 1 0 EF_UD_fmap_mag_brain -a EF_UD_shift 0.0001 $shiftmaxr grot 0.0001 $shiftminr grot"
     rel "slicer grot -s 3 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
 	-y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
-	-z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png"
+	-z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png" q
 
-    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/EF_UD_shift+mag.png"
-    rel "rm sl[a-l].png"
+    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/EF_UD_shift+mag.png" q
+    rel "rm sl[a-l].png" q
 
     #TODO: Feat composes a few other images (animated GIFs) to show before and after.
     ## Skipping EF_D_mc_target.gif EF_UD_mc_target.gif EF_UD_fmap_mag_brain.gif
@@ -920,9 +920,9 @@ function preproc_fieldmap {
 
     if [ $use_ants -eq 1 ]; then
 	#MH: preliminary tests suggest that coregistration without the head is very slightly better, though I haven't looked systematically
-	rel "antsRegistrationSyN.sh -d 3 -f ${mprageBet}${ext} -m FM_UD_fmap_mag_brain${ext} -t r -o fmap_to_struct" #rigid transformation (6dof)
+	rel "antsRegistrationSyN.sh -d 3 -f ${mprageBet} -m FM_UD_fmap_mag_brain${ext} -t r -o fmap_to_struct" #rigid transformation (6dof)
 	#convert to FSL-compatible transformation
-	rel "c3d_affine_tool -ref ${mprageBet}${ext} -src FM_UD_fmap_mag_brain${ext} -itk fmap_to_struct0GenericAffine.mat -ras2fsl -o $funcdir/transforms/fmap_to_struct.mat"
+	rel "c3d_affine_tool -ref ${mprageBet} -src FM_UD_fmap_mag_brain${ext} -itk fmap_to_struct0GenericAffine.mat -ras2fsl -o $funcdir/transforms/fmap_to_struct.mat"
 	rel "immv fmap_to_structWarped fmap_to_struct"
 	rel "imrm fmap_to_structInverseWarped" #not useful
 	rel "mv fmap_to_struct0GenericAffine.mat ${funcdir}/transforms/fmap_to_struct.itk"
