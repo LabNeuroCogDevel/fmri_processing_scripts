@@ -369,8 +369,10 @@ function parse_args {
 	    shift 2
 	elif [ $1 = -prefer_ants ]; then
 	    prefer_ants=1 #whether to use ANTS for 6dof rigid coregistration when possible
+	    shift 1
 	elif [ $1 = -prefer_flirt ]; then
 	    prefer_ants=0
+	    shift 1
 	elif [ $1 = -ref_vol ] ; then
             ref_vol="${2}"
             shift 2
@@ -444,10 +446,9 @@ function parse_args {
 	    #deprecated: -siemens preferred
 	    detectSiemens=1
 	    shift 1
-       elif [ $1 = -trunc   ]; then
+       elif [ $1 = -trunc ]; then
            n_rm_firstvols=$2
            shift 2
-
 	elif [ $1 = -verbose ]; then
 	    verbose=1
 	    set -xv
