@@ -145,6 +145,9 @@ rel "START: Topup Field Map Generation and Gradient Unwarping" c
 
 mkdir -p $WD
 
+#define target for qa image log if not exported from preprocessFunctional
+[ -z "$qa_imglog" ] && qa_imglog="${WD}/qa_images.log"
+
 # Record the input options in a log file
 rel "$0 $@" c
 rel "PWD = $PWD" c

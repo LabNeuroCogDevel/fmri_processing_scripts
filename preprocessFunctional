@@ -403,7 +403,7 @@ fi
 [ ! -d "${funcdir}/qa_images" ] && mkdir "${funcdir}/qa_images"
 [ ! -d "${funcdir}/transforms" ] && mkdir "${funcdir}/transforms"
 export qa_imgdir="${funcdir}/qa_images" #use export so that TopupPreprocessingAll picks up the directory
-qa_imglog="${qa_imgdir}/qa_images.log"
+export qa_imglog="${qa_imgdir}/qa_images.log" #use export so that TopupPreprocessingAll picks up the path
 
 # write to an incomplete file (later to be changed to complete if process finishes)
 echo -e "$thiscommandinfo " > ${dotfile}_incomplete
