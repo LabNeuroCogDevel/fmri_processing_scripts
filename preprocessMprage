@@ -287,8 +287,9 @@ fi
 
 #setup qa_images directory
 mpragedir=$(pwd)
-[ ! -d "${mpragedir}/qa_images" ] && mkdir "${mpragedir}/qa_images"
 qa_imgdir="${mpragedir}/qa_images"
+[ ! -d "${qa_imgdir}" ] && mkdir "${qa_imgdir}"
+qa_imglog="${qa_imgdir}/qa_images.log"
 
 #if .mprage_nifti file exists, then DICOM -> NIFTI conversion completed and we should read nifti from file
 if [[ -z "$nifti" && -f .mprage_nifti ]]; then
