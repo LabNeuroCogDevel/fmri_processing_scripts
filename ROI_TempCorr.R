@@ -91,7 +91,7 @@ pm_partial <- c()
 roi_reduce <- "mean" #see Varoquax and Craddock 2013 for why mean is a better choice than first eigenvariate
 roi_diagnostics_fname <- NULL
 fisherz <- FALSE
-dropvols <- 0
+drop_vols <- 0
 pcorr_cvsplit <- 10 #default 10-fold cross-validation for parcor functions
 ts_only <- FALSE # only compute timeseries, not correlation matrix
 write_header <- FALSE #whether to include mask value as a header row in outputs
@@ -188,8 +188,8 @@ while (argpos <= length(args)) {
     na_string <- args[argpos + 1]
     argpos <- argpos + 2
   } else if (args[argpos] == "-dropvols") {
-    dropvols <- as.numeric(args[argpos + 1]) #number of vols to drop
-    if (is.na(dropvols)) { stop("Could not understand argument ", args[argpos+1], "to -dropvols") }
+    drop_vols <- as.numeric(args[argpos + 1]) #number of vols to drop
+    if (is.na(drop_vols)) { stop("Could not understand argument ", args[argpos+1], "to -dropvols") }
     argpos <- argpos + 2
   } else if (args[argpos] == "-port") {
     clustersocketport <- as.integer(args[argpos + 1])
@@ -250,9 +250,9 @@ for (pkg in c("methods", "foreach", "doParallel", "oro.nifti", "MASS", "corpcor"
 if (!is.null(fname_censor1D)) {
   stopifnot(file.exists(fname_censor1D))
   censor1D <- read.table(fname_censor1D, header=FALSE)$V1
-  censorVols <- which(censor1D == 0.0)      
+  censor_vols <- which(censor1D == 0.0)      
 } else {
-  censorVols <- c()
+  censor_vols <- c()
 }
 
 if (!is.null(nuisance_regressors)) {
@@ -588,6 +588,20 @@ roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, 
   return(ts)
 }
 
+
+##drop initial volumes if requested
+##this should be implemented before censoring so that ARIMA models and bandpass filtering are applied on the truncated data
+##ARIMA estimation may be thrown off if we hand it nonstationary data, such as may exist prior to steady state magnetization
+if (drop_vols > 0) {
+  message("Dropping ", drop_vols, " volumes from ROI time series prior to correlation.")
+  roiavgmat <- roiavgmat[-1*(1:drop_vols),]
+  if (!is.null(nuisance_df)) { nuisance_df <- nuisance_df[-1*(1:drop_vols),] }
+  if (length(censor_vols) > 0L) {
+    censor_vols <- censor_vols - drop_vol #shift censor vector based on the number dropped
+    censor_vols <- censor_vols[censor_vols > 0] #omit any censored volumes that may have fallen in the truncated period
+  }
+}
+
 #We need to detrend before bandpass filtering, if requested
 #note that we could incorporate these as additional columns of the nuisance regressors if there was no temporal filter
 #then apply those regressors at the stage of ARIMA or OLS removal. But then we start
@@ -722,17 +736,10 @@ if (!is.null(roi_diagnostics_fname)) {
 censorvec <- rep(0, nrow(roiavgmat))
 goodVols <- 1:nrow(roiavgmat)
 
-if (length(censorVols) > 0L) {
-  message("Censoring volumes ", paste0(censorVols, collapse=", "), " based on ", fname_censor1D)
-  goodVols <- goodVols[-censorVols]
-  censorvec[censorVols] <- 1
-}
-
-##drop initial volumes if requested
-if (dropvols > 0) {
-  message("Dropping ", dropvols, " volumes from ROI time series prior to correlation.")
-  goodVols <- goodVols[-1*(1:dropvols)]
-  censorvec[1:dropvols] <- 1
+if (length(censor_vols) > 0L) {
+  message("Censoring volumes ", paste0(censor_vols, collapse=", "), " based on ", fname_censor1D)
+  goodVols <- goodVols[-censor_vols]
+  censorvec[censor_vols] <- 1
 }
 
 roiavgmat_censored <- roiavgmat[goodVols,]
