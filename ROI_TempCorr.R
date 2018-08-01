@@ -597,7 +597,7 @@ if (drop_vols > 0) {
   roiavgmat <- roiavgmat[-1*(1:drop_vols),]
   if (!is.null(nuisance_df)) { nuisance_df <- nuisance_df[-1*(1:drop_vols),] }
   if (length(censor_vols) > 0L) {
-    censor_vols <- censor_vols - drop_vol #shift censor vector based on the number dropped
+    censor_vols <- censor_vols - drop_vols #shift censor vector based on the number dropped
     censor_vols <- censor_vols[censor_vols > 0] #omit any censored volumes that may have fallen in the truncated period
   }
 }
