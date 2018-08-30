@@ -73,6 +73,7 @@ function resetcfg {
     use_job_array=0 #whether to use PBS job array
     use_moab=0 #whether to use Moab to handle job arrays (instead of torque)
     use_massive_qsub=0 #whether to use a massive submission of individual qsub jobs
+    idlist=
 }
 
 njobs=8 #default to 8 parallel jobs

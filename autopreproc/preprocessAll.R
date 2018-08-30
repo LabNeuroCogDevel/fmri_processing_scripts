@@ -44,6 +44,15 @@ library(doMC)
 library(iterators)
 
 #pull in cfg environment variables from bash script
+idlist <- Sys.getenv("idlist") #if specified, either a comma-separated list of ids to process, or a txt file containing ids (one per row)
+if (idlist != "") {
+  if (file.exists(idlist)) {
+    idlist <- readLines(idlist)
+  } else {
+    idlist <- strsplit(idlist, ",")[[1]]
+  }  
+} else { idlist <- NULL }
+
 mprage_dirpattern = Sys.getenv("mprage_dirpattern") #wildcard pattern defining names of relevant structural scans in the raw folder
 mprage_dicompattern = Sys.getenv("mprage_dicompattern")
 mprage_output_dirname = Sys.getenv("mprage_output_dirname")
@@ -275,25 +284,34 @@ cat("--------\n\n")
 ##Note that the depth of 2 assumes a structure such as Project_Dir/SubjectID/mprage_dir where each subject has a single directory
 mprage_dirs <- system(paste0("find $PWD -mindepth 2 -maxdepth 2 -iname \"", mprage_dirpattern, "\" -type d"), intern=TRUE)
 subids <- basename(dirname(mprage_dirs)) #subject ids are used for checking for multiple mprage scans per subject
-mprage_dirs_byid <- split(mprage_dirs, subids)
-mprage_dirs <- unlist(lapply(mprage_dirs_byid, function(subject) {
-  #making assumptions that series numbers fall either first or last and that the last series number should be preferred
-  if (length(subject) > 1L) {
-    fname <- basename(subject)
-    message("Multiple mprage folders identified for a single subject. Will prefer the one with the highest series number")
-    print(fname, row.names=FALSE)
-    have_leading_digits <- grepl("^\\d+.*", fname, perl=TRUE)
-    have_trailing_digits <- grepl(".*[^\\d]+\\d+$", fname, perl=TRUE)
-    if (all(have_trailing_digits)) {
-      #require at least one preceding non-digit character to avoid .* greedy matching all but last digit
-      sernum <- as.numeric(sub(".*[^\\d]+(\\d+)$", "\\1", fname, perl=TRUE))
-    } else if (all(have_leading_digits)) {
-      sernum <- as.numeric(sub("^(\\d+).*", "\\1", fname, perl=TRUE))
-    } else { stop("Unable to parse series numbers from inputs: ", fname) }
+if (!is.null(idlist)) { #apply id list subsetting
+  idpos <- which(subids %in% idlist)
+  mprage_dirs <- mprage_dirs[idpos]
+  subids <- subids[idpos]
+}
 
-    return(subject[which.max(sernum)])
-  } else { return(subject) }
-}))
+if (length(mprage_dirs) > 0L) {
+  #handle the possibility of multiple mprage directories per subject
+  mprage_dirs_byid <- split(mprage_dirs, subids)
+  mprage_dirs <- unlist(lapply(mprage_dirs_byid, function(subject) {
+    #making assumptions that series numbers fall either first or last and that the last series number should be preferred
+    if (length(subject) > 1L) {
+      fname <- basename(subject)
+      message("Multiple mprage folders identified for a single subject. Will prefer the one with the highest series number")
+      print(fname, row.names=FALSE)
+      have_leading_digits <- grepl("^\\d+.*", fname, perl=TRUE)
+      have_trailing_digits <- grepl(".*[^\\d]+\\d+$", fname, perl=TRUE)
+      if (all(have_trailing_digits)) {
+        #require at least one preceding non-digit character to avoid .* greedy matching all but last digit
+        sernum <- as.numeric(sub(".*[^\\d]+(\\d+)$", "\\1", fname, perl=TRUE))
+      } else if (all(have_leading_digits)) {
+        sernum <- as.numeric(sub("^(\\d+).*", "\\1", fname, perl=TRUE))
+      } else { stop("Unable to parse series numbers from inputs: ", fname) }
+
+      return(subject[which.max(sernum)])
+    } else { return(subject) }
+  }))
+}
 
 ##find all renamed mprage directories for processing
 ##use beginning and end of line markers to force exact match
@@ -527,6 +545,12 @@ if (!proc_functional) {
 
 #get list of subject directories in root directory
 subj_dirs <- list.dirs(path=basedir, recursive=FALSE)
+subids <- basename(subj_dirs)
+if (!is.null(idlist)) { #apply id list subsetting
+  idpos <- which(subids %in% idlist)
+  subj_dirs <- subj_dirs[idpos]
+  subids <- subids[idpos]
+}
 
 #Make run processing parallel, not subject processing. This scales much better across processors
 all_funcrun_dirs <- list()
