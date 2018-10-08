@@ -353,6 +353,7 @@ source "${scriptDir}/preproc_functions/nuisance_regression"
 source "${scriptDir}/preproc_functions/ica_aroma"
 source "${scriptDir}/preproc_functions/prepare_mc_target"
 source "${scriptDir}/preproc_functions/remove_group_components"
+source "${scriptDir}/preproc_functions/reg_physio"
 
 
 

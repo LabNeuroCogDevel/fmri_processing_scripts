@@ -8,6 +8,7 @@
 # insturction settingts
 [ -z "$CLEANUP" ]   && CLEANUP=yes   # remove ~850MB of nifti files when we are done
 [ -z "$CHECKFLAG" ] && CHECKFLAG=yes # should we check for complete file flag .preprocessfunctional_complete?
+ONLYONE=""
 PDIR=""
 VERBOSE=0
 
@@ -29,6 +30,7 @@ usage() {
     echo "   -t TEMPLATE  MNI template ($TEMPLATE)"
     echo "   -w WARPCOEF  native to mni warp ($WARPCOEF)"
     echo "   -s STARTFILE example (#tr, suffix) file to use ($STARTFILE)"
+    echo "   -O NIIFILE   only calculate for this file"
     echo "   -f   do not look for flag file"
     echo "   -c   do not clean up"
     echo "   -v   be verbose, repeat for more text (-v -v)"
@@ -88,12 +90,18 @@ TSNR_onerun(){
 
 
    # grab all files matching the suffix with the same number of trs as first file
-   [ $VERBOSE -gt 1 ] && echo "looking for '*${suffix/.nii.gz/}*' w/$ntr trs:" && \
-      3dinfo -nt -space -iname  *_${suffix/.nii.gz/}*.nii.gz |
-      sort -n |sed 's/^/\t/'
 
    cnt=0
-   for file in $(3dinfo -iname -nt *_${suffix/.nii.gz/}*.nii.gz | awk "(\$2 == $ntr){print \$1}"); do
+   if [ -n "$ONLYONE" ]; then
+      filelist="$STARTFILE"
+      [  $VERBOSE -gt 0 ] && echo "using only $STARTFILE" 
+   else
+      filelist="$(3dinfo -iname -nt *_${suffix/.nii.gz/}*.nii.gz | awk "(\$2 == $ntr){print \$1}")"
+      [ $VERBOSE -gt 1 ] && echo "looking for '*${suffix/.nii.gz/}*' w/$ntr trs:" && \
+        3dinfo -nt -space -iname  *_${suffix/.nii.gz/}*.nii.gz |
+        sort -n |sed 's/^/\t/'
+   fi
+   for file in $filelist; do
       [ $VERBOSE -gt 1 ] && echo "# looking at $file"
       [ ! -r $file ] && echo "UTOH! bad expected file $file" >&2 && continue
 
@@ -179,7 +187,6 @@ TSNR_onerun(){
    return 1
 }
 parse_args(){
-
    while [ -n "$1" ]; do
       case "$1" in
          # files
@@ -190,12 +197,13 @@ parse_args(){
          # flags
          -c |-no-clean)  CLEANUP="no"; shift 1;;
          -f |-no-flag) CHECKFLAG="no"; shift 1;;
+         -O |-only)   STARTFILE="$2"; ONLYONE=1; shift 2;;
          -v ) let ++VERBOSE; shift;;
          # help
          -h ) usage "";;
          -*) usage "unkown option: $1";;
          # non switch arg is preprocess directory
-         *) PDIR="$1"; shift; echo p;;
+         *) PDIR="$1"; shift; echo setting PDIR to $PDIR;;
       esac
    done
 

@@ -20,12 +20,17 @@ reg_physio() {
    [ ! -r "$physio_card" ] && rel "-physio_card '${physio_card}' does not exist!" c && return 1
    [ ! -r "$physio_func_info" ] && rel "-physio_func_info '${physio_func_info}' does not exist!" c && return 1
 
-   # extract time -- this is likely to fail. physio is often bad
    local spfix=siemphys_retrots_
+
+   # undo anything we didn't finish
+   [ $(ls $spfix*slibase.1D 2>/dev/null|wc -l) -gt 0 ] && rm $spfix*slibase.1D
+   [ -d xx_retroicor.results ] && rm -r xx_retroicor.results
+
+   # extract time -- this is likely to fail. physio is often bad
    rel "siemphysdat  $physio_resp $physio_card  $physio_func_info -t all -o $spfix"
 
    # file with our prefix modified in the last 3 minutes
-   local retrots=$(find -maxdepth 1 -type f -iname "$spfix*" -mmin -3 -print -quit)
+   local retrots=$(find -maxdepth 1 -type f -iname "$spfix*slibase.1D" -mmin -3 -print -quit)
    [ -z "$retrots " -o ! -r "$retrots" ] && rel "retroTS of physio failed: no recent $(pwd)/$spfix*" c && return 1
 
    # regress like afni. see $afnidir/db_mod.py and the created proc.xx
