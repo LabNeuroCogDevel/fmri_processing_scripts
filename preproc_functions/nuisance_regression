@@ -40,8 +40,8 @@ COMPUTE_NUISANCE_REGRESSORS_GLOBALS=(nuisance_file nuisance_regressors no_warp \
 # remove_autocorr_and_br dnswdktm_restepi_5.nii.gz Rdnswdktm_restepi_5.nii.gz wktm_restepi_98_2_mask_dil1x_templateTrim.nii.gz
 # GLOBAL $tr, $nuisance_file, $bpLow, $bpHigh
 # there is lots of boilerplate checks. at the heart this runs 2 commands
-# 1) 1dBport to generate bandpass sine/cosine and basis function (to remove autocorr)
-# 2) 3dREMLfit to remove these
+# 1) 1dBport to generate bandpass sine/cosine basis functions
+# 2) 3dREMLfit to remove these and autocorrelation using ARMA(1,1) model
 function remove_autocorr_and_br(){
   img=$1
   out=$2
@@ -53,32 +53,42 @@ function remove_autocorr_and_br(){
   nvol=$(3dinfo -nt $img)
   [ -z "$nvol" -o $nvol -lt 1 ] && echo "$FUNC_NAME: bad number of timesteps ($nvol) in $img" >&2 && return 1
 
+  #always include baseline (const), linear, and quadratic terms in removal
+  Rscript -e "suppressMessages(library(orthopolynom)); \
+      unnormalized.p.list <- legendre.polynomials(2, normalized=FALSE); \
+      baseline <- polynomial.values(polynomials=unnormalized.p.list, x=seq(-1,1, length.out=$nvol)); \
+      baseline[2:length(baseline)] <- lapply(baseline[2:length(baseline)], function(v) { v - mean(v) }); \
+      write.table(do.call(cbind, baseline), file='.legendre.1D', col.names=FALSE, row.names=FALSE)"  
+  
   bandoption=""
   if [ "$bandpass_filter" -eq 1 ]; then
-     if [ -z "$bpLow" -o -z "$bpHigh" ]; then
-       rel "ERROR! $FUNC_NAME has no bandpass low or high parameters, but we said bandpass!" c
-       return 1
-     fi
-     bandoption="-band $bpLow $bpHigh"
+      if [ -z "$bpLow" -o -z "$bpHigh" ]; then
+	  rel "ERROR! $FUNC_NAME has no bandpass low or high parameters, but we said bandpass!" c
+	  return 1
+      fi
+      bandoption="-band $bpLow $bpHigh"
+      #MH 30May2017: for reasons I don't know, 1dBport dies when TR is < 1s and is not prefixed by zero (e.g., .894).
+      local ztr="${tr/#./0.}"
+      rel "1dBport -nodata $nvol $ztr $bandoption -noconst -invert > .basis.1D" #constant handled above in baseline
+      # same as '-nodata $nvol $tr' is same as '-input $img'
+
+      local filter_file=".basis.1D"
   else
-     #rel "WARNING! AFNI gurus say you probably WANT bandpassing. You are NOT bandpassing (by setting no low pass and highpass above nyquist" c
-     #bandoption="-band 0 100000"
-      rel "ERROR! I think you need to bandpass to remove autocorrelation. Sorry." c
-      return 1      
+      rel "WARNING! AFNI gurus say you probably WANT bandpassing. You are NOT bandpassing (by setting no low pass and highpass above nyquist" c
+      
+      #rel "ERROR! I think you need to bandpass to remove autocorrelation. Sorry." c
+      #return 1
+      local filter_file=""
   fi
-
-  #MH 30May2017: for reasons I don't know, 1dBport dies when TR is < 1s and is not prefixed by zero (e.g., .894).
-  local ztr="${tr/#./0.}"
-  rel "1dBport -nodata $nvol $ztr $bandoption -quad -invert > .basis.1d"
-  # same as '-nodata $nvol $tr' is same as '-input $img'
-
-  reml_in_file=$nuisance_file.rmautcorr
+  
+  reml_in_file=$nuisance_file.rmautocorr
   
   if [ "$nuisance_regression" -eq 1 ]; then
-      rel "paste $nuisance_file .basis.1d > $reml_in_file"
+      rel "paste $nuisance_file .legendre.1D ${filter_file} > $reml_in_file"
   else
-      rel "cp .basis.1d $reml_in_file"
+      rel "paste .legendre.1D ${filter_file} > $reml_in_file"
   fi
+
   # could also try below, but get different results!
   # regoption="-stimbase $nuisance_file"
 
@@ -86,13 +96,13 @@ function remove_autocorr_and_br(){
   maskoption=""
   [ -n "$mask" ] && imtest "$mask" && maskoption="-mask $mask"
 
-  rel "3dREMLfit -input $img $maskoption -matim $reml_in_file -Rerrts $out"
+  #rel "3dREMLfit -input $img $maskoption -matim $reml_in_file -Rerrts $out" #-Rerrts returns standard (non-white) residuals
+  rel "3dREMLfit -input $img $maskoption -matim $reml_in_file -Rwherr $out" #-Rwherr returns the pre-whitened residuals
   rel "date > .remove_autocorr_complete"
   return 0
 }
 
 function compute_nuisance_regressors {
-
     # 20170421WF: skipping might be a problem if we change what regressors we want
     if [ -r .nuisance_compute_complete ]; then
        rel "already computed nuisance regression" c
@@ -123,7 +133,6 @@ function compute_nuisance_regressors {
     #reg=$( printf "%s\n" "${reg[@]}" | sort -u ) #eliminate any duplicate regressors
     #switched to perl because it does not reorder regressors
     reg=$( printf "%s\n" "${reg[@]}" | perl -ne 'print if ! $a{$_}++' ) #eliminate any duplicate regressors
-
 
     for r in $reg; do
 	if [[ "$r" =~ ^(6motion|rx|ry|rz|tx|ty|tz)$ && ! -f ".motion_demean" ]]; then 
@@ -559,7 +568,7 @@ function nuisance_regression {
 	rel "date > .bandpass_filter_complete"
 	rel "date > .nuisance_regression_complete"
 
-    elif [[ "$todo" =~ ^a ]]; then
+    elif [[ "$todo" =~ ^A ]]; then
 	# 20170420WF -- added for MJ w/MH suggestions
 	# remove autocorrelation + bandpass and regress
 

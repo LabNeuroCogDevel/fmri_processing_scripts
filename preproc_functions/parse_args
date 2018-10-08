@@ -552,10 +552,10 @@ function parse_args {
 	exit 1
     fi
 
-    if [[ $autocorr_with_basis -eq 1 && $bandpass_filter -eq 0 ]]; then
-	echo "Cannot request -rmautocorr without -bandpass_filter "
-	exit 1
-    fi
+#    if [[ $autocorr_with_basis -eq 1 && $bandpass_filter -eq 0 ]]; then
+#	echo "Cannot request -rmautocorr without -bandpass_filter "
+#	exit 1
+#    fi
 
     # Not legal to use -gsr without also having it in regression
     if [[ $gsr_in_prefix -eq 1 && ! $nuisance_regressors =~ (^|,| )gs( |,|$) ]]; then
