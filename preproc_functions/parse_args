@@ -753,7 +753,7 @@ check_dep_list(){
           ! python -c "import $module;import sys; sys.exit(0)" 2>/dev/null && 
              echo "missing $cmd; consider 'pip install --user $module'"  && let ++missing_deps
        elif [[ $cmd =~ ^perl: ]]; then
-          ! perl -M$module -e "exit(0)" && 
+          ! perl -M$module -e "exit(0)" 2>/dev/null && 
              echo "missing $cmd; consider 'cpanm $module'" && let ++missing_deps
        elif [[ $cmd =~ ^R: ]]; then
           ! Rscript -e "quit(status=as.numeric(!is.element('$module',installed.packages()[,1])),save='no')" && 
