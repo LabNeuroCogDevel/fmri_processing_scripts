@@ -39,6 +39,7 @@ Command line options:
   -bandpass_filter: Apply bandpass filter to fMRI data using 3dTproject. Specify low and high cutoff frequencies in Hz.
         Example: -bandpass_filter 0.009 .08
   -bet_frac: fractional intensity threshold for skull-stripping mean functional (used in func-to-struc warp). Default 0.3.
+  -check_dependencies: what tools are avaible on this system. Exit w/ status 0 if everything we could use is found
   -cleanup: Deletes all files used in preprocessing that are unlikely to be needed for analysis, see -keep_motion_files 
   -cleanup_only: Delete all intermediate files, but do not run any processing steps.
   -compute_warp_only: Do not warp data to template space, but do compute the nonlinear transformation to template (and FM unwarp).
