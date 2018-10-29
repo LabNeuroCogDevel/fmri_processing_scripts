@@ -125,7 +125,12 @@ function parse_args {
 	    exit 0
 	fi
     elif [ $# -eq 1 ]; then
-	if [ $1 = -cleanup_only ]; then
+       if [ $1 = -check_dependencies ]; then 
+          set +e
+          check_dep_list 3dcalc fslmaths python antsRegistrationSyN.sh c3d_affine_tool python:nipy python:nibabel perl:App::AFNI::SiemensPhysio 
+          exit $?
+          set -e
+	elif [ $1 = -cleanup_only ]; then
 	    cleanup_only=1
 	    cleanup=1
 	elif [ $1 = -startover ]; then
@@ -653,6 +658,9 @@ function parse_mprage_args() {
 	elif [[ $1 = -bright_skull ]] ; then
 	    bright_skull=1
 	    shift 1
+       elif [[ $1 = -check_dependencies ]]; then 
+          check_dep_list runROBEX.sh gzip 3dSkullStrip Dimon robustfov fslmaths bet fast applywarp
+          exit $?
 	elif [[ $1 = -cleanup ]]; then
 	    cleanup=1
 	    shift 1
@@ -732,6 +740,30 @@ function parse_mprage_args() {
     #explicit return code needed to avoid implicit status of prior command
     return 0
 
+}
+
+# check dependiencies
+#  useful for looking for biniaries e.g. fslmaths (fsl), antsRegistrationSyN (ANTs)
+#  as well as language modules e.g python:nipy perl:App::AFNI::SiemensPhysio (siemphysdat)
+check_dep_list(){
+    local missing_deps=0
+    for cmd in $@; do
+       local module=${cmd#*:} # remove perl: python: or R:
+       if [[ $cmd =~ ^python: ]]; then
+          ! python -c "import $module;import sys; sys.exit(0)" 2>/dev/null && 
+             echo "missing $cmd; consider 'pip install --user $module'"  && let ++missing_deps
+       elif [[ $cmd =~ ^perl: ]]; then
+          ! perl -M$module -e "exit(0)" && 
+             echo "missing $cmd; consider 'cpanm $module'" && let ++missing_deps
+       elif [[ $cmd =~ ^R: ]]; then
+          ! Rscript -e "quit(status=as.numeric(!is.element('$module',installed.packages()[,1])),save='no')" && 
+             echo "missing ${cmd}; consider Rscript -e 'install.packages(\"$module\")'" && let ++missing_deps
+       else
+          ! command -v $cmd >/dev/null && echo "missing $cmd" && let ++missing_deps
+       fi
+    done
+    [ $missing_deps -eq 0 ] && echo "$0 has all dependencies met!" 
+    return $missing_deps
 }
 
 # vim: set tabstop=7:

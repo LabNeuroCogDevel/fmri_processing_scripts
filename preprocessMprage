@@ -30,6 +30,7 @@ Command line options:
   -bright_skull: apply a correction to reduce the intensity of bright voxels in the skull prior to FNIRT.
         Skull voxels that are bright (esp. near top of brain) can lead to artifactual stretching in FNIRT.
         This correction is recommended if the skull is noticeably brighter (2-3x) than brain voxels.
+  -check_dependencies: what tools are avaible on this system. Exit w/ status 0 if everything needed is found
   -cleanup: cleanup intermediate files not needed for further processing.
   -cleanup_only: run cleanup of intermediate files, then exit. (after checking files)
   -custom_brainmask: a NIfTI image containing a custom brain mask to be used instead of running a skull strip internally.
@@ -78,6 +79,8 @@ EndOfHelp
 #Last updated: 7/21/2017
 #
 #Changelog:
+#10/29/2018 (WF) 
+# - add -check_dependencies to check install
 #7/21/2017 (MH)
 # - Added a correction (-bright_skull) for reducing bright skull voxels prior to FNIRT. This was leading to distortion (stretching) in some cases
 # - Added an option (-fnirt_mask) to choose the tightness of the refmask for fnirt to improve warp in some subjects
