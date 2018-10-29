@@ -73,10 +73,11 @@ teardown() {
  [ $funcFile == "fake" ]
 }
 
-@test "fail with rmautocorr and no bandpass_filter" {
- run parse_args -4d fake.nii.gz -rmautocorr  
- [ $status -ne 0 ]
-}
+# this restraint has been removed! (when, why?, noted after the fact on 20181029) 
+# @test "fail with rmautocorr and no bandpass_filter" {
+#  run parse_args -4d fake.nii.gz -rmautocorr  
+#  [ $status -ne 0 ]
+# }
 
 @test "default without rmautocorr" {
  parse_args -4d fake.nii.gz
