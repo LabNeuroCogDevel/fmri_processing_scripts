@@ -127,9 +127,9 @@ function parse_args {
     elif [ $# -eq 1 ]; then
        if [ $1 = -check_dependencies ]; then 
           set +e
+          trap - ERR
           check_dep_list 3dcalc fslmaths python antsRegistrationSyN.sh c3d_affine_tool python:nipy python:nibabel perl:App::AFNI::SiemensPhysio 
           exit $?
-          set -e
 	elif [ $1 = -cleanup_only ]; then
 	    cleanup_only=1
 	    cleanup=1
