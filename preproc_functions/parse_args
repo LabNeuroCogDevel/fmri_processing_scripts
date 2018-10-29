@@ -126,8 +126,10 @@ function parse_args {
 	fi
     elif [ $# -eq 1 ]; then
        if [ $1 = -check_dependencies ]; then 
-          check_dep_list 3dcalc fslmaths python antsRegistrationSyN.sh c3d_affine_tool python:nipy python:nibabel perl:App::AFNI::SiemensPhysio
+          set +e
+          check_dep_list 3dcalc fslmaths python antsRegistrationSyN.sh c3d_affine_tool python:nipy python:nibabel perl:App::AFNI::SiemensPhysio 
           exit $?
+          set -e
 	elif [ $1 = -cleanup_only ]; then
 	    cleanup_only=1
 	    cleanup=1
@@ -748,10 +750,8 @@ check_dep_list(){
     for cmd in $@; do
        local module=${cmd#*:} # remove perl: python: or R:
        if [[ $cmd =~ ^python: ]]; then
-          set -x
           ! python -c "import $module;import sys; sys.exit(0)" 2>/dev/null && 
              echo "missing $cmd; consider 'pip install --user $module'"  && let ++missing_deps
-          set +x
        elif [[ $cmd =~ ^perl: ]]; then
           ! perl -M$module -e "exit(0)" && 
              echo "missing $cmd; consider 'cpanm $module'" && let ++missing_deps

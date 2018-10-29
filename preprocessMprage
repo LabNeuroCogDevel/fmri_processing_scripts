@@ -80,6 +80,7 @@ EndOfHelp
 #
 #Changelog:
 #10/29/2018 (WF) - check_depends to check install
+# - add -check_dependencies to check install
 #7/21/2017 (MH)
 # - Added a correction (-bright_skull) for reducing bright skull voxels prior to FNIRT. This was leading to distortion (stretching) in some cases
 # - Added an option (-fnirt_mask) to choose the tightness of the refmask for fnirt to improve warp in some subjects
