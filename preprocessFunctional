@@ -210,6 +210,8 @@ EndOfHelp
 #
 #Changelog:
 #
+#11/01/2018 (WF)
+# - add old/new template checking in template_funcs (-use_old_mni)
 #5/11/2018 (WF)
 # - add -gsr option to expliclty label gsr in regression step. prefix "rnswktm" becomes "grnswktm"
 # - add -rmgroup_component (prefix c) to remove group components after warping
@@ -355,8 +357,9 @@ source "${scriptDir}/preproc_functions/ica_aroma"
 source "${scriptDir}/preproc_functions/prepare_mc_target"
 source "${scriptDir}/preproc_functions/remove_group_components"
 source "${scriptDir}/preproc_functions/reg_physio"
+source "${scriptDir}/preproc_functions/template_funcs"
 
-
+old_template_check
 
 #TODO: read dirname from the input and cd to that directory
 funcdir=$(pwd) #define working directory for functional processing

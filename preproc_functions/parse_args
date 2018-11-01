@@ -76,6 +76,7 @@ function parse_args {
     verbose=
     KEEP_MOTION_FILES=
     n_rm_firstvols=0
+    USE_OLD_TEMPLATE=
 
     #figure out file extension for FSL programs
     if [ -z $FSLOUTPUTTYPE ]; then
@@ -459,6 +460,9 @@ function parse_args {
            n_rm_firstvols=$2
            shift 2
 
+       elif [[ $1 = -use_old_mni  ]]; then
+          USE_OLD_TEMPLATE=yes
+          shift 1
 	elif [ $1 = -verbose ]; then
 	    verbose=1
 	    set -xv
@@ -651,6 +655,8 @@ function parse_args {
 #process command line parameters for preprocessMprage
 function parse_mprage_args() {
 
+    USE_OLD_TEMPLATE=
+
     while [ _$1 != _ ] ; do
 	if [[ $1 = -b || $1 = -bet_opts ]] ; then
 	    betOpts="${2}"
@@ -719,6 +725,9 @@ function parse_mprage_args() {
 	elif [[ $1 = -strongbias || $1 = -strong_bias ]]; then
 	    strongBias=1
 	    shift 1
+       elif [[ $1 = -use_old_mni  ]]; then
+          USE_OLD_TEMPLATE=yes
+          shift 1
 	elif [[ $1 = -warpres || $1 = -w ]]; then
 	    wr="${2}"
 	    if [[ ! ${wr} =~ ^[0-9]+$ ]]; then

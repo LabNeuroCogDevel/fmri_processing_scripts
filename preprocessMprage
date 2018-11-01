@@ -80,7 +80,7 @@ EndOfHelp
 #
 #Changelog:
 #11/0l/2018 (WF) 
-# - can use octave
+# - can use octave, add old_template_check (-use_old_mni)
 #10/29/2018 (WF) 
 # - add -check_dependencies to check install
 #7/21/2017 (MH)
@@ -143,6 +143,10 @@ scriptDir=$( dirname "$0" )
 
 source "${scriptDir}/preproc_functions/helper_functions" #contains rel for running/logging; also sets up stddir env variable
 source "${scriptDir}/preproc_functions/parse_args" #contains function for parsing command line args
+source "${scriptDir}/preproc_functions/template_funcs" # old_template_check
+
+# make sure we are using the correct template
+old_template_check
 
 ##load necessary modules if running on cluster (specific to ACI at the moment)
 if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then

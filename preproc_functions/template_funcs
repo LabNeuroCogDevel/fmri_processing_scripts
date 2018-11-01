@@ -1,0 +1,48 @@
+#!/bin/bash
+
+OLD_TEMPLATE_CHECK_GOLBALS=(stddir reference USE_OLD_TEMPLATE mprage_bet)
+old_template_check(){
+   [[ ! $reference =~ MNI ]] && return 0
+
+   local mni3mm=$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_3mm.nii
+   local Lext=$(3dinfo -Lextent $mni3mm)
+   if [[  ! $Lext =~ ^96.0 && -z "$USE_OLD_TEMPLATE" ]]; then
+      echo "You are using a bad MNI template! left extent of 3mm template should be 96.0 not $Lext" >&2
+      echo "add -use_old_mni to continue" >&2
+      exit 1
+   fi
+
+   ## if we have mprage_bet -- we have a chance to see what we should be using
+   #  do a lot of work to check warp dim to sext if we can find linear warp from mprage_bet
+   if [ -n "$mprage_bet" -a -r "$mprage_bet" ]; then
+      local mprage_prefix="$(basename $mprage_bet bet.nii.gz)"
+      local warp="$(dirname $mprage_bet)/${mprage_prefix}_linear_warp_MNI_2mm.nii.gz"
+      local sext=114
+      if [ -r "$warp" ]; then
+         dim=$(3dinfo -adi $warp)
+         sext=$(3dinfo -sextent $warp) 
+      else
+         echo "WARNING: cannot find $warp, cannot test if old or new template is being used"
+      fi
+
+      local want=114
+      case $dim in
+         2.0*) want=114;;
+         *) echo "old_template_check undefined 'want' dim for $dim mm res; no valid check"; want=$sext;;
+      esac
+
+      if [[ ! $sext =~ ^$want && -z "$USE_OLD_TEMPLATE" ]]; then
+         echo "ERROR need -use_old_mni: sext of $warp ($sext != $want) suggests old template!"
+         exit 1
+      fi
+   fi
+
+   if [ -n "$USE_OLD_TEMPLATE" ]; then
+      stddir=${stddir}_old
+      [ ! -d "$stddir" ] && echo "cannot find old std template dir $stddir" && exit 1
+   fi
+
+   return 0
+}
+
+# vim: set tabstop=7:
