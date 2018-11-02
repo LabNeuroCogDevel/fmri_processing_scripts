@@ -45,4 +45,38 @@ old_template_check(){
    return 0
 }
 
+# make .18_09c.nii.gz from input file
+fixto1809c() { 
+  [ $# -ne 1 ] && echo "usage: $FUNCNAME to_correct.nii.gz (given $@)" && return 1
+  local input=$1
+
+  # checks
+  [ -z "$input" -o ! -r "$input" ] && echo "$FUNCNAME needs nifti to warp. given '$@'" >&2 && return 1
+  ! 3dinfo -space $input | grep -iq mni && echo "$input is not in mni space!" >&2 && return 1
+
+  dim=$(3dinfo -adj $input|sed 's/0\+$//;s/\.$//')
+  [ $dim != "1" ] && dim=_${dim}mm
+
+  local ref=/opt/ni_tools/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c${dim}.nii 
+  # /opt/ni_tools/standard/09cFix/gen_mats.bash
+  local mat=/opt/ni_tools/standard_old/09cFix/2mm_luna_to_fixed.mat 
+  # file is identity:
+  # 1  0  0  0  
+  # 0  1  0  0  
+  # 0  0  1  0  
+  # 0  0  0  1  
+
+  [ ! -r $ref -o ! -r $mat ] && echo "$FUNCNAME cannot find ref or mat ($ref $mat)" >&2 && return 1
+  output="${input/.nii.gz/.18_09c.nii.gz}" #output="$(dirname $input)/$(basename "$input" .nii.gz).18_09c.nii.gz"
+  [ -z "$REDOWARP" -a -r "$output" ] && echo "have $output" >&2 && return 0
+  echo "createing $output ($dim)"
+  cmd="applyxfm4D '$input'  $ref '$output'  $mat -singlematrix"
+  if command -v rel >/dev/null; then
+     rel "$cmd # $(pwd)" c
+  else
+     echo "$cmd # $(pwd)"
+  fi
+  eval "$cmd" && 3dNotes -h "[$FUNCNAME] $cmd" "$output"
+}
+
 # vim: set tabstop=7:
