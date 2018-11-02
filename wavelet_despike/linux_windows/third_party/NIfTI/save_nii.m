@@ -50,8 +50,8 @@
 %
 function save_nii(nii, fileprefix, old_RGB)
    
-   if ~exist('nii','var') | isempty(nii) | ~isfield(nii,'hdr') | ...
-	~isfield(nii,'img') | ~exist('fileprefix','var') | isempty(fileprefix)
+   if ~exist('nii','var') || isempty(nii) || ~isfield(nii,'hdr') || ...
+	~isfield(nii,'img') || ~exist('fileprefix','var') || isempty(fileprefix)
 
       error('Usage: save_nii(nii, filename, [old_RGB])');
    end
@@ -60,7 +60,7 @@ function save_nii(nii, fileprefix, old_RGB)
       error('Usage: please use ''save_untouch_nii.m'' for the untouched structure.');
    end
 
-   if ~exist('old_RGB','var') | isempty(old_RGB)
+   if ~exist('old_RGB','var') || isempty(old_RGB)
       old_RGB = 0;
    end
 
@@ -134,7 +134,7 @@ function write_nii(nii, filetype, fileprefix, old_RGB)
 
    hdr = nii.hdr;
 
-   if isfield(nii,'ext') & ~isempty(nii.ext)
+   if isfield(nii,'ext') && ~isempty(nii.ext)
       ext = nii.ext;
       [ext, esize_total] = verify_nii_ext(ext);
    else
