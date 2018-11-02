@@ -1,7 +1,11 @@
 *.swp
 .DS_Store
-
+.preproc_cmd*
 .Rhistory
 
 #contains sensitive login info
 meson.expect
+
+*.pyc
+*.o
+*.mex
