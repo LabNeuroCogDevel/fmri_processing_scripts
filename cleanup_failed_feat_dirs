@@ -1,5 +1,11 @@
 #!/bin/bash
 set -e
+
+if [ "$#" -eq 0 ]; then
+    echo "cleanup_failed_feat_dirs expects the base directory containing .feat directories to examine."
+    exit 1
+fi
+
 basedir="${1}"
 
 l1featdirs=$( find "$basedir" -iname "*.feat" -type d )

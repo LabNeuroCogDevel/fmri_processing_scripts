@@ -8,8 +8,12 @@ printHelp <- function() {
     #to do
 }
 
-##Sys.setenv(AFNIDIR="/opt/aci/sw/afni/16.0.00/bin")
-Sys.setenv(AFNIDIR="/opt/aci/sw/afni/17.0.02/bin")
+if (Sys.getenv("AFNIDIR") == "") {
+  #Sys.setenv(AFNIDIR="/opt/aci/sw/afni/16.0.00/bin")
+  #Sys.setenv(AFNIDIR="/opt/aci/sw/afni/17.0.02/bin")
+  Sys.setenv(AFNIDIR="/gpfs/group/mnh5174/default/sw/afni/afni")  
+}
+
 
 #read in command line arguments
 args <- commandArgs(trailingOnly = FALSE)
@@ -26,7 +30,7 @@ if (length(argpos) > 0L) {
 source(file.path(scriptpath, "R_helper_functions.R"))
 
 if (length(args) == 0L) {
-  message("feat_lvl2_to_afni expects a single .gfeat directory from a level 2 analysis -gfeat_dir <directory>.\n")
+  message("feat_lvl2_to_afni expects a single .gfeat directory from a level 2 analysis --gfeat_dir <directory>.\n")
   printHelp()
   quit(save="no", 1, FALSE)
 }
@@ -108,4 +112,5 @@ if (file.exists(paste0(outfilename, "+tlrc.BRIK"))) {
     system(paste0("gzip ", outfilename, "+tlrc.BRIK"))
 }
 
+#cleanup ingredients of individual cope aggregation
 system(paste("rm", paste0(copeafni, "*", collapse=" ")))
