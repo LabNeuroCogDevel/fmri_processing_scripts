@@ -11,7 +11,7 @@ printHelp <- function() {
 if (Sys.getenv("AFNIDIR") == "") {
   #Sys.setenv(AFNIDIR="/opt/aci/sw/afni/16.0.00/bin")
   #Sys.setenv(AFNIDIR="/opt/aci/sw/afni/17.0.02/bin")
-  Sys.setenv(AFNIDIR="/gpfs/group/mnh5174/default/sw/afni/afni")  
+  Sys.setenv(AFNIDIR="/gpfs/group/mnh5174/default/sw/afni")  
 }
 
 
