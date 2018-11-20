@@ -145,8 +145,6 @@ source "${scriptDir}/preproc_functions/helper_functions" #contains rel for runni
 source "${scriptDir}/preproc_functions/parse_args" #contains function for parsing command line args
 source "${scriptDir}/preproc_functions/template_funcs" # old_template_check
 
-# make sure we are using the correct template
-old_template_check
 
 ##load necessary modules if running on cluster (specific to ACI at the moment)
 if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then
@@ -193,6 +191,10 @@ echo -e "$thiscommandinfo " > ${dotfile}_incomplete
 
 #now in preproc_functions/parse_args
 parse_mprage_args "$@" #parse command line inputs
+
+
+# make sure we are using the correct template
+old_template_check
 
 #if a .preproc_override file exists, parse args in that file, overriding the command line args in preceding step
 if [ -f .preproc_override ]; then

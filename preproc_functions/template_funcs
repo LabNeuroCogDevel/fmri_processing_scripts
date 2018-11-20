@@ -1,8 +1,14 @@
 #!/bin/bash
 
 OLD_TEMPLATE_CHECK_GOLBALS=(stddir reference USE_OLD_TEMPLATE mprage_bet)
+
+# reference is in mprage preproess, templateBrain is in functional
+#  need to change stddir for either (e.g. icaaroma in preprocessFunctional)
+#  only need to change templateBrain in for functional
 old_template_check(){
-   [[ ! $reference =~ MNI ]] && return 0
+   [ -z "$reference$templateBrain" ] && rel "NO REFERENCE?! in \$reference or \$templateBrain" c && exit 1
+   #rel "REF:$reference$templateBrain" c
+   [[ ! "$reference$templateBrain" =~ mni|MNI ]] && return 0
 
    local mni3mm=$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_3mm.nii
    local Lext=$(3dinfo -Lextent $mni3mm)
@@ -14,17 +20,21 @@ old_template_check(){
 
    ## if we have mprage_bet -- we have a chance to see what we should be using
    #  do a lot of work to check warp dim to sext if we can find linear warp from mprage_bet
-   if [ -n "$mprage_bet" -a -r "$mprage_bet" ]; then
-      local mprage_prefix="$(basename $mprage_bet bet.nii.gz)"
-      local warp="$(dirname $mprage_bet)/${mprage_prefix}_linear_warp_MNI_2mm.nii.gz"
+
+   #rel "MPRAGE: $mprageBet" c
+   if [ -n "$mprageBet" ] && imtestln "$mprageBet" ; then
+      local mprage_prefix="$(basename $mprageBet bet.nii.gz)"
+      local warppat="$(dirname $mprageBet)/${mprage_prefix}nonlinear_warp_MNI*.nii.gz"
+      local warp="$(ls $warppat|sed 1q)" 
       local sext=114
-      if [ -r "$warp" ]; then
+      if [ -n "$warp" -a -r "$warp" ]; then
          dim=$(3dinfo -adi $warp)
          sext=$(3dinfo -sextent $warp) 
       else
-         echo "WARNING: cannot find $warp, cannot test if old or new template is being used"
+         rel "WARNING: cannot find $warppat, cannot test if old or new template is being used" c
       fi
 
+      rel "MPRAGE: $dim $sext for $warp" c
       local want=114
       case $dim in
          2.0*) want=114;;
@@ -38,8 +48,13 @@ old_template_check(){
    fi
 
    if [ -n "$USE_OLD_TEMPLATE" ]; then
+      if  [ -n "$templateBrain" ]; then
+         templateBrain=${stddir}_old/$(echo "$templateBrain" | sed "s:^$stddir::")
+         ! imtestln "$templateBrain" && echo "cannot find old std template brain $templateBrain" && exit 1
+      fi
       stddir=${stddir}_old
       [ ! -d "$stddir" ] && echo "cannot find old std template dir $stddir" && exit 1
+      rel "USING OLD TEMPLATES @ $stddir | $templateBrain" c
    fi
 
    return 0
