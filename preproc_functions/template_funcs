@@ -61,9 +61,14 @@ old_template_check(){
 }
 
 # make .18_09c.nii.gz from input file
+# optionally, if given second argument "mask", will use NN interp instead of sinc
 fixto1809c() { 
-  [ $# -ne 1 ] && echo "usage: $FUNCNAME to_correct.nii.gz (given $@)" && return 1
+  [ $# -lt 1 ] && echo "usage: $FUNCNAME to_correct.nii.gz [mask] (given $@)" && return 1
+  [ $# -eq 2 ] && [ "$2" != "mask" ] && echo "only valid second argument is 'mask', you gave $2" && return 1
   local input=$1
+
+  local mask=""
+  [ $# -eq 2 ] && mask=1
 
   # checks
   [ -z "$input" -o ! -r "$input" ] && echo "$FUNCNAME needs nifti to warp. given '$@'" >&2 && return 1
@@ -85,7 +90,8 @@ fixto1809c() {
   output="${input/.nii.gz/.18_09c.nii.gz}" #output="$(dirname $input)/$(basename "$input" .nii.gz).18_09c.nii.gz"
   [ -z "$REDOWARP" -a -r "$output" ] && echo "have $output" >&2 && return 0
   echo "createing $output ($dim)"
-  cmd="applyxfm4D '$input'  $ref '$output'  $mat -singlematrix"
+  cmd="applyxfm4D '$input'  $ref '$output'  $mat -singlematrix" # default to sinc
+  [ -n "$mask" ] && cmd="flirt -ref '$ref' -in '$input' -applyxfm -init '$mat' -out '$output' -interp nearestneighbour"
   if command -v rel >/dev/null; then
      rel "$cmd # $(pwd)" c
   else
