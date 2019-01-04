@@ -1,0 +1,103 @@
+#!/bin/bash
+
+OLD_TEMPLATE_CHECK_GOLBALS=(stddir reference USE_OLD_TEMPLATE mprage_bet)
+
+# reference is in mprage preproess, templateBrain is in functional
+#  need to change stddir for either (e.g. icaaroma in preprocessFunctional)
+#  only need to change templateBrain in for functional
+old_template_check(){
+   [ -z "$reference$templateBrain" ] && rel "NO REFERENCE?! in \$reference or \$templateBrain" c && exit 1
+   #rel "REF:$reference$templateBrain" c
+   [[ ! "$reference$templateBrain" =~ mni|MNI ]] && return 0
+
+   local mni3mm=$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_3mm.nii
+   local Lext=$(3dinfo -Lextent $mni3mm)
+   if [[  ! $Lext =~ ^96.0 && -z "$USE_OLD_TEMPLATE" ]]; then
+      echo "You are using a bad MNI template! left extent of 3mm template should be 96.0 not $Lext" >&2
+      echo "add -use_old_mni to continue" >&2
+      exit 1
+   fi
+
+   ## if we have mprage_bet -- we have a chance to see what we should be using
+   #  do a lot of work to check warp dim to sext if we can find linear warp from mprage_bet
+
+   #rel "MPRAGE: $mprageBet" c
+   if [ -n "$mprageBet" ] && imtestln "$mprageBet" ; then
+      local mprage_prefix="$(basename $mprageBet bet.nii.gz)"
+      local warppat="$(dirname $mprageBet)/${mprage_prefix}nonlinear_warp_MNI*.nii.gz"
+      local warp="$(ls $warppat|sed 1q)" 
+      local sext=114
+      if [ -n "$warp" -a -r "$warp" ]; then
+         dim=$(3dinfo -adi $warp)
+         sext=$(3dinfo -sextent $warp) 
+      else
+         rel "WARNING: cannot find $warppat, cannot test if old or new template is being used" c
+      fi
+
+      rel "MPRAGE: $dim $sext for $warp" c
+      local want=114
+      case $dim in
+         2.0*) want=114;;
+         *) echo "old_template_check undefined 'want' dim for $dim mm res; no valid check"; want=$sext;;
+      esac
+
+      if [[ ! $sext =~ ^$want && -z "$USE_OLD_TEMPLATE" ]]; then
+         echo "ERROR need -use_old_mni: sext of $warp ($sext != $want) suggests old template!"
+         exit 1
+      fi
+   fi
+
+   if [ -n "$USE_OLD_TEMPLATE" ]; then
+      if  [ -n "$templateBrain" ]; then
+         templateBrain=${stddir}_old/$(echo "$templateBrain" | sed "s:^$stddir::")
+         ! imtestln "$templateBrain" && echo "cannot find old std template brain $templateBrain" && exit 1
+      fi
+      stddir=${stddir}_old
+      [ ! -d "$stddir" ] && echo "cannot find old std template dir $stddir" && exit 1
+      rel "USING OLD TEMPLATES @ $stddir | $templateBrain" c
+   fi
+
+   return 0
+}
+
+# make .18_09c.nii.gz from input file
+# optionally, if given second argument "mask", will use NN interp instead of sinc
+fixto1809c() { 
+  [ $# -lt 1 ] && echo "usage: $FUNCNAME to_correct.nii.gz [mask] (given $@)" && return 1
+  [ $# -eq 2 ] && [ "$2" != "mask" ] && echo "only valid second argument is 'mask', you gave $2" && return 1
+  local input=$1
+
+  local mask=""
+  [ $# -eq 2 ] && mask=1
+
+  # checks
+  [ -z "$input" -o ! -r "$input" ] && echo "$FUNCNAME needs nifti to warp. given '$@'" >&2 && return 1
+  ! 3dinfo -space $input | grep -iq mni && echo "$input is not in mni space!" >&2 && return 1
+
+  dim=$(3dinfo -adj $input|sed 's/0\+$//;s/\.$//')
+  [ $dim != "1" ] && dim=_${dim}mm
+
+  local ref=/opt/ni_tools/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c${dim}.nii 
+  # /opt/ni_tools/standard/09cFix/gen_mats.bash
+  local mat=/opt/ni_tools/standard_old/09cFix/2mm_luna_to_fixed.mat 
+  # file is identity:
+  # 1  0  0  0  
+  # 0  1  0  0  
+  # 0  0  1  0  
+  # 0  0  0  1  
+
+  [ ! -r $ref -o ! -r $mat ] && echo "$FUNCNAME cannot find ref or mat ($ref $mat)" >&2 && return 1
+  output="${input/.nii.gz/.18_09c.nii.gz}" #output="$(dirname $input)/$(basename "$input" .nii.gz).18_09c.nii.gz"
+  [ -z "$REDOWARP" -a -r "$output" ] && echo "have $output" >&2 && return 0
+  echo "createing $output ($dim)"
+  cmd="applyxfm4D '$input'  $ref '$output'  $mat -singlematrix" # default to sinc
+  [ -n "$mask" ] && cmd="flirt -ref '$ref' -in '$input' -applyxfm -init '$mat' -out '$output' -interp nearestneighbour"
+  if command -v rel >/dev/null; then
+     rel "$cmd # $(pwd)" c
+  else
+     echo "$cmd # $(pwd)"
+  fi
+  eval "$cmd" && 3dNotes -h "[$FUNCNAME] $cmd" "$output"
+}
+
+# vim: set tabstop=7:
