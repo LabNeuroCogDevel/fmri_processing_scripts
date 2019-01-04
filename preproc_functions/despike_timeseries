@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# globals used by this function
+DESPIKE_TIMESERIES_GLOBALS=(funcFile prefix ext despike postSS waveletDespike waveletM1000 waveletThreshold threshMask MATLAB_RAM_limit despikeThresh scriptDir)
+
 function despike_timeseries {
 
     #Voxelwise despiking: optional step
@@ -13,6 +16,9 @@ function despike_timeseries {
 	if [ -f ".despike_complete" ]; then
 	    return 0
 	fi
+
+       # print globals (and do nothing if that fails)
+       print_vars_in DESPIKE_TIMESERIES_GLOBALS || :
 
 	if [ $waveletDespike -eq 1 ]; then
 
@@ -32,6 +38,7 @@ function despike_timeseries {
 	    else
 		#rel "fslmaths \"${preDespike}\" predespike -odt float" #just copy image
 		rel "ln -sfn \"${preDespike}${ext}\" predespike${ext}" #symbolic link to image to despike
+              # octave will remove sym link file
 	    fi
 
 	    if [ $( uname ) = Darwin ]; then
@@ -39,21 +46,37 @@ function despike_timeseries {
 	    else
 		matlabCmd="addpath(genpath('${scriptDir}/wavelet_despike/linux_windows'));"
 	    fi
-# 	    matlabCmd="${matlabCmd} try; 
-# WaveletDespike('predespike${ext}', 
-# 'postdespike',
-# 'LimitRAM', ${MATLAB_RAM_limit},
-# 'threshold', ${waveletThreshold}); 
-# end; quit;
-# "
-	    #cmd with spaces is breaking ACI at the moment (due to unquoted use of $@)
-	    matlabCmd="${matlabCmd}try;WaveletDespike('predespike${ext}','postdespike','LimitRAM',${MATLAB_RAM_limit},'threshold',${waveletThreshold});end;quit;"
 
+           ## MATLAB or ocatve? (WF20181026 - want octave for docker)
+           # default to matlab
+	    local matlabBin="matlab -nodisplay ${MATLAB_single_thread} -r "
+           local predespike_nii=predespike${ext}
+           # unless we dont have matlab or have USE_OCTAVE="yes"
+           if ! command -v matlab >/dev/null || [ "x$USE_OCTAVE" == "xyes" ]; then
+              ! command -v octave >/dev/null && rel "cannot use WaveletDespike: do not have matlab or octave in PATH ($PATH)!" c && exit 1
+              matlabBin="octave --no-gui --eval "
+              matlabCmd="${matlabCmd}\nfunction v=version(),v='7.11'; end;" # fake matlab version (gunzip in nifti toolbox calls)
+              matlabCmd="${matlabCmd}\nfunction cprintf(varargin),if(nargin>1),varargin=varargin(2:end);end;printf(varargin{:}),end;" # fake colorprint, b/c no 'handle'
+              matlabCmd="${matlabCmd}\nwarning('off','Octave:possible-matlab-short-circuit-operator');" # dont care about matlab | &
+              matlabCmd="${matlabCmd}\nconfirm_recursive_rmdir(0);" # no prompt rm-ing temp dir w/ uncompressed .nii
+
+              # mex files might be for matlab. we can rerun setup to get octave versions
+              rel "N.B. if octave fails to run, consider rebuilding mex files:\n\toctave --eval 'cd ${scriptDir}/wavelet_despike/linux_windows; setup' " c 
+           fi
+
+	    #cmd with spaces is breaking ACI at the moment (due to unquoted use of $@)
+	    matlabCmd="${matlabCmd}WaveletDespike('$predespike_nii','postdespike','LimitRAM',${MATLAB_RAM_limit},'threshold',${waveletThreshold});"
+
+           local mlscript=wavlet_despike_${matlabBin/ */}.m # wavlet_despike_matlab.m
+           echo -e "$matlabCmd" > $mlscript
 	    #need to unset display on Linux (at least wallace) to avoid matlab exiting on subsequent runs of the script
 	    OLDDISPLAY="${DISPLAY}"
 	    unset DISPLAY
-	    rel "matlab -nodisplay ${MATLAB_single_thread} -r \"$matlabCmd\""
+           rel "$matlabBin \"try;run('$mlscript');end;quit\""
 	    export DISPLAY="${OLDDISPLAY}"
+
+           # octaves interpetation of load_nii eats the symbolic link file -- not with rel b/c we already recorded it
+           [ ! -r predespike${ext} ] && ln -sfn "${preDespike}${ext}" predespike${ext}
 
 	    #note: wavelet despike function sometimes changes the image orientation (e.g., from RPI to LPI), which yields errors
 	    #downstream when files before and after despiking are used
@@ -86,3 +109,4 @@ function despike_timeseries {
     fi
 
 }
+# vim: set tabstop=7:

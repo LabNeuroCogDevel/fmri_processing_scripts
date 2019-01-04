@@ -74,27 +74,27 @@ function nii = load_untouch_nii(filename, img_idx, dim5_idx, dim6_idx, dim7_idx,
       error('Usage: nii = load_untouch_nii(filename, [img_idx], [dim5_idx], [dim6_idx], [dim7_idx], [old_RGB], [slice_idx])');
    end
 
-   if ~exist('img_idx','var') | isempty(img_idx)
+   if ~exist('img_idx','var') || isempty(img_idx)
       img_idx = [];
    end
 
-   if ~exist('dim5_idx','var') | isempty(dim5_idx)
+   if ~exist('dim5_idx','var') || isempty(dim5_idx)
       dim5_idx = [];
    end
 
-   if ~exist('dim6_idx','var') | isempty(dim6_idx)
+   if ~exist('dim6_idx','var') || isempty(dim6_idx)
       dim6_idx = [];
    end
 
-   if ~exist('dim7_idx','var') | isempty(dim7_idx)
+   if ~exist('dim7_idx','var') || isempty(dim7_idx)
       dim7_idx = [];
    end
 
-   if ~exist('old_RGB','var') | isempty(old_RGB)
+   if ~exist('old_RGB','var') || isempty(old_RGB)
       old_RGB = 0;
    end
 
-   if ~exist('slice_idx','var') | isempty(slice_idx)
+   if ~exist('slice_idx','var') || isempty(slice_idx)
       slice_idx = [];
    end
 
