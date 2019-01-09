@@ -23,6 +23,7 @@ for f in ${l1featdirs}; do
 		read -sn1 -p "  Delete? (y/n)" rmproceed
 	    done
 
+	    #rmproceed=y
 	    if [[ "$rmproceed" == "Y" || "$rmproceed" == "y" ]]; then
 		echo "  Now deleting $f"
 		rm -rf "${f}"
@@ -36,10 +37,9 @@ for f in ${l2featdirs}; do
     if [ -f ${f}/report.html ]; then
 	#grep -q "Errors occured during the analysis" ${f}/report.html && errors=1 || errors=0
 	grep -q "Error" ${f}/report.html && errors=1 || errors=0
-	#for L1
-	#grep -q "STILL RUNNING" ${f}/report.html && errors=1 || errors=0
+	grep -q "STILL RUNNING" ${f}/report.html && errors=1
 	if [ $errors -eq 1 ]; then
-	    echo "GFEAT directory listed as having errors: ${f}"
+	    echo "GFEAT directory listed as having errors of STILL RUNNING: ${f}"
 	    rmproceed=
 	    until [[ "$rmproceed" = [NnYy] ]]; do
 		read -sn1 -p "  Delete? (y/n)" rmproceed

@@ -92,7 +92,7 @@ while [ _$1 != _ ] ; do
 	EpirefInputName="${2}"
 	shift 2
     elif [ $1 = -echospacing ]; then
-	DwellTime="${2}"
+	EchoSpacing="${2}"
 	shift 2
     elif [ $1 = -epiref_pedir ]; then
 	EpirefUnwarpDirection="${2}"
@@ -243,7 +243,11 @@ if [ ! $GradientDistortionCoeffs = "NONE" ] ; then
     rel "applywarp --rel --interp=nn -i ${WD}/PhaseNeg_mask -r ${WD}/PhaseNeg_mask -w ${WD}/PhaseNeg_gdc_warpfield -o ${WD}/PhaseNeg_mask_gdc"
     rel "fslmaths ${WD}/PhasePos -abs -bin -dilD ${WD}/PhasePos_mask"
     rel "applywarp --rel --interp=nn -i ${WD}/PhasePos_mask -r ${WD}/PhasePos_mask -w ${WD}/PhasePos_gdc_warpfield -o ${WD}/PhasePos_mask_gdc"
-    
+
+    #Compress mask files down to 3D to avoid dimension disagreements downstream
+    rel "fslmaths ${WD}/PhaseNeg_mask_gdc -Tmax ${WD}/PhaseNeg_mask_gdc"
+    rel "fslmaths ${WD}/PhasePos_mask_gdc -Tmax ${WD}/PhasePos_mask_gdc"
+        
     # Make a conservative (eroded) intersection of the two masks
     rel "fslmaths ${WD}/PhaseNeg_mask_gdc -mas ${WD}/PhasePos_mask_gdc -ero -bin ${WD}/Mask"
     # Merge both sets of images
@@ -253,7 +257,11 @@ else
     rel "imcp ${WD}/PhaseNeg ${WD}/PhaseNeg_gdc"
     rel "imcp ${WD}/PhasePos ${WD}/PhasePos_gdc"
     rel "fslmerge -t ${WD}/BothPhases ${WD}/PhaseNeg_gdc ${WD}/PhasePos_gdc"
-    rel "fslmaths ${WD}/PhaseNeg_gdc -mul 0 -add 1 ${WD}/Mask"
+
+    #Compute a mask that represents all voxels. Use -Tmax to ensure that file is a 3D (not 4D) image
+    #MNH 9Jan2019: I don't know why HCP uses a meaningful/informative mask above (applying gradient distortion correction),
+    #  but defines the mask as all voxels here.
+    rel "fslmaths ${WD}/PhaseNeg_gdc -Tmax -mul 0 -add 1 ${WD}/Mask"
 fi
 
 
@@ -276,7 +284,7 @@ if [[ $EpirefUnwarpDirection = "x" || $EpirefUnwarpDirection = "x-" || $EpirefUn
     #Note: the above calculation implies full k-space acquisition for SE EPI.
     #In case of partial Fourier/k-space acquisition (though not recommended), $dimx-1 does not equal to nPEsteps.
     
-    ro_time=$( echo "scale=6; ${DwellTime} * ${nPEsteps}" | bc -l ) #Compute Total_readout in secs with up to 6 decimal places
+    ro_time=$( echo "scale=6; ${EchoSpacing} * ${nPEsteps}" | bc -l ) #Compute Total_readout in secs with up to 6 decimal places
     rel "Total calculated readout time is $ro_time secs. Does this match your expectation?" c
 
     #add a line for each negative phase image in X dimension (PhaseNeg)
@@ -299,7 +307,7 @@ elif [[ $EpirefUnwarpDirection = "y" || $EpirefUnwarpDirection = "y-" || $Epiref
     dimy=$( fslval ${WD}/PhaseNeg dim2 )
     nPEsteps=$(($dimy - 1))
     #Total_readout=Echo_spacing*(#of_PE_steps-1)
-    ro_time=`echo "scale=6; ${DwellTime} * ${nPEsteps}" | bc -l` #Compute Total_readout in secs with up to 6 decimal places
+    ro_time=`echo "scale=6; ${EchoSpacing} * ${nPEsteps}" | bc -l` #Compute Total_readout in secs with up to 6 decimal places
     rel "Total calculated readout time is $ro_time secs. Does this match your expectation?" c
 
     #add a line for each negative phase image in Y dimension (PhaseNeg)
