@@ -49,7 +49,7 @@ convert_or_use_nii() {
 
 
    # make sure we are looking at a dicom
-   first_dicom=$( find $input -not -type d | sed 1q )
+   first_dicom=$( find $input -not -type d -not -name '.*inprogress' -print -quit)
    dicom_hdr "$first_dicom" 2>&1 | grep -q "ERROR: can't open.*as a DICOM file" && isdicom=0 || isdicom=1 # 0 exit status from grep indicates a match
    if [ $isdicom -eq 0 ]; then
       rel "Cannot recognize $first_dicom (from '$input') as DICOM or NIfTI" c

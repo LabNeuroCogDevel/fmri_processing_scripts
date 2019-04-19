@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# this is a more complicated way of doing:
+#  tsnr(){ 3dTstat -overwrite -prefix mean.nii.gz -mean $1; 3dDetrend -overwrite -polort 4 -prefix det.nii.gz $1; 3dTstat -overwrite -prefix std.nii.gz -stdev det.nii.gz; 3dcalc -overwrite -prefix tsnr.nii.gz -m mean.nii.gz -s std.nii.gz -exp 'm/s';}
+
 # default files -- also can be set by command switches
 [ -z $GM_MNI ]      && GM_MNI="/opt/ni_tools/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_gm_tal_nlin_asym_09c_2.3mm.nii"
 [ -z "$TEMPLATE" ]  && TEMPLATE=template_brain.nii # what does mni look like
