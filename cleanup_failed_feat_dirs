@@ -6,7 +6,13 @@ if [ "$#" -eq 0 ]; then
     exit 1
 fi
 
-basedir="${1}"
+rmforce=
+if [ "$#" -eq 2 ]; then
+    [ "$1" = "-f" ] && rmforce=y || (echo "don't know how to interpret $1" && exit 1)
+    basedir="${2}"
+else
+    basedir="${1}"
+fi
 
 l1featdirs=$( find "$basedir" -iname "*.feat" -type d )
 
@@ -18,7 +24,7 @@ for f in ${l1featdirs}; do
 	grep -q "STILL RUNNING" ${f}/report.html && errors=1
 	if [ $errors -eq 1 ]; then
 	    echo "FEAT directory listed as having errors or STILL RUNNING: ${f}"
-	    rmproceed=
+	    rmproceed=$rmforce
 	    until [[ "$rmproceed" = [NnYy] ]]; do
 		read -sn1 -p "  Delete? (y/n)" rmproceed
 	    done
@@ -40,7 +46,7 @@ for f in ${l2featdirs}; do
 	grep -q "STILL RUNNING" ${f}/report.html && errors=1
 	if [ $errors -eq 1 ]; then
 	    echo "GFEAT directory listed as having errors of STILL RUNNING: ${f}"
-	    rmproceed=
+	    rmproceed=$rmforce
 	    until [[ "$rmproceed" = [NnYy] ]]; do
 		read -sn1 -p "  Delete? (y/n)" rmproceed
 	    done

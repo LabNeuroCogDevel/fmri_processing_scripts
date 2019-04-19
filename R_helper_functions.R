@@ -84,7 +84,7 @@ exec_pbs_array <- function(max_concurrent_jobs, njobstorun, max_cores_per_node=4
     for (i in 1:njobstorun) {
       qsub_preamble <- c(job_array_preamble,
         paste0("#PBS -l nodes=1:ppn=1:himem"), #each individual run is a single-threaded job
-      paste0("#PBS -l walltime=", walltime) #max time for each job to run
+        paste0("#PBS -l walltime=", walltime) #max time for each job to run
       )
 
       tosubmit <- file.path(qsubdir, paste0(jobprefix, i))
@@ -150,6 +150,7 @@ exec_pbs_iojob <- function(srclist, destlist, cpcmd="cp -Rp", njobs=12, qsubdir=
   "#PBS -m n", #no email
   paste0("#PBS -l nodes=1:ppn=",njobs,":himem"),
   "#PBS -W group_list=mnh5174_collab",
+  "#PBS -l pmem=8gb", #make sure each process has enough memory
   "source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash #setup environment",
   paste0("src_queue=(\"", paste(srclist, collapse="\" \""), "\")"),
   "  ",

@@ -772,7 +772,7 @@ if (nchar(ts_out_file) > 0L) {
 
 #If we only want the timeseries, quit before computing correlations
 if (ts_only) {
-  try(stopCluster(clusterobj))
+  if (njobs > 1) { try(stopCluster(clusterobj)) }
   quit(save="no", 0, FALSE)
 }
 

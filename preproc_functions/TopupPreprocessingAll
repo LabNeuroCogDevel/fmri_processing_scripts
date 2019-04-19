@@ -374,16 +374,15 @@ elif [[ $EpirefUnwarpDirection = "x-" || $EpirefUnwarpDirection = "-x" || $Epire
     epirefPhase=Neg
 fi
 
+rel "fslroi ${WD}/${setarget} ${WD}/${setarget}_vol1 0 1" #ants and slicer blow up on 4d targets
 
 #register epiref to SE image of the same phase
 if [[ $have_ants -eq 1 && $have_c3d -eq 1 ]]; then
-    rel "fslroi ${WD}/${setarget} ${WD}/${setarget}_vol1 0 1" #ants blows up on 4d targets
     rel "antsRegistrationSyN.sh -d 3 -f ${WD}/${setarget}_vol1${ext} -m ${WD}/epiref${ext} -t r -o ${WD}/epiref_to_${setarget}" #rigid transformation
     #convert to FSL-compatible transformation
     rel "c3d_affine_tool -ref ${WD}/${setarget}_vol1${ext} -src ${WD}/epiref${ext} -itk ${WD}/epiref_to_${setarget}0GenericAffine.mat -ras2fsl -o transforms/epiref_to_${setarget}.mat"
     rel "immv ${WD}/epiref_to_${setarget}Warped ${WD}/epiref_to_${setarget}"
     rel "mv ${WD}/epiref_to_${setarget}0GenericAffine.mat transforms/epiref_to_${setarget}.itk"
-    rel "imrm ${WD}/epiref_to_${setarget}InverseWarped ${WD}/${setarget}_vol1" #not useful
 else
     # further testing suggests that flirt coregistration is somewhat improved using skull-stripped images
     # register scout to SE input + combine motion and distortion correction
@@ -398,7 +397,9 @@ rel "convert_xfm -omat transforms/epiref_to_sefmap.mat -concat ${WD}/MotionMatri
 rel "convert_xfm -omat transforms/sefmap_to_epiref.mat -inverse transforms/epiref_to_sefmap.mat" #compute SE -> EpiRef
 
 #create epiref -> fmap image
-qa_image "${WD}/${setarget}" "${WD}/epiref_to_${setarget}" "epiref_to_${setarget}.png" "Same-phase SE image overlaid with coregistered epiref (in TopupPreprocessingAll)"
+qa_image "${WD}/${setarget}_vol1" "${WD}/epiref_to_${setarget}" "epiref_to_${setarget}.png" "Same-phase SE image overlaid with coregistered epiref (in TopupPreprocessingAll)"
+
+rel "imrm ${WD}/epiref_to_${setarget}InverseWarped ${WD}/${setarget}_vol1" #not useful long-term
 
 #setup the relevant unwarping coefficients
 #removing the epiref -> sefmap transform from HCP pipeline

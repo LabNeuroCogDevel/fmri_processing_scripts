@@ -148,6 +148,7 @@ if (job_array_preamble=="") {
   "#PBS -A mnh5174_a_g_hc_default",
   "#PBS -j oe",
   "#PBS -W group_list=mnh5174_collab", #default to having correct group
+  "#PBS -l pmem=8gb", #make sure each process has enough memory
   "#PBS -m n" #do not send emails related to job arrays
   #"#PBS -M michael.hallquist@psu.edu", #job arrays generate one email per worker!! Too much pain
   )
@@ -204,6 +205,8 @@ if (asynchronous_processing) {
   scratchdir <- paste0("/gpfs/scratch/", system("whoami", intern=TRUE))
   qsubdir <- tempfile(pattern="preprocessAll_", tmpdir=ifelse(dir.exists(scratchdir), scratchdir, execdir))
   dir.create(qsubdir, showWarnings=FALSE)
+
+  if (!dir.exists(qsubdir)) { stop("Unable to setup directory for qsub tmp file: ", qsubdir) }
 
   if (use_massive_qsub) {
     #under massive individual qsub, each worker script is a qsub job itself
