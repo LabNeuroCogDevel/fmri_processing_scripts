@@ -1,4 +1,4 @@
-function [clean,noise,SP] = wdscore(ts,varargin)
+function [clean,noise,SP,EDOF,mmc] = wdscore(ts,varargin)
 %
 % FUNCTION:     wdscore  -- Wavelet Despiking core algorithm, as described
 %                           in:
@@ -35,10 +35,17 @@ function [clean,noise,SP] = wdscore(ts,varargin)
 %               nscale    -- Method for computing number of scales. Input
 %                            must be a string containing one of the
 %                            following: 'conservative','liberal','extreme'.
-%                            [Default: 'liberal'].
+%                            [Default: 'liberal'], or a number between 0
+%                            and 1. If a number is specified, the number
+%                            of scales used will be a fraction of the
+%                            maximum allowed by the 'liberal' method.
+%               EDOF_method  Method for calculating effective degrees of
+%                            freedom - 'biased' or 'unbiased'. NB biased
+%                            method does not apply for reflection boundary
+%                            condition.
 %               verbose   -- Binary flag indicating whether to display
-%                            incremental output from the algorithm [1] or
-%                            not [0].
+%                            incremental output from the algorithm, 1, or
+%                            not, 0.
 % 
 % Outputs:      clean     -- Matrix of Wavelet Despiked time series, with
 %                            dimensions NX x Nts.
@@ -46,6 +53,10 @@ function [clean,noise,SP] = wdscore(ts,varargin)
 %                            Wavelet Despiking algorithm, with dimensions
 %                            NX x Nts.
 %               SP        -- The Spike Percentage for each time point.
+%               EDOF      -- Degrees of freedom map for each time series
+%                            at each wavelet scale.
+%               mmcsi     -- Matrix of signal coefficients for Time
+%                            Windowing analysis
 %
 %
 % EXAMPLE:      [clean,noise,sp]=wdscore(ts,'wavelet','la8')
@@ -55,13 +66,13 @@ function [clean,noise,SP] = wdscore(ts,varargin)
 %   
 % CREATED IN:   MATLAB 7.13
 %
-% REVISION:     19
+% REVISION:     25 (19-11-2017)
 %
-% COPYRIGHT:    Ameera X Patel (2013, 2014), University of Cambridge
+% COPYRIGHT:    Ameera X Patel (2017), University of Cambridge
 %
-% TOOLBOX:      BrainWavelet Toolbox v1.1
+% TOOLBOX:      BrainWavelet Toolbox v2.0
 
-% ID: wavcorr.m 19 05-02-2014 BWTv1.1 axpatel
+% ID: wdscore.m 25 19-11-2017 BWTv2.0 axpatel
 
 
 %% check nopts / parse extra opts
@@ -71,19 +82,24 @@ if nargin<1
     help(fname); return;
 end
 
-if chkninput(nargin,[1,13],nargout,[2,3],fname)>=1
+if chkninput(nargin,[1,15],nargout,[1,5],fname)>=1
     clean=[]; noise=[];
-    if nargout==3; SP=[]; end
+    if nargout>=3; SP=[]; end
+    if nargout>=4; EDOF=[]; end
+    if nargout>=5; mmcsi=[]; end
     return
 end
 
-DefaultOpts=struct('wavelet','d4','threshold',10,'boundary','periodic',...
-    'chsearch','moderate','nscale','liberal','verbose',1);
+DefaultOpts=struct('wavelet','d4','threshold',10,'boundary','reflection',...
+    'chsearch','moderate','nscale','liberal','verbose',1,'EDOF_method',...
+    'unbiased');
 Opts=parseInOpts(DefaultOpts,varargin);
 
 if chkintype(Opts.verbose,'numeric',fname,{'0','1'})>=1;
     clean=[]; noise=[];
-    if nargout==3; SP=[]; end
+    if nargout>=3; SP=[]; end
+    if nargout>=4; EDOF=[]; end
+    if nargout>=5; mmcsi=[]; end
     return;
 end
 
@@ -106,11 +122,17 @@ err(2).inp=chkintype(Opts.wavelet,'char',fname,wavelets);
 err(3).inp=chkintype(Opts.threshold,'numeric',fname);
 err(4).inp=chkintype(Opts.boundary,'char',fname,boundaries);
 err(5).inp=chkintype(Opts.chsearch,'char',fname,ok_chtype);
-err(6).inp=chkintype(Opts.nscale,'char',fname,scaleopts);
+if ~isnumeric(Opts.nscale)
+    err(6).inp=chkintype(Opts.nscale,'char',fname,scaleopts);
+end
+err(7).inp=chkintype(Opts.verbose,'numeric',fname,{'0','1'});
+err(8).inp=chkintype(Opts.EDOF_method,'char',fname,{'biased','unbiased'});
 
 if sum(cat(1,err.inp))>=1;
     clean=[]; noise=[]; 
-    if nargout==3; SP=[]; end
+    if nargout>=3; SP=[]; end
+    if nargout>=4; EDOF=[]; end
+    if nargout>=5; mmcsi=[]; end
     return
 end
 
@@ -127,17 +149,35 @@ end
 [NX,Nts]=size(ts);
 
 if NX==1 && Nts==1;
-    cprintf('_err','*** BrainWavelet Error ***\n')
+    cprintf('_err',' \n*** BrainWavelet Error ***\n')
     cprintf('err','Your time series is 1 time point long!\n',fname);
     clean=[]; noise=[];
-    if nargout==3; SP=[]; end
+    if nargout>=3; SP=[]; end
+    if nargout>=4; EDOF=[]; end
+    if nargout>=5; mmcsi=[]; end
     return
 elseif NX==1 && Nts>1;
     ts=ts(:);
     NXc=NX; NX=Nts; Nts=NXc; clear NXc;
 end
 
-NJ=modwt_scales(NX,Opts.nscale,Opts.wavelet);
+if isnumeric(Opts.nscale)
+    if (Opts.nscale >1 || Opts.nscale<0)
+        cprintf('_err',' \n*** BrainWavelet Error ***\n')
+        cprintf('err','The scale fraction specified as ''nscale'' must\n')
+        cprintf('err','be an integer between 0 and 1.\n\n')
+        clean=[]; noise=[];
+        if nargout>=3; SP=[]; end
+        if nargout>=4; EDOF=[]; end
+        if nargout>=5; mmcsi=[]; end
+        return
+    end
+    NJmax=modwt_scales(NX,'liberal',Opts.wavelet);
+    NJ=ceil(NJmax*Opts.nscale);
+else
+    NJ=modwt_scales(NX,Opts.nscale,Opts.wavelet);
+end
+
 [m,sc,inf]=modwt(ts,Opts.wavelet,NJ,Opts.boundary,'RetainVJ',1);
 
 if Opts.verbose==1
@@ -147,20 +187,23 @@ end
 %% check Nscales and chain search opts against scales
 
 if NJ==1
-    cprintf('err','\nCannot Wavelet Despike with only 1\n');
-    cprintf('err','wavelet scale. Exiting...\n');
+    cprintf('err',' \n*** BrainWavelet Error ***\n')
+    cprintf('err','\nCannot Wavelet Despike with only 1 wavelet scale.\n');
+    cprintf('err','Exiting...\n');
     clean=[]; noise=[];
-    if nargout==3; SP=[]; end
+    if nargout>=3; SP=[]; end
+    if nargout>=4; EDOF=[]; end
+    if nargout>=5; mmcsi=[]; end
     return
 end
 
 if (strcmpi(Opts.chsearch,'conservative') || ...
         strcmpi(Opts.chsearch,'moderate'))...
         && NJ==2
-    cprintf('\nNB: %s chain search method with %s scales\n',...
+    cprintf([1,0.5,0],'\nNB: %s chain search method with %s scales\n',...
         Opts.chsearch,num2str(NJ))
-    cprintf('is equivalent to use of the harsh method');
-    cprintf('Using harsh method for speed\n\n');
+    cprintf([1,0.5,0],'is equivalent to use of the harsh method.\n');
+    cprintf([1,0.5,0],'Using harsh method for speed\n\n');
     Opts.chsearch='harsh';
 end
 
@@ -319,6 +362,17 @@ if nargout>=3
     if Opts.verbose==1
         ProgMsg('done',nargout)
     end
+end
+
+%% compute degree of freedom map
+
+if nargout>=4
+    ProgMsg('dof',nargout)
+    Lj=FiltWidth(Opts.wavelet,NJ);
+    BInd=BoundInd(Lj,NX,NJ);
+    EDOF=edof(m,mmcsi,BInd,'method',Opts.EDOF_method,...
+        'boundary',Opts.boundary);
+    ProgMsg('done',nargout)
 end
 
 end

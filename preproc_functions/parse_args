@@ -6,7 +6,7 @@ function parse_args {
     
     #initialize defaults
     funcFile=
-    smoothing_kernel="5"
+    arma_nuisance_regression=1 #use 3dREMLfit by default when fitting nuisance regression (see Bright & Murphy 2017)
     bandpass_filter=0 #no bandpass by default
     betFrac=0.3 #default fractional intensity threshold
     cleanup=0
@@ -24,16 +24,20 @@ function parse_args {
     dwelltime=     #effective echo spacing. set by -epi_echospacing or by fmcfg file
     epiTE=
     flip_topup_pedir=0
+    fmap_struct_dof="bbr"
     fm_phase=
     fm_magnitude=
     fm_cfg=
     funcRefimg=
-    funcStructFlirtDOF="bbr" #boundary-based registration in FSL 5.0+
+    func_struct_dof="bbr" #boundary-based registration in FSL 5.0+
     funcWarpInterp="spline"
+    # N.B. funcdir=$(pwd) in preprocessFunctional
     gsr_in_prefix=0
     hpFilter=120s #default to 120s hp filter
     ica_aroma=0 #whether to run smoothed data through ICA-AROMA
     logFile="preprocessFunctional.log"
+    MATLAB_RAM_limit=3 #3GB wavelet despike RAM limit by default (more is faster, but can be a hog when processing in parallel).
+    MATLAB_single_thread=    
     mc_first= #default to empty and choose at stage of motion + slice timing depending on user specification and slice acquisition order
     mc_movie=0
     mc_program="mcflirt"
@@ -43,7 +47,6 @@ function parse_args {
     no_st=0
     no_smooth=0
     no_warp=0
-    autocorr_with_basis=0 # -rmautocorr, 20170420WF -- added in nuisance_regression, 3dREMLfit basis 
     nuisance_regression=0
     nuisance_compute=0
     nuisance_file=.nuisance_regressors
@@ -54,8 +57,10 @@ function parse_args {
     physio_resp="" # respitory file (1D or .resp [siemens])
     physio_card="" #pulse file (1D or .puls [siemens])
     physio_func_info="" # dicom directory/json file, used for timing info to extract resp+puls files
+    prefer_ants=1 #use 6dof ANTS registration over flirt, when possible
     ref_vol=  #don't set a motion correction reference volume by default
     rescalingMethod="10000_globalmedian" #scale whole brain 4D by single constant to normalize median to 10000.
+    rmautocorr=0 # -rmautocorr, return the -Rwherr -- ARMA(1,1) prewhitened residuals -- from 3dREMLfit when computing nuisance regression. DEFAULT is return unwhitened residuals
     rmgroup_component_1d=""
     se_phasepos=
     se_phaseneg=
@@ -64,6 +69,7 @@ function parse_args {
     sliceMotion4D=0
     sliceTimesFile=
     smoother="susan"
+    smoothing_kernel="5"
     st_first= #default to empty and choose default based on slice acquisition order (sequential versus interleaved)
     thresholdMethod="98_2"
     tr= #never assume a TR. Force definition or use auto-detect from DICOM.
@@ -132,7 +138,7 @@ function parse_args {
           if ! (command -v matlab >/dev/null || command -v octave >/dev/null); then
              echo "Optional: matlab or octave is required for wavelet despiking" >&2
           fi
-          check_dep_list 3dcalc fslmaths python antsRegistrationSyN.sh c3d_affine_tool python:nipy python:nibabel perl:App::AFNI::SiemensPhysio python:future
+          check_dep_list 3dcalc fslmaths python antsRegistrationSyN.sh c3d_affine_tool python:nipy python:nibabel perl:App::AFNI::SiemensPhysio python:future R:orthopolynom
           exit $?
 	elif [ $1 = -cleanup_only ]; then
 	    cleanup_only=1
@@ -199,6 +205,10 @@ function parse_args {
 	    funcFile="${2}"
 	    funcNifti="${funcFile}" #retains file extension
 	    shift 2
+	elif [ $1 = -4d_slice_motion ]; then
+	    sliceMotion4D=1
+	    mc_program="sliceMotion4d"
+	    shift 1
 	elif [ $1 = -bandpass_filter ]; then
 	    no_hp=1 #bandpass and high-pass are mutually exclusive
 	    bandpass_filter=1
@@ -277,6 +287,14 @@ function parse_args {
 	elif [ $1 = -flip_topup_pedir ]; then
 	    flip_topup_pedir=1
 	    shift 1
+	elif [ $1 = -fmap_struct_dof ]; then
+	    if [[ $2 = "bbr" || $2 = "6" || $2 = "7" || $2 = "12" ]]; then
+		fmap_struct_dof="${2}"
+		shift 2
+	    else
+		echo -e "Unrecognized -fmap_struct_dof: ${2}.\n  Options are: -fmap_struct_dof bbr, 6, 7, 12."
+		exit 1
+	    fi
 	elif [ $1 = -fm_phase ]; then
 	    fm_phase="${2}"
 	    shift 2
@@ -286,12 +304,12 @@ function parse_args {
 	elif [ $1 = -fm_cfg ]; then
 	    fm_cfg="${2}"
 	    shift 2
-	elif [ $1 = -func_struc_dof ]; then
+	elif [[ $1 = -func_struc_dof || $1 = -func_struct_dof ]]; then
 	    if [[ $2 = "bbr" || $2 = "6" || $2 = "7" || $2 = "12" ]]; then
-		funcStructFlirtDOF="${2}"
+		func_struct_dof="${2}"
 		shift 2
 	    else
-		echo -e "Unrecognized -func_struc_dof: ${2}.\n  Options are: -func_struc_dof bbr, 6, 7, 12."
+		echo -e "Unrecognized -func_struct_dof: ${2}.\n  Options are: -func_struct_dof bbr, 6, 7, 12."
 		exit 1
 	    fi
 	elif [ $1 = -func_refimg ]; then
@@ -364,6 +382,9 @@ function parse_args {
 	    nuisance_regression=1
 	    nuisance_regressors="${2}"
 	    shift 2
+	elif [ $1 = -ols_nuisance_regression ]; then
+	    arma_nuisance_regression=0
+	    shift 1
 	elif [ $1 = -output_basename ]; then
 	    output_basename="${2}"
 	    shift 2
@@ -380,15 +401,15 @@ function parse_args {
            [ -r "$physio_func_info" ] && physio_func_info="$(abspath "$physio_func_info")"
            use_physio=1
 	    shift 2
+	elif [ $1 = -prefer_ants ]; then
+	    prefer_ants=1 #whether to use ANTS for 6dof rigid coregistration when possible
+	    shift 1
+	elif [ $1 = -prefer_flirt ]; then
+	    prefer_ants=0
+	    shift 1
 	elif [ $1 = -ref_vol ] ; then
             ref_vol="${2}"
             shift 2
-       elif [ $1 = -rmautocorr ]; then
-           autocorr_with_basis=1
-           shift
-       elif [ $1 = -rmgroup_component ]; then
-           rmgroup_component_1d="$2"
-           shift 2
 	elif [ $1 = -rescaling_method ]; then
 	    if [[ $2 = "10000_globalmedian" || $2 = "100_voxelmean" ]]; then
 		rescalingMethod="${2}"
@@ -397,6 +418,13 @@ function parse_args {
 		echo -e "Unrecognized -rescaling_method: ${2}.\n  Options are: -rescaling_method 10000_globalmedian or -rescaling_method 100_voxelmean"
 		exit 1
 	    fi
+	elif [ $1 = -rmautocorr ]; then
+	    rmautocorr=1
+	    shift 1
+       # two pass preprocessing -- second pass removing group component
+       elif [ $1 = -rmgroup_component ]; then
+           rmgroup_component_1d="$2"
+           shift 2
 	elif [ $1 = -slice_acquisition ]; then
 	    if [[ $2 = "interleaved" || $2 = "seqasc" || $2 = "seqdesc" ]]; then
 		sliceAcquisition="${2}"
@@ -405,10 +433,6 @@ function parse_args {
 		echo "Slice acquisition setting not recognized. Options are: seqdesc, seqasc, and interleaved"
 		exit 1
 	    fi
-	elif [ $1 = -4d_slice_motion ]; then
-	    sliceMotion4D=1
-	    mc_program="sliceMotion4d"
-	    shift 1
 	elif [ $1 = -se_phaseneg ]; then
 	    se_phaseneg="${2}"
 	    shift 2
@@ -436,7 +460,8 @@ function parse_args {
 	    case $2 in
 		Tal_3mm) templateBrain="${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_3mm_brain" ;;
 		MNI_FSL_3mm) templateBrain="${stddir}/fsl_mni152/MNI152_T1_3mm_brain" ;;
-		MNI_FSL_2mm) templateBrain="${stddir}/fsl_mni152/MNI152_T1_2mm_brain" ;;
+		MNI_FSL_2.3mm) templateBrain="${stddir}/fsl_mni152/MNI152_T1_2.3mm_brain" ;;
+		MNI_FSL_2mm) templateBrain="${stddir}/fsl_mni152/MNI152_T1_2mm_brain" ;;		
 		MNI_3mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" ;;
 		MNI_2.3mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2.3mm" ;;
 		SPM_2mm) templateBrain="${stddir}/spm8_mni/T1_brain" ;;
@@ -459,10 +484,11 @@ function parse_args {
 	    #deprecated: -siemens preferred
 	    detectSiemens=1
 	    shift 1
-       elif [ $1 = -trunc   ]; then
+       elif [ $1 = -trunc ]; then
            n_rm_firstvols=$2
            shift 2
 
+       # LNCD mMR/PET uses old template 
        elif [[ $1 = -use_old_mni  ]]; then
           USE_OLD_TEMPLATE=yes
           shift 1
@@ -564,11 +590,6 @@ function parse_args {
 	exit 1
     fi
 
-#    if [[ $autocorr_with_basis -eq 1 && $bandpass_filter -eq 0 ]]; then
-#	echo "Cannot request -rmautocorr without -bandpass_filter "
-#	exit 1
-#    fi
-
     # Not legal to use -gsr without also having it in regression
     if [[ $gsr_in_prefix -eq 1 && ! $nuisance_regressors =~ (^|,| )gs( |,|$) ]]; then
        echo "Cannot request -gsr without having gs in -nuisance_regressors ($nuisance_regressors)"
@@ -635,6 +656,12 @@ function parse_args {
 
     #smoothed files include the FHWM as a sufix
     [ $no_smooth -eq 0 ] && smoothing_suffix="_${smoothing_kernel}" || smoothing_suffix=
+
+    if [[ $rmautocorr -eq 1 && $arma_nuisance_regression -eq 0 ]]; then
+	rel "-rmautocorr and -ols_nuisance_regression both specified. This is an invalid combination." c
+	rel "Switching to ARMA(1,1) for nuisance regression and removing autocorrelation by -Rwherr in 3dREMLfit" c
+	arma_nuisance_regression=1
+    fi
     
     if [ -n "${logFile}" ]; then
 	archive_file "${logFile}" #move any existing files out of the way

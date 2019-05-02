@@ -19,6 +19,8 @@ setup() {
 
  mkdir $testdir
  cd $testdir
+ # for where to save log file
+ funcdir=$(pwd) 
 
  # create a test dataset
  mknii 1.nii.gz "3 3 3 1"
@@ -27,7 +29,7 @@ setup() {
  mknii 4.nii.gz "3 3 3 1"
  # construct so we will remove up to the odd one out
  # 16 timepoints
- 3dTcat -prefix "test.nii.gz" [1-4].nii.gz [1-4].nii.gz  [1-4].nii.gz [1-4].nii.gz  [1-4].nii.gz
+ 3dTcat -prefix "test.nii.gz" [1-4].nii.gz [1-4].nii.gz  [1-4].nii.gz [1-4].nii.gz  [1-4].nii.gz 1.nii.gz
 
  # COMPUTE_NUISANCE_REGRESSORS_GLOBALS=(nuisance_file nuisance_regressors no_warp postWarp postDespike postSS templateName mprageBet_base ext tr prefix)
  # compute_nuisance_regressors 
@@ -45,21 +47,26 @@ teardown() {
 
 
 
-@test "autocorr" {
+@test "autocorr settings" {
 
   parse_args -4d test.nii.gz -rmautocorr -bandpass_filter 0.009 .08
-  [ "$autocorr_with_basis" -eq 1 ]
+  [ "$rmautocorr" -eq 1 ]
+  [ "$bpLow"  = "0.009" ]
+  [ "$bpHigh" =  ".08" ]
+}
 
-
+# GLOBAL $tr, $nuisance_file, $bpLow, $bpHigh
+@test "simple_run no regs" {
+  # set bpLow, bpHigh and rmautocorr=1
+  parse_args -4d test.nii.gz -rmautocorr -bandpass_filter 0.009 .08
   # setup for nuisance_regression
   # not done by parse_args
   prefix="_"
   ln -s test.nii.gz ${prefix}test${smoothing_suffix}.nii.gz
   tr=1
   subjMask="test"
-
-  # run it
   nuisance_regression  
+  [ $nuisance_regression -eq 0 ]
 
   # check that the prefix was added
   [ $prefix = "Ab_" ]
@@ -77,7 +84,8 @@ teardown() {
 
 
   parse_args -4d test.nii.gz -bandpass_filter 0.009 .08 -nuisance_regression rx  -rmautocorr  
-  [ "$autocorr_with_basis" -eq 1 ]
+  [ "$rmautocorr" -eq 1 ]
+  [ $nuisance_regression -eq 1 ]
 
 
   # setup for nuisance_regression
@@ -87,6 +95,7 @@ teardown() {
   tr=1
   subjMask="test"
 
+  ## run it
   nuisance_regression  
   
   # check that the prefix was added
@@ -95,10 +104,11 @@ teardown() {
   [ -r "${prefix}test${smoothing_suffix}.nii.gz" ]
 
   # added the nuisance_regressor to the final file
-  nrow_basis=$(awk '{print NF}' .basis.1d|sort|uniq)
-  nrow_all=$(awk '{print NF}' .nuisance_regressors.rmautcorr|sort|uniq)
-  let nrow_basis++
-  [ $nrow_all -eq $nrow_basis ]
+  nrow_basis=$(awk '{print NF}' .basis.1D|sort|uniq) # n filed in 1dBport
+  nrow_all=$(awk '{print NF}' .nuisance_regressors.3dREMLfit|sort|uniq)
+  #echo "# basis: $nrow_basis all: $nrow_all" >&3
+  [ $nrow_basis -ge 21 ]          # number of TRs
+  [ $nrow_all -ge $nrow_basis ]
 
   #cp -r . ../batsautocorr_sav
 
@@ -107,8 +117,10 @@ teardown() {
 # compute but not used
 @test "autocorr + compute nuisance only" {
 
-  parse_args -4d test.nii.gz -bandpass_filter 0.009 .08 -nuisance_compute rx  -rmautocorr  
-  [ "$autocorr_with_basis" -eq 1 ]
+  parse_args -4d test.nii.gz -bandpass_filter 0.009 .08 -nuisance_compute rx  -rmautocorr
+  [ "$rmautocorr" -eq 1 ]
+  [ "$nuisance_compute" -eq 1 ]
+  [ "$nuisance_regression" -eq 0 ]
 
 
   ntim=$(3dinfo -nt test.nii.gz)
@@ -121,16 +133,18 @@ teardown() {
   subjMask="test"
 
   nuisance_regression  
-  
+
   # check that the prefix was added
   [ $prefix = "Ab_" ]
   # and the file was created
   [ -r "${prefix}test${smoothing_suffix}.nii.gz" ]
 
   # did NOT add the nuisance_regressor to the final file
-  nrow_basis=$(awk '{print NF}' .basis.1d|sort|uniq)
-  nrow_all=$(awk '{print NF}' .nuisance_regressors.rmautcorr|sort|uniq)
-  [ $nrow_all -eq $nrow_basis ]
+  nrow_basis=$(awk '{print NF}' .basis.1D|sort|uniq)
+  nrow_all=$(awk '{print NF}' .nuisance_regressors.3dREMLfit|sort|uniq)
+  #echo "nbasis: $nrow_basis; nall: $nrow_all" >&3
+  [ $nrow_all -ge $nrow_basis ]
+  [ $nrow_basis -ge 15 ] # actual value is 16, why?
 
   #cp -r . ../batsautocorr_sav
 

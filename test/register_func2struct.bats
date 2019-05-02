@@ -24,7 +24,7 @@ cat > thingstosource <<EOF
  funcdir="$(pwd)"
 
  bbrCapable=1
- funcStructFlirtDOF="bbr"
+ func_struct_dof="bbr"
  sliceMotion4D=1
  mc_first=0
  use_fm=1

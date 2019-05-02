@@ -84,7 +84,7 @@ exec_pbs_array <- function(max_concurrent_jobs, njobstorun, max_cores_per_node=4
     for (i in 1:njobstorun) {
       qsub_preamble <- c(job_array_preamble,
         paste0("#PBS -l nodes=1:ppn=1:himem"), #each individual run is a single-threaded job
-      paste0("#PBS -l walltime=", walltime) #max time for each job to run
+        paste0("#PBS -l walltime=", walltime) #max time for each job to run
       )
 
       tosubmit <- file.path(qsubdir, paste0(jobprefix, i))
@@ -150,6 +150,7 @@ exec_pbs_iojob <- function(srclist, destlist, cpcmd="cp -Rp", njobs=12, qsubdir=
   "#PBS -m n", #no email
   paste0("#PBS -l nodes=1:ppn=",njobs,":himem"),
   "#PBS -W group_list=mnh5174_collab",
+  "#PBS -l pmem=8gb", #make sure each process has enough memory
   "source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash #setup environment",
   paste0("src_queue=(\"", paste(srclist, collapse="\" \""), "\")"),
   "  ",
@@ -180,4 +181,78 @@ exec_pbs_iojob <- function(srclist, destlist, cpcmd="cp -Rp", njobs=12, qsubdir=
 
   return(jobid)
 
+}
+
+fir1Bandpass <- function(x, TR=2.0, low=.009, high=.08, n=500, plotFilter=FALSE, forward_reverse=TRUE, padx=0, detrend=1) {
+  require(signal)
+  #require(pracma)
+
+  #check for all NA
+  if (all(is.na(x))) return(x)
+
+  #n refers to filter order. 500 does quite well with typical signals
+  Fs <- 1/TR
+  nyq <- Fs/2
+
+  #enforce filter upper bound at 1.0 (nyquist)
+  if (high/nyq > 1.0) { high <- nyq }
+
+  #coefficients are specified in the normalized 0-1 range.
+  fir1Coef <- fir1(n, c(low/nyq, high/nyq), type="pass")
+
+  if (plotFilter) print(freqz(fir1Coef, Fs=Fs))
+
+  origLen <- length(x)
+
+  #handle detrending (almost always a good idea to demean, if not detrend, for fourier series to be valid!)
+  if (!is.null(detrend) && detrend >= 0)
+    x <- detrendts(x, order=detrend)
+
+  #zero-pad data, if requested
+  x <- c(x, rep(0*x, padx))
+
+  #as the order of the filter exceeds the length of the time series,
+  #some sort of phase distortion is introduced.
+  #forward+reverse filtering cleans it up
+  if (forward_reverse) xfilt <- filtfilt(fir1Coef, x)
+  else xfilt <- filter(fir1Coef, x)
+
+  return(xfilt[1:origLen])
+}
+
+detrendts <- function(x, order=0) {
+  #order 0=demean; order 1=linear; order 2=quadratic
+  lin <- 1:length(x)
+  quad <- lin^2
+
+  if (order == 0)
+    residuals(lm(x~1))
+  else if (order == 1)
+    residuals(lm(x ~ 1 + lin))
+  else if (order == 2)
+    residuals(lm(x ~ 1 + lin + quad))
+  else
+    stop("order not supported:", order)
+}
+
+
+#little helper to get file extension alone, respecting compression extensions
+file_ext <- function(f) {
+  fs <- strsplit(f, "[.]")
+  fext <- sapply(fs, function(x) {
+    if (x[length(x)] %in% c("xz", "bz2", "gz")) {
+      return(paste("", x[length(x)-1], x[length(x)], sep="."))
+    } else {
+      return(paste("", x[length(x)], sep="."))
+    }
+  })
+  return(fext)
+}
+
+#robust estimate of location (center) of distribution
+getRobLocation <- function(vec, type="huber", k=3.0) {
+  require(MASS)
+  if (all(is.na(vec))) return(NA_real_)
+  else if (type=="huber") return(huber(vec, k=k)$mu)
+  else if (type=="median") return(median(vec, na.rm=TRUE))
 }

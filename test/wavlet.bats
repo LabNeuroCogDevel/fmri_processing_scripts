@@ -56,13 +56,13 @@ gt() {  perl -e "exit(1) if $(bs $1 $2) <= $(bs $1 $3)";  }
 
 # only run if we dont have matlab and do have octave
 @test "octave wavlet lower max/stdev" {
- command -v matlab && skip
+ # command -v matlab && skip # could skip if it worked in matlab
  ! command -v octave && skip
  export USE_OCTAVE=yes preDiespike=octave funcFile=_octave prefix=""
  despike_timeseries
 
- gt -max   predespike.nii.gz d_matlab.nii.gz
- gt -stdev predespike.nii.gz d_matlab.nii.gz 
+ gt -max   predespike.nii.gz d_octave.nii.gz
+ gt -stdev predespike.nii.gz d_octave.nii.gz 
 }
 
 # run if we have both matlab and octave

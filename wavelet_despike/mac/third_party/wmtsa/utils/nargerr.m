@@ -144,13 +144,8 @@ usage_str = ['Usage: [err] = ', mfilename, ...
              '[mode], [msg], [return_type])'];
 
 
-%% Check arguments.
-err = nargchk(5, 8, nargin, 'struct');
-if (~isempty(err))
-  error(err.identifier, err.message);
-end
-
-  
+%% Check arguments passed to this function.
+narginchk(5, 8);
 
 if (ischar(func))
   funcname = func;
@@ -241,13 +236,27 @@ function err = check_numarg(numarg, exp_numarg, argtype, return_type)
     error(err_s);
   end
 
+  err=[];
   switch argtype
-   case 'input'
-    hnargchk = @nargchk;
-   case 'output'
-    hnargchk = @nargoutchk;
+    case 'input'
+      if numarg < low || numarg > high
+	if strcmpi(return_type, 'string')
+	  err='Not enough inputs';
+	else
+	  err.message='Incorrect number of inputs';
+	  err.identifier = ['WMTSA:nargerr:incorrectInputNumber'];
+	end
+      end
+    case 'output'
+      if numarg < low || numarg > high
+	if strcmpi(return_type, 'string')
+	  err='Not enough outputs';
+	else
+	  err.message='Incorrect number of outputs';
+	  err.identifier = ['WMTSA:nargerr:incorrectOutputNumber'];
+	end
+      end
   end
-  err = hnargchk(low, high, numarg, return_type);
 return
 
 

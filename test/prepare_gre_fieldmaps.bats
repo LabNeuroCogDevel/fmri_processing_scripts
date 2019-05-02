@@ -15,6 +15,9 @@ setup() {
  cp -r $BATS_TEST_DIRNAME/exampledata/func+fm+ref/gre_field_mapping_96x96.[34]/ ./
  magd=$(pwd)/gre_field_mapping_96x96.3
  phased=$(pwd)/gre_field_mapping_96x96.4
+
+ # done in check_requreiments
+ command -v dcm2niix >/dev/null 2>&1 && have_dcm2niix=1 || have_dcm2niix=0
 }
 
 # archive_dcm() { 

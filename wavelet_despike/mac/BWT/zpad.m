@@ -29,13 +29,13 @@ function outmat = zpad(inmat,dim,lvl)
 %   
 % CREATED IN:   MATLAB 7.13
 %
-% REVISION:     3
+% REVISION:     4
 %
-% COPYRIGHT:    Ameera X Patel (2013, 2014), University of Cambridge
+% COPYRIGHT:    Ameera X Patel (2017), University of Cambridge
 %
-% TOOLBOX:      BrainWavelet Toolbox v1.1
+% TOOLBOX:      BrainWavelet Toolbox v2.0
 
-% ID: zpad.m 3 30-01-2014 BWTv1.1 axpatel
+% ID: zpad.m 4 06-09-2017 BWTv2.0 axpatel
 
 
 %% check inputs

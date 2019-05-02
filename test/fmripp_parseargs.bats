@@ -24,6 +24,7 @@ teardown() {
 
 # physio usage
 @test "physio input: expected" {
+ ! command -v siemphysdat && skip
  touch junk.txt junk.puls junk.json
  mkdir mrdir
  run parse_args -4d fake.nii.gz -physio_card junk.puls -physio_resp junk.txt -physio_func_info junk.json
@@ -32,6 +33,7 @@ teardown() {
  [ $status -eq 0 ]
 }
 @test "physio input: fails" {
+ ! command -v siemphysdat && skip
  touch junk.txt junk.puls junk.json
  # need both card and resp
  run parse_args -4d fake.nii.gz -physio_card junk.txt 
@@ -59,17 +61,17 @@ teardown() {
  return 0
 }
 
-# we set autocorr_with_basis with rmautocorr switch
+# we set rmautocorr with rmautocorr switch
 @test "with rmautocorr" {
  parse_args -4d fake.nii.gz -rmautocorr  -bandpass_filter 0.009 .08
- [ $autocorr_with_basis -eq 1 ]
+ [ $rmautocorr -eq 1 ]
  [ $funcFile == "fake" ]
 
 }
 
 @test "rmautocor and nuisance" {
  parse_args -4d fake.nii.gz -rmautocorr  -bandpass_filter 0.009 .08 -nuisance_regression 6motion
- [ $autocorr_with_basis -eq 1 ]
+ [ $rmautocorr -eq 1 ]
  [ $funcFile == "fake" ]
 }
 
@@ -81,7 +83,7 @@ teardown() {
 
 @test "default without rmautocorr" {
  parse_args -4d fake.nii.gz
- [ $autocorr_with_basis -eq 0 ]
+ [ $rmautocorr -eq 0 ]
  [ $funcFile == "fake" ]
 
 }

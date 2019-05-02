@@ -337,6 +337,10 @@ function [hdr, orient] = change_hdr(hdr, tolerance, preferredForm)
          hdr.hist.new_affine = [ [R;[0 0 0]] [T;1] ];
 
          if det(R) == 0 | ~isequal(R(find(R)), sum(R)')
+             
+            % Added Ameera X Patel, 10th Feb 2014
+            obQ=1; nii=[]; return
+            
             msg = [char(10) char(10) '   Non-orthogonal rotation or shearing '];
             msg = [msg 'found inside the affine matrix' char(10)];
             msg = [msg '   in this NIfTI file. You have 3 options:' char(10) char(10)];
@@ -353,9 +357,7 @@ function [hdr, orient] = change_hdr(hdr, tolerance, preferredForm)
             msg = [msg '      image, but I don''t suggest this.' char(10) char(10)];
             msg = [msg '   To get help, please type:' char(10) char(10) '   help reslice_nii.m' char(10)];
             msg = [msg '   help load_untouch_nii.m' char(10) '   help load_nii.m'];
-            fprintf('%s\n', msg);
-            % Added Ameera X Patel, 10th Feb 2014
-            obQ=1; nii=[]; return
+            error(msg);
          end
       end
 
@@ -414,6 +416,10 @@ function [hdr, orient] = change_hdr(hdr, tolerance, preferredForm)
          hdr.hist.new_affine = [ [R;[0 0 0]] [T;1] ];
 
          if det(R) == 0 | ~isequal(R(find(R)), sum(R)')
+             
+            % Added Ameera X Patel, 10th Feb 2014
+            obQ=1; nii=[]; return
+            
             msg = [char(10) char(10) '   Non-orthogonal rotation or shearing '];
             msg = [msg 'found inside the affine matrix' char(10)];
             msg = [msg '   in this NIfTI file. You have 3 options:' char(10) char(10)];
@@ -430,9 +436,7 @@ function [hdr, orient] = change_hdr(hdr, tolerance, preferredForm)
             msg = [msg '      image, but I don''t suggest this.' char(10) char(10)];
             msg = [msg '   To get help, please type:' char(10) char(10) '   help reslice_nii.m' char(10)];
             msg = [msg '   help load_untouch_nii.m' char(10) '   help load_nii.m'];
-            fprintf('%s\n', msg);
-            % Added Ameera X Patel, 10th Feb 2014
-            obQ=1; nii=[]; return
+            error(msg);
          end
 
       else

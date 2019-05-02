@@ -1,5 +1,5 @@
 #!/bin/bash
-REGISTER_FUNC2STRUCT_GLOBALS=(mprageBet fm_phase unwarpdir bbr_pedir funcRefimg funcStructFlirtDOF bbrCapable createBBRFmapWarp bbrCapable)
+REGISTER_FUNC2STRUCT_GLOBALS=(mprageBet fm_phase unwarpdir bbr_pedir funcRefimg func_struct_dof bbrCapable createBBRFmapWarp)
 function register_func2struct {
     [ -z "$createBBRFmapWarp" ] && createBBRFmapWarp=0
     [ -f .register_func2struc ] && rel "register_func2struct alraedy" c && return 0
@@ -107,7 +107,12 @@ function register_func2struct {
 	fi
 
 	#compute func -> epiref -> se fmap transform
-	rel "convert_xfm -omat $funcdir/transforms/func_to_sefmap.mat -concat $funcdir/transforms/epiref_to_sefmap.mat $funcdir/transforms/func_to_epiref.mat"
+	if [ -n "$funcRefimg" ]; then
+	    rel "convert_xfm -omat $funcdir/transforms/func_to_sefmap.mat -concat $funcdir/transforms/epiref_to_sefmap.mat $funcdir/transforms/func_to_epiref.mat"
+	else
+	    #this fires if there is no epiref in the pipeline. TopupPreprocessingAll calls everything 'epiref' regardless of whether it's a single band ref img or not.
+	    rel "cp $funcdir/transforms/epiref_to_sefmap.mat $funcdir/transforms/func_to_sefmap.mat"
+	fi
 	rel "convert_xfm -omat $funcdir/transforms/sefmap_to_func.mat -inverse $funcdir/transforms/func_to_sefmap.mat" #compute SE -> func transform
 	rel "convertwarp --relout --rel -r mc_target --premat=$funcdir/transforms/func_to_sefmap.mat --warp1=topup_undistort/SE_WarpField --postmat=$funcdir/transforms/sefmap_to_func.mat --out=topup_undistort/EF_WarpField"
 	
@@ -137,7 +142,7 @@ function register_func2struct {
 	rel "Warping subject functional to subject structural" c
 
 	#TODO: move 6dof transform outside of these checks to reduce redundancy. Then mv to _init in case of BBR
-	if [ "$funcStructFlirtDOF" = "bbr" ]; then
+	if [ "$func_struct_dof" = "bbr" ]; then
 
 	    if [ -n "$bbrCapable" ] && [ $bbrCapable -eq 1 ]; then
 		rel "Using boundary-based registration approach to register EPI to T1" c
@@ -173,12 +178,12 @@ function register_func2struct {
 		rel "convert_xfm -omat $funcdir/transforms/struct_to_${oname}.mat -inverse $funcdir/transforms/${oname}_to_struct.mat"
 	    else
 		rel "BBR EPI-to-T1 requested, but flirt < v6.0. Reverting to typical 6 DOF registration" c
-		funcStructFlirtDOF=6
-		rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct -omat $funcdir/transforms/${oname}_to_struct.mat -dof $funcStructFlirtDOF $inweight -interp spline"
+		func_struct_dof=6
+		rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct -omat $funcdir/transforms/${oname}_to_struct.mat -dof $func_struct_dof $inweight -interp spline"
 		qa_image $mprageBet ${oname}_to_struct "${oname}_to_struct.png" "Structural overlaid with 6dof-coregistered ${oname}"
 	    fi
 	else
-	    rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct -omat $funcdir/transforms/${oname}_to_struct.mat -dof $funcStructFlirtDOF $inweight -interp spline"
+	    rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct -omat $funcdir/transforms/${oname}_to_struct.mat -dof $func_struct_dof $inweight -interp spline"
 	    qa_image $mprageBet ${oname}_to_struct "${oname}_to_struct.png" "Structural overlaid with 6dof-coregistered ${oname}"
 	fi
 

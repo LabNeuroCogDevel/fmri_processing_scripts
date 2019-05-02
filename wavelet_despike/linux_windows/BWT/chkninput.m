@@ -20,13 +20,13 @@ function [x] = chkninput(nin,limin,nout,limout,fname)
 %   
 % CREATED IN:   MATLAB 7.13
 %
-% REVISION:     6
+% REVISION:     7 (05-09-17)
 %
-% COPYRIGHT:    Ameera X Patel (2013, 2014), University of Cambridge
+% COPYRIGHT:    Ameera X Patel (2017), University of Cambridge
 %
-% TOOLBOX:      BrainWavelet Toolbox v1.1
+% TOOLBOX:      BrainWavelet Toolbox v2.0
 
-% ID: chkninput.m 6 30-01-2014 BWTv1.1 axpatel
+% ID: chkninput.m 7 05-09-17 BWTv2.0 axpatel
 
 
 %% check input/output to target fn

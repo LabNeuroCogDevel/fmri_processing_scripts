@@ -2,11 +2,23 @@
 
 #script to pull together FSL FEAT level 1 runs into an AFNI BRIK+HEAD format for review
 printHelp <- function() {
-  #to do
+  cat(paste("This script converts a first-level feat directory to an AFNI-compatible stats file with",
+    "the afni graphical viewer. This avoids the challenge of unlabeled and unintuitive individual",
+    "outputs from feat. Here are the basic options:",
+    "  --feat_dir <dir.feat>: the location of the feat output.",
+    "  --help: print the help",
+    "  --no_varcope: do not include the varcope (variance) estimates in the output.",
+    "  --no_auxstats: do not output a more detailed file with auxiliary statistics, including zfstats, sigmasquareds, and pes.",
+    "  --stat_outfile <file prefix>: The filename prefix to be used for stats outputs.",
+    "  --aux_outfile <file prefix>: The filname prefix for auxiliary statistics.",
+    "\n\n",
+    sep="\n"))
 }
 
 ##Sys.setenv(AFNIDIR="/opt/aci/sw/afni/16.0.00/bin")
-Sys.setenv(AFNIDIR="/opt/aci/sw/afni/17.0.02/bin")
+if (Sys.getenv("AFNIDIR") == "") {
+  Sys.setenv(AFNIDIR="/gpfs/group/mnh5174/default/sw/afni")
+}
 
 #read in command line arguments
 args <- commandArgs(trailingOnly = FALSE)
@@ -23,7 +35,7 @@ if (length(argpos) > 0L) {
 source(file.path(scriptpath, "R_helper_functions.R"))
 
 if (length(args) == 0L) {
-  message("feat_lvl1_to_afni expects a single .feat directory from a level 1 analysis -feat_dir <directory>.\n")
+  message("feat_lvl1_to_afni expects a single .feat directory from a level 1 analysis --feat_dir <directory>.\n")
   printHelp()
   quit(save="no", 1, FALSE)
 }
@@ -39,6 +51,8 @@ while (argpos <= length(args)) {
     featdir <- args[argpos + 1] #name of preprocessed fMRI data
     stopifnot(file.exists(featdir))
     argpos <- argpos + 2
+  } else if (args[argpos] == "--help") {
+    
   } else if (args[argpos] == "--no_varcope") {
     output_varcope <- FALSE
     argpos <- argpos + 1
@@ -47,7 +61,7 @@ while (argpos <= length(args)) {
     argpos <- argpos + 1
   } else if (args[argpos] == "--stat_outfile") { #name of output file for main stats file
     outfilename <- args[argpos + 1]
-    argpos <- argppos + 2
+    argpos <- argpos + 2
   } else if (args[argpos] == "--aux_outfile") {
     auxfilename <- args[argpos + 1]
     argpos <- argpos + 2
@@ -61,6 +75,7 @@ setwd(featdir)
 #inside the stats directory we will have pes, copes, varcopes, and zstats
 zfiles <- list.files("stats", pattern="zstat[0-9]+\\.nii.*", full.names=TRUE)
 statnums <- as.numeric(sub(".*zstat(\\d+)\\.nii.*", "\\1", zfiles, perl=TRUE))
+zfiles <- zfiles[order(statnums)] #need to sort stat files numerically for labeling to work appropriately
 nstats <- length(zfiles)
 
 ##lookup names of parameter estimates
