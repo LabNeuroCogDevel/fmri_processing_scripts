@@ -32,7 +32,8 @@ cat > thingstosource <<EOF
  sliceMotion4D=1
  mc_first=0
  use_fm=1
- logFile="$(pwd)/log"
+ logFile="$(pwd)/log.txt"
+ qa_imglog="$(pwd)/qalog.txt"
 
  funcFile="func.nii.gz"
  templateBrain='template_brain'
@@ -90,10 +91,12 @@ teardown() {
 }
 
 
-@test "preprocessDistortion gre (see also prepare_gre_fieldmaps.bats) no bbr for faster runtime" {
- skip
+@test "preprocessDistortion (see also prepare_gre_fieldmaps.bats) no bbr for faster runtime" {
  echo "bbrCapable=''" >> thingstosource
  echo "func_struct_dof=''" >> thingstosource
+ echo "fmap_struct_dof=''" >> thingstosource
+
+ 
  source thingstosource
  #SAVETEST=1
  run $BATS_TEST_DIRNAME/../preprocessDistortion -phasedir $phased -magdir $magd -fm_cfg $fm_cfg
