@@ -18,6 +18,7 @@ colcnt() {
 
 # create a motion.par file
 setup() {
+ cd $BATS_TEST_DIRNAME
  source ../preproc_functions/helper_functions
  source ../preproc_functions/nuisance_regression
  mkdir batsmotiontempdir

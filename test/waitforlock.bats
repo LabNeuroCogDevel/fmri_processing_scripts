@@ -6,6 +6,7 @@
 
 # go into a special temp dir
 setup() {
+ cd $BATS_TEST_DIRNAME
  source ../preproc_functions/helper_functions
  source ../preproc_functions/waitforlock
 }
