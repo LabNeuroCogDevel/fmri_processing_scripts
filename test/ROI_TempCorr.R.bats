@@ -1,11 +1,11 @@
 #!/usr/bin/env bats
 
-scriptdir=$(cd $(pwd)/..;pwd)
-shortrestfile="$(pwd)/inputs/functest.nii.gz"  # 6 time points from a fully preproc'ed WM run1
-mask="$(pwd)/inputs/gm_50mask.nii.gz"
-roi="$(pwd)/inputs/wm_spheres.nii.gz"
 
 setup() {
+  scriptdir=$(cd $BATS_TEST_DIRNAME/..;pwd)
+  shortrestfile="$BATS_TEST_DIRNAME//inputs/functest.nii.gz"  # 6 time points from a fully preproc'ed WM run1
+  mask="$BATS_TEST_DIRNAME/inputs/gm_50mask.nii.gz"
+  roi="$BATS_TEST_DIRNAME/inputs/wm_spheres.nii.gz"
   TDIR=$(mktemp -d $BATS_TMPDIR/roitemp-XXXX)
   cd $TDIR
   pwd >&2

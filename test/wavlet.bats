@@ -32,7 +32,9 @@ setup() {
  # mknii 4.nii.gz "0 0 0 4\n0 1 0 7\n1 0 0 1\n1 1 0 1"
  # mknii 5.nii.gz "0 0 0 5\n0 1 0 6\n1 0 0 2\n1 1 0 1"
  # 3dTcat -overwrite -prefix "test.nii.gz" [1-4].nii.gz
- 3dTcat ../exampledata/func+fm+ref/nii/func.nii.gz'[0..4]' -prefix test.nii.gz
+ 
+ #3dTcat ../exampledata/func+fm+ref/nii/func.nii.gz'[0..4]' -prefix test.nii.gz
+ cp ../exampledata/short_func.nii.gz test.nii.gz
  return 0
 
 }
