@@ -30,6 +30,12 @@ else
     fi
 fi
 
+# source FSL if we have an FSLDIR but no FSLOUTPUTTYPE
+# 20190509WF - running bats tests using mcflirt from within docker
+#              might not have hit .profile to source FSLDIR
+[ ! -z "$FSLOUTPUTTYPE" -a -n "${FSLDIR}" -a -d "${FSLDIR}" ] &&
+   source ${FSLDIR}/etc/fslconf/fsl.sh || :
+
 function archive_file() {
     fname="${1}"
     if [ -f "${fname}" ]; then
