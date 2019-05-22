@@ -427,7 +427,7 @@ rel "applywarp --rel --interp=spline -i ${WD}/PhaseNeg_gdc -r ${WD}/PhaseNeg_gdc
 rel "fslmaths ${WD}/PhaseNeg_gdc_dc -mul ${WD}/SE_Jacobian_${vnum} ${WD}/PhaseNeg_gdc_dc_jac"
 
 # Scout - warp and Jacobian modulate to get distortion corrected output
-rel "applywarp --rel --interp=spline -i ${WD}/epiref -r ${WD}/${setarget} --premat=transforms/epiref_to_sefmap.mat -w ${WD}/SE_WarpField -o ${WD}/SE_UD_epiref"
+rel "applywarp --rel --interp=spline -i ${WD}/epiref -r ${WD}/${setarget}_vol1 --premat=transforms/epiref_to_sefmap.mat -w ${WD}/SE_WarpField -o ${WD}/SE_UD_epiref"
 rel "fslmaths ${WD}/SE_UD_epiref -mul ${WD}/SE_Jacobian.nii.gz ${WD}/SE_UD_epiref_jac"
 
 rel "applywarp --rel --interp=spline -i ${WD}/epiref -r ${WD}/epiref -w ${WD}/ER_WarpField -o ${WD}/ER_UD_epiref"
