@@ -52,7 +52,8 @@ while (argpos <= length(args)) {
     stopifnot(file.exists(featdir))
     argpos <- argpos + 2
   } else if (args[argpos] == "--help") {
-    
+    printHelp()
+    quit(save="no", 0, FALSE)
   } else if (args[argpos] == "--no_varcope") {
     output_varcope <- FALSE
     argpos <- argpos + 1
@@ -100,6 +101,7 @@ runAFNICommand(tcatcall)
 #design.con contains names of contrasts
 dcon <- readLines("design.con")
 connames <- sub("/ContrastName\\d+\\s+([\\w_.]+).*", "\\1", grep("/ContrastName", dcon, value=TRUE), perl=TRUE)
+connames <- gsub("\\s", "_", connames, perl=TRUE) #replace spaces with underscores to make labels accurate in AFNI
 
 #now rework AFNI header to correct the labels and add z-stat info
 if (output_varcope) {
