@@ -11,6 +11,7 @@
 # insturction settingts
 [ -z "$CLEANUP" ]   && CLEANUP=yes   # remove ~850MB of nifti files when we are done
 [ -z "$CHECKFLAG" ] && CHECKFLAG=yes # should we check for complete file flag .preprocessfunctional_complete?
+[ -z "$IS_WARP" ] && IS_WARP=1 # usually we have warped the data (20190604: pp w/ -no_warp)
 ONLYONE=""
 PDIR=""
 VERBOSE=0
@@ -29,13 +30,14 @@ usage() {
     fi
     echo
     echo " OPTIONS: "
-    echo "   -g MASK      MNI greymatter mask ($GM_MNI)"
+    echo "   -g MASK      MNI greymatter mask ($GM_MNI) or native space mask if also -n"
     echo "   -t TEMPLATE  MNI template ($TEMPLATE)"
     echo "   -w WARPCOEF  native to mni warp ($WARPCOEF)"
     echo "   -s STARTFILE example (#tr, suffix) file to use ($STARTFILE)"
     echo "   -O NIIFILE   only calculate for this file"
     echo "   -f   do not look for flag file"
     echo "   -c   do not clean up"
+    echo "   -n   native/no warp preprocessing, bet mc_target.nii.gz for mask instead"
     echo "   -v   be verbose, repeat for more text (-v -v)"
     echo "   -h   this help message"
     echo " OUTPUT:"
@@ -73,6 +75,7 @@ TSNR_onerun(){
    [ -z "$firstfile" -o ! -r "$firstfile" ] && usage "cannot find start file ($(pwd)/$STARTFILE w/more than 10 trs); use '-s STARTFILE' option" 
    [ "$CHECKFLAG" == "yes" -a ! -r "$pdir/.preprocessfunctional_complete" ] && usage "$(pwd) does not contain a preprocessfunctional_complete flag file (use '-f' to ignore)"
    for v in TEMPLATE GM_MNI WARPCOEF; do
+      [ $IS_WARP -ne 1 ] && break
       [ ! -r "${!v}" ] && usage "cannot find $v (${!v}), consider changing with command options"
    done
    [ ! -d tsnr ] && mkdir -p tsnr
@@ -85,7 +88,7 @@ TSNR_onerun(){
    [ $VERBOSE -gt 0 ] && echo "first file $firstfile, pipeline suffix $suffix, $ntr trs"
 
    # make sure we are using the correct mask
-   ! is_same_grid $TEMPLATE $GM_MNI &&
+   [ $IS_WARP -eq 1 ] && ! is_same_grid $TEMPLATE $GM_MNI &&
       usage "$TEMPLATE does not match grid of mask ($GM_MNI), maybe different templates!?"
    #finalfile=$(find_final $suffix $ntr)
    #[ $(3dinfo -same_grid $finalfile $GM_MNI ) -ne 1 ] &&
@@ -126,6 +129,23 @@ TSNR_onerun(){
       space=$(3dinfo -space ${prefix}.nii.gz)
       if [ $space == "MNI" ]; then
          gm_mask=$GM_MNI
+      # 20190604 - allow nowarp
+      elif [ $IS_WARP -eq 0 ]; then
+         # if we didn't specify a mask then we have the MNI
+         # default to mprage_bet.nii.gz
+         if [ $(3dinfo -space "$GM_MNI") == "MNI" ]; then
+            local nw_input="mc_target.nii.gz"
+            local nw_mask="$(pwd)/tsnr/func_bet.nii.gz"
+            if [ ! -r $nw_input ]; then
+              echo "missing '$nw_input' to make mask. set your own mask with -g"
+              exit 1
+           fi
+           [ ! -r $nw_mask ] && bet $nw_input $nw_mask -F -m
+           gm_mask=${nw_mask/.nii.gz/_mask.nii.gz} 
+         else
+            # GM_MNI is what was specified by -g, hopefully not MNI and probalby not GM
+            gm_mask=$GM_MNI
+         fi
       else
          gm_mask=$pdir/tsnr/gm_mask_native.nii.gz
          # we need native space gm mask
@@ -153,6 +173,7 @@ TSNR_onerun(){
              continue
          fi
       fi
+      [ ! -r "$gm_mask" ] && echo "cannot read mask: '$gm_mask', set with -g" && exit 1
 
       tsnrout=$pdir/tsnr/$outname 
       #echo "checking $tsnrout"
@@ -201,6 +222,7 @@ parse_args(){
          -c |-no-clean)  CLEANUP="no"; shift 1;;
          -f |-no-flag) CHECKFLAG="no"; shift 1;;
          -O |-only)   STARTFILE="$2"; ONLYONE=1; shift 2;;
+         -n ) IS_WARP=0; shift;; 
          -v ) let ++VERBOSE; shift;;
          # help
          -h ) usage "";;
@@ -215,8 +237,6 @@ parse_args(){
    #[ -f "$PDIR" ] && PDIR=$(dirname "$INPUT") && STARTFILE="$(basename $PDIR)"
    [ ! -d "$PDIR" ] && usage "bad preprocdir: $PDIR"
 
-   # files can be relative to rundir so don't panic if we cannot find them
-   # but make absolute path if they are relative to exec dir
    for v in TEMPLATE GM_MNI WARPCOEF; do
       f="${!v}"
       [ ! -r "$f" ] && continue
@@ -225,6 +245,8 @@ parse_args(){
       printf -v $v "$fd/$fb"
    done
 
+   # files can be relative to rundir so don't panic if we cannot find them
+   # but make absolute path if they are relative to exec dir
    if [ $VERBOSE -gt 1 ]; then
       for v in PDIR TEMPLATE GM_MNI WARPCOEF STARTFILE CHECKFLAG CLEANUP VERBOSE; do
          echo "$v: ${!v}"

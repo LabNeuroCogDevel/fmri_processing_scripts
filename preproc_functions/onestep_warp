@@ -86,11 +86,17 @@ function onestep_warp {
     fi
 
     ## what warp targets do we have?
-    warp_target_list=("preMC postSS") # we will always have something before motion corerction, and a skullstrip (right?)
+    local warp_target_list=("preMC") # we will always have something before motion cor.
+    # should always have skullstrip too, but maybe not?
+    [ "$no_warp" -ne 1 ] && warp_target_list+=("postSS")
     [ "$despike" -eq 1 ] && warp_target_list+=("postDespike")
+    # rel "onestep warp requiring: ${warp_target_list[@]}" c
     # do they all exist
-    for warpnii in ${warp_target_list[@]} ref mask; do
-      if ! imtestln "${!warpnii}"; then rel "$FUNCNAME: missing $warpnii '${!warpnii}'" c; return 1; fi
+    for warpnii in  mask ref ${warp_target_list[@]}; do
+      if ! imtestln "${!warpnii}"; then
+          rel "$FUNCNAME: missing $warpnii file '${!warpnii}'" c
+          return 1
+      fi
     done
 
     # One-step warping occurs under several scenarios, and applies motion correction, 
