@@ -67,6 +67,10 @@ Command line options:
         In this case, the files in topup_undistort will look right, but functional -> structural and functional -> template
         files will look doubly distorted. To fix this, pass in this flag, which will flip the expected PE dir for all steps downstream
         that use the TOPUP field. See the 'N.B.' here for details: https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/topup/TopupUsersGuide
+  -fmap_struct_dof: The number of degrees of freedom to be used when co-registering the fieldmap magnitude image (FM_UD_fmap_mag_brain)
+        to the subject structural (T1) scan. Defaults to flirt bbr (boundary based registration) following a 6 dof transformation.
+        -fmap_struct_dof bbr. BBR segments the T1 to create a white matter boundary mask, which is used to help align EPI and T1.
+        -fmap_struct_dof 6.  Rotation x, y, z; Translation x, y, z.
   -fm_phase: gre field map phase image
   -fm_magnitude: field map magnitude image (mag2.nii.gz)
   -fm_cfg: configuration file for handling fieldmap (TEs, echo spacing, etc.)
@@ -75,12 +79,12 @@ Command line options:
         Note: this can be a single DICOM image, which will be converted to NIfTI.
         Note: this can also be a directory, in which case the script assumes it is the subject's raw directory and will search for an SBref 
 	  image corresponding to the protocol name of the functional data and is either the previous or subsequent series number.
-  -func_struc_dof: The number of degrees of freedom to be used when co-registering the mean subject
+  -func_struct_dof: The number of degrees of freedom to be used when co-registering the mean subject
         functional (EPI) scan to the subject structural (T1) scan. Defaults to bbr (boundary based registration).
-        -func_struc_dof bbr. BBR segments the T1 to create a white matter boundary mask, which is used to help align EPI and T1.
-        -func_struc_dof 6.  Rotation x, y, z; Translation x, y, z.
-        -func_struc_dof 7.  Rotation x, y, z; Translation x, y, z; Global scaling.
-        -func_struc_dof 12. Rotation x, y, z; Translation x, y, z; Scaling x, y, z; Skewing x, y, z.
+        -func_struct_dof bbr. BBR segments the T1 to create a white matter boundary mask, which is used to help align EPI and T1.
+        -func_struct_dof 6.  Rotation x, y, z; Translation x, y, z.
+        -func_struct_dof 7.  Rotation x, y, z; Translation x, y, z; Global scaling.
+        -func_struct_dof 12. Rotation x, y, z; Translation x, y, z; Scaling x, y, z; Skewing x, y, z.
   -gsr: specifically label gsr as a prefix. r becomes gr in filenames. "gs" must be in nuisance_regression/compute
   -keep_motion_files: when doing -cleanup or -cleanup_only, keep mt_*,tm_*, some mc_*, and mc_mats/ files
   -help: Print command help.
@@ -118,12 +122,15 @@ Command line options:
   -physio_resp: respitory file (1D or .resp [siemens])
   -physio_card: pulse file (1D or .puls [siemens])
   -physio_func_info: dicom directory/bidsjson file, used for timing info to extract resp+puls files
+  -prefer_ants: Use ANTS 6dof coregistration when possible (e.g., epiref -> func and fmap_mag -> struct)
+  -prefer_flirt: Use flirt 6dof coregistration when possible (e.g., epiref -> func and fmap_mag -> struct)
   -ref_vol: Reference volume to be used in motion correction. Will default to mean volume if not passed.should be a volume (time step) number or either mean or median
   -rescaling_method: The method used to normalize voxel intensities. Options are:
         -rescaling_method 10000_globalmedian (FSL's default, rescale the 4d file by a single quantity: 10000/[global median])
         -rescaling_method 100_voxelmean (Rescale each voxel by 100/[voxel 4d mean]. In principle, approximates % change)
   -resume: Instructs script to resume preprocessing from the last completed step. Should be passed in as the only parameter: preprocessFunctional -resume.
   -rmautocorr: use 3dREMLfit to remove nuisance regressors and filtered frequencies (1dBport) using an ARMA(1,1) model to account for autocorrelation.
+  -rmautocorr: use 3dREMLfit to remove nuisance regressors and filtered frequencies (1dBport) using an ARMA(1,1) model to account for autocorrelation (-Rwherr).
   -rmgroup_component: provide a group 1D ts to remove from 4D ts after warping (add c to prefix after warp)
   -se_phasepos: The spin-echo image (or directory) with positive phase encoding direction (typically P>>A or R>>L) to be used in TOPUP distortion correction
   -se_phaseneg: The spin-echo image (or directory) with negative phase encoding direction (typically A>>P or L>>R) to be used in TOPUP distortion correction
@@ -144,6 +151,7 @@ Command line options:
 	-template_brain MNI_2.3mm (MNI152 brain, 2.3mm isotropic voxels, template from MNI Fonov et al. 2009). For 2.3mm MB sequence.
         -template_brain MNI_3mm (MNI152 brain, 3mm isotropic voxels, template from MNI Fonov et al. 2009)
         -template_brain MNI_FSL_3mm (MNI152 brain, 3mm isotropic voxels, template from FSL standard)
+        -template_brain MNI_FSL_2.3mm (MNI152 brain, 2.3mm isotropic voxels, template from FSL standard)
         -template_brain MNI_FSL_2mm (MNI152 brain, 2mm isotropic voxels, template from FSL standard)
         -template_brain SPM_2mm (MNI brain from spm8 canonical template)
         -template_brain Tal_3mm (Talairach brain, 3mm isotropic voxels. Brain built by resampling MNI template in Tal space)
@@ -184,7 +192,7 @@ The major steps in the processing pipeline are, in order:
   13)   Nuisance regression (optional) - r
   13.5) Global signal regression (optional, label optional) - g
   14)   Bandpass filtering (optional) - b
-  15)   Auto Correlation removal (optional) - A [requires bandpass]
+  15)  Auto Correlation removal (optional) - A
 
 Note that if the slice acquisition order is sequential, then the default is to appply motion correction before slice timing correction, whereas for
 interleaved acquisition, the default is slice timing first. The order of these steps can be explicitly specified using -st_first, -mc_first, or -no_st.
@@ -205,13 +213,36 @@ EndOfHelp
 }
 
 #Written: 2010/5/18
-#Last updated: 2018/5/11
-#Last defaults change: 2017/7/5
+#Changelog:
+#
+#Last updated: 2019/5/02
+#Last defaults change: 2018/7/26
 #
 #Changelog:
 #
+#05/02/2019 (WF)
+# - merge DEPENd and LNCD
+#  $autocorr_with_basis=>$rmautocorr
+#  $funcStructFlirtDOF=>$func_struct_dof
+#  DEPENd: reml, warp options, psu matlab module | LNCD: preprocessDistortion, explict global signal flag, pyhsio, use_old_mni, rmgroup_component
 #11/01/2018 (WF)
 # - add old/new template checking in template_funcs (-use_old_mni)
+#7/30/2018 (MH)
+# - The use of BBR coregistration for fmap -> struct only works when the fieldmap has good WM contrast. Otherwise, it can backfire and yield
+#    a very poor result. Thus, expose -fmap_struct_dof to give user control over how to coregister the images.
+# - Prefer ANTS rigid registration in general (incl. fmap -> struct), but give user control using -prefer_flirt and -prefer_ants.
+# - Use ANTS rigid registration or flirt skull-stripped followed by whole head (-nosearch) for fmap -> struct (this is prior to BBR if requested).
+# - Move all qa_image commands to a separate log file to avoid junking up preprocessFunctional.log
+#7/26/2018 (MH)
+# - Switch to 3dREMLfit as the default for conducting nuisance regression (potentially including bandpass). See Bright & Murphy 2017 for details.
+#    If you further specify -rmautocorr, you will receive the ARMA(1,1) whitened residuals after nuisance regression. I wouldn't necessarily recommend this,
+#    but it does move toward the econometrics/statistics view that cross-correlations are only valid (non-spurious) if you have white time series.
+#    The better/true approach to prewhitening in order to compute region-to-region correlations is implemented in ROI_TempCorr.R at the ROI level.
+#7/18/2018 (MH)
+# - Support FSL MNI 2.3mm template (also changed the templates so that tissue priors (CSF etc.) are exactly in register.
+#7/1/2018 (MH)
+# - Implement fsl_regfilt approach (partial regression) manually when ICA spits out so many components that fsl_regfilt crashes. See fslRegfilt.R.
+# - Fixes to -rmautocorr to return pre-whitened residuals and not enforce bandpass
 #5/11/2018 (WF)
 # - add -gsr option to expliclty label gsr in regression step. prefix "rnswktm" becomes "grnswktm"
 # - add -rmgroup_component (prefix c) to remove group components after warping
@@ -363,10 +394,6 @@ source "${scriptDir}/preproc_functions/template_funcs"
 #TODO: read dirname from the input and cd to that directory
 funcdir=$(pwd) #define working directory for functional processing
 
-[ ! -d "${funcdir}/qa_images" ] && mkdir "${funcdir}/qa_images"
-[ ! -d "${funcdir}/transforms" ] && mkdir "${funcdir}/transforms"
-export qa_imgdir="${funcdir}/qa_images" #use export so that TopupPreprocessingAll picks up the directory
-
 ##load necessary modules if running on cluster (specific to ACI at the moment)
 if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then
     #setup DEPENd lab environment and programs
@@ -400,6 +427,12 @@ if [ $cleanup_only -eq 1 ]; then
     cleanup_preprocessFunctional
     exit 0
 fi
+
+#setup output directories for transform matrices and qa images
+[ ! -d "${funcdir}/qa_images" ] && mkdir "${funcdir}/qa_images"
+[ ! -d "${funcdir}/transforms" ] && mkdir "${funcdir}/transforms"
+export qa_imgdir="${funcdir}/qa_images" #use export so that TopupPreprocessingAll picks up the directory
+export qa_imglog="${qa_imgdir}/qa_images.log" #use export so that TopupPreprocessingAll picks up the path
 
 # write to an incomplete file (later to be changed to complete if process finishes)
 echo -e "$thiscommandinfo " > ${dotfile}_incomplete

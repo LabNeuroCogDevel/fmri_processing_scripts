@@ -32,13 +32,13 @@ function Nbmat = mmcs_cons(M,padM,wlh,whh,bin)
 %   
 % CREATED IN:   MATLAB 7.13
 %
-% REVISION:     7
+% REVISION:     8 (06-09-2017)
 %
-% COPYRIGHT:    Ameera X Patel (2013, 2014), University of Cambridge
+% COPYRIGHT:    Ameera X Patel (2017), University of Cambridge
 %
-% TOOLBOX:      BrainWavelet Toolbox v1.1
+% TOOLBOX:      BrainWavelet Toolbox v2.0
 
-% ID: mmcs_mod.m 7 30-01-2014 BWTv1.1 axpatel
+% ID: mmcs_mod.m 8 06-09-2017 BWTv2.0 axpatel
 
 
 %% check inputs (matrix dimensions)

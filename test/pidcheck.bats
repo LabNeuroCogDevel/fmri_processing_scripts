@@ -6,6 +6,7 @@
 
 # source the functions we want to test
 setup() {
+ cd $BATS_TEST_DIRNAME
  source ../preproc_functions/helper_functions
  source ../preproc_functions/pidcheck
  cd /tmp/

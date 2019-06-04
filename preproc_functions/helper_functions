@@ -30,6 +30,12 @@ else
     fi
 fi
 
+# source FSL if we have an FSLDIR but no FSLOUTPUTTYPE
+# 20190509WF - running bats tests using mcflirt from within docker
+#              might not have hit .profile to source FSLDIR
+[ ! -z "$FSLOUTPUTTYPE" -a -n "${FSLDIR}" -a -d "${FSLDIR}" ] &&
+   source ${FSLDIR}/etc/fslconf/fsl.sh || :
+
 function archive_file() {
     fname="${1}"
     if [ -f "${fname}" ]; then
@@ -188,16 +194,22 @@ function rel() {
     local timeit=0
     local pipesave=""
     local cmdExit=0
+    local qaout=0
 
-    if [[ -n "${2}" && ${2} = c ]]; then
-	comment=1
-    fi
-    if [[ -n "${2}" && ${2} = t ]]; then
-	timeit=1
+    if [ -n "${2}" ]; then
+	if [[ ${2} = c ]]; then
+	    comment=1
+	elif [[ ${2} = t ]]; then
+	    timeit=1
+	elif [[ ${2} = q ]]; then
+	    qaout=1
+	fi	    
     fi
     
-    if [ -n "${logFile}" ]; then
-       pipesave="|tee -a '$logFile'"
+    if [ ${qaout} -eq 1 ]; then
+	echo -e "${cmd}" >> "${qa_imglog}"
+    elif [ -n "${logFile}" ]; then
+	pipesave="|tee -a '$logFile'"
 	if [ $comment -eq 1 ]; then
 	    cmd="## ${cmd}"
 	fi
@@ -209,10 +221,10 @@ function rel() {
 	echo ${cmd}
 
 	#run command
-       tic=$(date +%s)
+	tic=$(date +%s)
 	eval ${cmd}
 	cmdExit=$?
-       toc=$(date +%s)
+	toc=$(date +%s)
     else
 	#echo command to screen with dashes to offset text visually
 	echo -e "----  ${cmd}"
@@ -527,8 +539,8 @@ function cleanup_preprocessFunctional {
 	deleteFile nf${apre}s${wpre}${upre}${dspre}ktm_${funcFile}${smoothing_suffix}${ext}
     fi
 
-    if [[ "$nuisance_regression" -eq 1 || "$nuisance_compute" -eq 1 ]]; then
-	deleteFile "unfiltered_${nuisance_file}" #remove unfiltered nuisance regressors
+    if [[ ( "$nuisance_regression" -eq 1 || "$nuisance_compute" -eq 1 ) && -f "$nuisance_file" ]]; then
+	deleteFile "unfiltered_${nuisance_file}" #remove unfiltered nuisance regressors if filtered regressors exist
     fi
 
     ## Files left over from Finn's pipeline
@@ -658,11 +670,11 @@ function qa_image {
     [ -z "$qa_imgdir" ] && local qa_imgdir=. #default to current directory if not specified
     rel "slicer \"$underlay\" \"$overlay\" -s $scale -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
 	   -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
-	   -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png"
+	   -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png" q
 
-    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png \"${qa_imgdir}/$fname\""
+    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png \"${qa_imgdir}/$fname\"" q
 
-    [ -n "$title" ] && rel "montage -label \"${title}\nunderlay:$( basename $underlay )\noverlay:$( basename $overlay )\" \"${qa_imgdir}/$fname\" -pointsize $fsize -geometry +0+0 \"${qa_imgdir}/$fname\""
+    [ -n "$title" ] && rel "montage -label \"${title}\nunderlay:$( basename $underlay )\noverlay:$( basename $overlay )\" \"${qa_imgdir}/$fname\" -pointsize $fsize -geometry +0+0 \"${qa_imgdir}/$fname\"" q
 
     rm -f sl?.png #cleanup
 }

@@ -131,7 +131,7 @@ function reset_magdir {
     fi
 }
 
-PREPARE_FIELDMAP_GLOBALS=(bbrCapable funcStructFlirtDOF fm_cfg mcMats fm_phase fm_magnitude ext logFile mprageBet qa_imgdir )
+PREPARE_FIELDMAP_GLOBALS=(bbrCapable func_struct_dof fm_cfg mcMats fm_phase fm_magnitude ext logFile mprageBet qa_imgdir )
 # bbrfmap from 'register_func2struct', but expected to be called after prepare_fieldmap. we probably want this to be empty
 
 ### Worker function for preparation of fieldmap.
@@ -161,7 +161,7 @@ function prepare_fieldmap {
     # if we have none of the fieldmap/distortion correction variables, we dont need to do anything
     [ -z "$fm_phase$fm_magnitude$fm_cfg$se_phaspos$se_phaseneg" ] && rel "not running fieldmap" c && return 0
 
-    if [[ $bbrCapable -eq 1 && $funcStructFlirtDOF = "bbr" && -n "$fm_cfg" ]]; then
+    if [[ $bbrCapable -eq 1 && $func_struct_dof = "bbr" && -n "$fm_cfg" ]]; then
 	export createBBRFmapWarp=1 #generate func -> struct warp that includes FM unwarping (via BBR -fieldmap)
     else
 	export createBBRFmapWarp=0
@@ -774,11 +774,11 @@ function preproc_fieldmap {
     # Generate slice images
     rel "slicer fmap+mag -s 3 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
 	-y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
-	-z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png"
+	-z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png" q
 
     #pull these together
-    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/fmap+mag.png"
-    rel "rm sl[a-l].png"
+    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/fmap+mag.png" q
+    rel "rm sl[a-l].png" q
 
     ### STEP 6: Compute a signal loss (sigloss) estimate and make a siglossed magnitude image for forward warp
     rel "Compute signal loss estimate and apply to magnitude image for forward warp" c
@@ -825,10 +825,10 @@ function preproc_fieldmap {
 
     rel "slicer FM_UD_sigloss+mag -s 3 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
     -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
-    -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png"
+    -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png" q
 
-    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/FM_UD_sigloss+mag.png"
-    rel "rm sl[a-l].png"
+    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/FM_UD_sigloss+mag.png" q
+    rel "rm sl[a-l].png" q
 
     ##STEP 8. ALIGN MAGNITUDE WITH EPI
     # This begins to diverge from FSL 5.0+, where the magnitude and EPI are never explicitly aligned
@@ -908,10 +908,10 @@ function preproc_fieldmap {
     rel "overlay 1 0 EF_UD_fmap_mag_brain -a EF_UD_shift 0.0001 $shiftmaxr grot 0.0001 $shiftminr grot"
     rel "slicer grot -s 3 -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
 	-y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
-	-z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png"
+	-z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png" q
 
-    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/EF_UD_shift+mag.png"
-    rel "rm sl[a-l].png"
+    rel "pngappend sla.png + slb.png + slc.png + sld.png - sle.png + slf.png + slg.png + slh.png - sli.png + slj.png + slk.png + sll.png ${qa_imgdir}/EF_UD_shift+mag.png" q
+    rel "rm sl[a-l].png" q
 
     #TODO: Feat composes a few other images (animated GIFs) to show before and after.
     ## Skipping EF_D_mc_target.gif EF_UD_mc_target.gif EF_UD_fmap_mag_brain.gif
@@ -921,29 +921,47 @@ function preproc_fieldmap {
     #adapted from epi_reg
     rel "Coregister the fieldmap to the structural image for use in func2struct alignment with BBR cost function." c
 
-    rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -dof 6 -omat $funcdir/transforms/fmap_to_struct.mat -out fmap_to_struct -interp spline" #magnitude to structural
-    #note that epi_reg requests unbetted MPRAGE and runs an additional flirt on the unbetted magnitude and MPRAGE images.
+    if [ $use_ants -eq 1 ]; then
+	#MH: preliminary tests suggest that coregistration without the head is very slightly better, though I haven't looked systematically
+	rel "antsRegistrationSyN.sh -d 3 -f ${mprageBet} -m FM_UD_fmap_mag_brain${ext} -t r -o fmap_to_struct" #rigid transformation (6dof)
+	#convert to FSL-compatible transformation
+	rel "c3d_affine_tool -ref ${mprageBet} -src FM_UD_fmap_mag_brain${ext} -itk fmap_to_struct0GenericAffine.mat -ras2fsl -o $funcdir/transforms/fmap_to_struct.mat"
+	rel "immv fmap_to_structWarped fmap_to_struct"
+	rel "imrm fmap_to_structInverseWarped" #not useful
+	rel "mv fmap_to_struct0GenericAffine.mat ${funcdir}/transforms/fmap_to_struct.itk"
+    else
+	rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -dof 6 -omat $funcdir/transforms/fmap_to_struct.mat -out fmap_to_struct -interp spline" #skull-stripped magnitude to structural
+	local predictable_suffix=$( echo "$mprageBet" | grep -E -q "(_brain|_bet)${ext}\$" )
+	local mprage_base=$( remove_ext ${mprageBet} | perl -pe 's/_brain|_bet//' )
+	#consistent with epi_reg, refine the transform using images that contain the head
+	if [[ $predictable_suffix -eq 0 && $( imtest $mprage_base ) -eq 1 ]]; then
+	    rel "Using non-skull-stripped images to refine fieldmap -> struct transformation" c
+	    mv  $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/fmap_brain_to_struct.mat
+	    immv fmap_to_struct fmap_brain_to_struct
+	    #Building on epi_reg, use unbetted MPRAGE and runs an additional flirt on the unbetted magnitude and MPRAGE images.
+	    rel "flirt -in FM_UD_fmap_mag -ref ${mprage_base} -dof 6 -init $funcdir/transforms/fmap_brain_to_struct.mat -omat $funcdir/transforms/fmap_to_struct.mat -out fmap_to_struct -interp spline -nosearch" #magnitude to structural with skull
+	    qa_image "$mprageBet" fmap_brain_to_struct fmap_mag_brain_to_struct.png "Structural image overlaid with 6dof-coregistered undistorted fmap mag skull-stripped brain"			     
+	fi
+    fi
 
     qa_image "$mprageBet" fmap_to_struct fmap_mag_to_struct.png "Structural image overlaid with 6dof-coregistered undistorted fmap mag"
     
-    # 2017-08-07WF
-    #  * added duplicated line for _fast_wmseg also created in register_func2struct             
-    #  * removed bbrfmap from above. set by register_func2struct, which is run after this. 
-    #    if bbrfmap is set, cause error (b/c e.g. unwarp/fmapForBBR.nii.gz DNE yet)
-    #further testing indicates that BBR makes substantial improvements in (magnitude) -> struct coregistration for some subjects
-    if [[ $bbrCapable -eq 1 && $funcStructFlirtDOF = "bbr" ]]; then
+    # further testing indicates that BBR makes substantial improvements in (magnitude) -> struct coregistration for some subjects
+    # But: this requires good WM contrast in the fieldmap, which is not always the case. Issue a warning about this!
+    if [[ $bbrCapable -eq 1 && $fmap_struct_dof = "bbr" ]]; then
 	local mprageBet_base=$( remove_ext ${mprageBet} ) #skull-stripped mprage image basename
+	rel "Using BBR algortihm to refine fmap -> struct transformation. This requires good WM contrast on the fieldmap or this will go badly! Check the results carefully!" c
 	rel "immv fmap_to_struct fmap_to_struct_init"
 	rel "mv $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/fmap_to_struct_init.mat"
 
-       # create binary WM mask, fast_wmseg is function/script in prepoc_funtions
-       fast_wmseg "${mprageBet_base}" # makes ${mprageBet_base}_fast_wmseg (likely mprage_bet_fast_wmseg.nii.gz)
+	# create binary WM mask, fast_wmseg is function/script in prepoc_funtions
+	fast_wmseg "${mprageBet_base}" # makes ${mprageBet_base}_fast_wmseg (likely mprage_bet_fast_wmseg.nii.gz)
 
 	rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet \
-             -out fmap_to_struct -omat $funcdir/transforms/fmap_to_struct.mat \
-             -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
-	      -cost bbr -init $funcdir/transforms/fmap_to_struct_init.mat -dof 6 \
-             -schedule ${FSLDIR}/etc/flirtsch/bbr.sch" # $bbrfmap " # bbrfmap rm 20170807WF
+	    	   -out fmap_to_struct -omat $funcdir/transforms/fmap_to_struct.mat \
+            	   -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
+	      	   -cost bbr -init $funcdir/transforms/fmap_to_struct_init.mat -dof 6 \
+             	   -schedule ${FSLDIR}/etc/flirtsch/bbr.sch"
 
 	qa_image "$mprageBet" fmap_to_struct fmap_mag_to_struct_bbr.png "Structural image overlaid with bbr-coregistered undistorted fmap mag"
     fi
@@ -979,47 +997,5 @@ function preproc_fieldmap {
     return 0
    
 }
-
-# move to helper function file, renamed find_and_source_fmconfig
-# find_and_source_config(){
-#     local fm_cfg="$1"
-#     [ -z "$fm_cfg" ] && echo "Want to correct with fieldmaps but dont have a config file!" >&2 && return 1
-# 
-#     ## need to find fmcfgdir
-#     # expect it to be in $0
-#     local fmcfgdir=""
-#     for pdirs in $0 $(dirname ${BASH_SOURCE[0]}){,/..}/preprocessFunctional; do
-#        [ ! -r "$pdirs" ] && continue
-#        pdir=$(cd $(dirname $pdirs); pwd)
-#        _fmcfgdir=$pdir/fmcfg
-#        [ -d $_fmcfgdir ] && fmcfgdir=$_fmcfgdir &&  break
-#     done
-# 
-#     [ -z "$fmcfgdir" -a ! -r "$fm_cfig" ] && echo "cannot find script directory root to find config file for '$fm_cfg'!" >&2 && return 1
-# 
-#     # Allow --config to be a shorthand lookup, defined here, rather than a config file
-#     local fm_cfg_file=$fmcfgdir/$fm_cfg.fmcfg
-#     if [ -r $fm_cfg_file ]; then
-#       fm_cfg=$fm_cfg_file
-#     else
-#       case $fm_cfg in
-#          cogemo|multimodal|wpc5640 ) fm_cfg=$fmcfgdir/cogemo.fmcfg;;
-#          clock|specc|wpc6290|p5 )    fm_cfg=$fmcfgdir/MB5_TR1.0_TE30_60slc.fmcfg;;
-#          # dead code -- 20170224
-#          trust )                     fm_cfg=$fmcfgdir/trust.fmcfg;;
-#          bandit )                    fm_cfg=$fmcfgdir/bandit.fmcfg;;
-#          pet    )                    fm_cfg=$fmcfgdir/pet.fmcfg;;
-#       esac
-#     fi
-#     
-#     # source config file or warn
-#     if [ -n "$fm_cfg" -a -r "$fm_cfg" ]; then
-#       rel "using '$fm_cfg' for fieldmap config" c
-#       source $fm_cfg 
-#     else
-#       echo "ERROR: readable config file not provided or understood ($fm_cfg)" >&2
-#       return 1
-#     fi
-# }
 
 # vim: set tabstop=7:

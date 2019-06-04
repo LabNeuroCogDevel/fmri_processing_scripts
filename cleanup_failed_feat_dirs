@@ -1,6 +1,18 @@
 #!/bin/bash
 set -e
-basedir="${1}"
+
+if [ "$#" -eq 0 ]; then
+    echo "cleanup_failed_feat_dirs expects the base directory containing .feat directories to examine."
+    exit 1
+fi
+
+rmforce=
+if [ "$#" -eq 2 ]; then
+    [ "$1" = "-f" ] && rmforce=y || (echo "don't know how to interpret $1" && exit 1)
+    basedir="${2}"
+else
+    basedir="${1}"
+fi
 
 l1featdirs=$( find "$basedir" -iname "*.feat" -type d )
 
@@ -12,11 +24,12 @@ for f in ${l1featdirs}; do
 	grep -q "STILL RUNNING" ${f}/report.html && errors=1
 	if [ $errors -eq 1 ]; then
 	    echo "FEAT directory listed as having errors or STILL RUNNING: ${f}"
-	    rmproceed=
+	    rmproceed=$rmforce
 	    until [[ "$rmproceed" = [NnYy] ]]; do
 		read -sn1 -p "  Delete? (y/n)" rmproceed
 	    done
 
+	    #rmproceed=y
 	    if [[ "$rmproceed" == "Y" || "$rmproceed" == "y" ]]; then
 		echo "  Now deleting $f"
 		rm -rf "${f}"
@@ -30,11 +43,10 @@ for f in ${l2featdirs}; do
     if [ -f ${f}/report.html ]; then
 	#grep -q "Errors occured during the analysis" ${f}/report.html && errors=1 || errors=0
 	grep -q "Error" ${f}/report.html && errors=1 || errors=0
-	#for L1
-	#grep -q "STILL RUNNING" ${f}/report.html && errors=1 || errors=0
+	grep -q "STILL RUNNING" ${f}/report.html && errors=1
 	if [ $errors -eq 1 ]; then
-	    echo "GFEAT directory listed as having errors: ${f}"
-	    rmproceed=
+	    echo "GFEAT directory listed as having errors of STILL RUNNING: ${f}"
+	    rmproceed=$rmforce
 	    until [[ "$rmproceed" = [NnYy] ]]; do
 		read -sn1 -p "  Delete? (y/n)" rmproceed
 	    done

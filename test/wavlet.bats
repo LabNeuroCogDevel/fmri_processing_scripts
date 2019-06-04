@@ -13,6 +13,7 @@ mknii() {
 
 # go into a special temp dir
 setup() {
+ cd $BATS_TEST_DIRNAME
  source ../preproc_functions/helper_functions
  source ../preproc_functions/despike_timeseries
  export\
@@ -31,7 +32,9 @@ setup() {
  # mknii 4.nii.gz "0 0 0 4\n0 1 0 7\n1 0 0 1\n1 1 0 1"
  # mknii 5.nii.gz "0 0 0 5\n0 1 0 6\n1 0 0 2\n1 1 0 1"
  # 3dTcat -overwrite -prefix "test.nii.gz" [1-4].nii.gz
- 3dTcat ../exampledata/func+fm+ref/nii/func.nii.gz'[0..4]' -prefix test.nii.gz
+ 
+ #3dTcat ../exampledata/func+fm+ref/nii/func.nii.gz'[0..4]' -prefix test.nii.gz
+ cp ../exampledata/short_func.nii.gz test.nii.gz
  return 0
 
 }
@@ -56,13 +59,13 @@ gt() {  perl -e "exit(1) if $(bs $1 $2) <= $(bs $1 $3)";  }
 
 # only run if we dont have matlab and do have octave
 @test "octave wavlet lower max/stdev" {
- command -v matlab && skip
+ # command -v matlab && skip # could skip if it worked in matlab
  ! command -v octave && skip
  export USE_OCTAVE=yes preDiespike=octave funcFile=_octave prefix=""
  despike_timeseries
 
- gt -max   predespike.nii.gz d_matlab.nii.gz
- gt -stdev predespike.nii.gz d_matlab.nii.gz 
+ gt -max   predespike.nii.gz d_octave.nii.gz
+ gt -stdev predespike.nii.gz d_octave.nii.gz 
 }
 
 # run if we have both matlab and octave

@@ -6,6 +6,9 @@
 
 # source the functions we want to test
 setup() {
+
+ [ ! -d $BATS_TEST_DIRNAME/exampledata/func+fm+ref/gre_field_mapping_96x96.3 ] && skip
+
  TMPD=$(mktemp -d "$BATS_TMPDIR/XXXX")
  cd $TMPD
 
@@ -27,11 +30,13 @@ cat > thingstosource <<EOF
  funcdir="$(pwd)"
 
  bbrCapable=1
- funcStructFlirtDOF="bbr"
+ func_struct_dof="bbr"
+ fmap_struct_dof="bbr"
  sliceMotion4D=1
  mc_first=0
  use_fm=1
- logFile="$(pwd)/log"
+ logFile="$(pwd)/log.txt"
+ qa_imglog="$(pwd)/qalog.txt"
 
  funcFile="func.nii.gz"
  templateBrain='template_brain'
@@ -89,6 +94,22 @@ teardown() {
 }
 
 
+@test "preprocessDistortion (see also prepare_gre_fieldmaps.bats) no bbr for faster runtime" {
+ echo "bbrCapable=''" >> thingstosource
+ echo "func_struct_dof=''" >> thingstosource
+ echo "fmap_struct_dof=''" >> thingstosource
+
+ 
+ source thingstosource
+ #SAVETEST=1
+ run $BATS_TEST_DIRNAME/../preprocessDistortion -phasedir $phased -magdir $magd -fm_cfg $fm_cfg
+ [ $status -eq 0 ]
+ [ -r unwarp/FM_UD_fmap_mag.nii.gz ]
+ [ -r unwarp/FM_UD_fmap.nii.gz ]
+
+}
+
+
 @test "preprocessDistortion gre + register_func2struct + onestep_warp (slow!)" {
  SAVETEST=1
 
@@ -104,8 +125,6 @@ teardown() {
  mkdir $qa_imgdir
  mkdir transforms
 
-
-
  ## run fieldmaps
  mkdir fm
  cd fm
@@ -114,7 +133,6 @@ teardown() {
  [ -r unwarp/FM_UD_fmap_mag.nii.gz ]
  [ -r unwarp/FM_UD_fmap.nii.gz ]
  cd ..
-
 
  # N.B. continuing on, scripts are useing distoration dir, already set as
  # DISTORTION_DIR="fm/unwarp"
@@ -126,9 +144,9 @@ teardown() {
 
  run prepare_fieldmap
  [ -r transforms/fmap_to_epi.mat ]
- [ -r transforms/fmap_to_struct_init.mat ]
  [ -r transforms/func_to_fmap.mat ]
  [ -r unwarp/fmapForBBR.nii.gz ]
+ # [ -r transforms/fmap_to_struct_init.mat ]
  #[ $status -eq 0 ]
 
  register_func2struct >&2
@@ -141,15 +159,3 @@ teardown() {
 
 }
 
-@test "preprocessDistortion gre (see also prepare_gre_fieldmaps.bats) no bbr for faster runtime" {
- skip
- echo "bbrCapable=''" >> thingstosource
- echo "funcStructFlirtDOF=''" >> thingstosource
- source thingstosource
- #SAVETEST=1
- run $BATS_TEST_DIRNAME/../preprocessDistortion -phasedir $phased -magdir $magd -fm_cfg $fm_cfg
- [ $status -eq 0 ]
- [ -r unwarp/FM_UD_fmap_mag.nii.gz ]
- [ -r unwarp/FM_UD_fmap.nii.gz ]
-
-}

@@ -67,8 +67,14 @@ function despike_timeseries {
 	    #cmd with spaces is breaking ACI at the moment (due to unquoted use of $@)
 	    matlabCmd="${matlabCmd}WaveletDespike('$predespike_nii','postdespike','LimitRAM',${MATLAB_RAM_limit},'threshold',${waveletThreshold});"
 
-           local mlscript=wavlet_despike_${matlabBin/ */}.m # wavlet_despike_matlab.m
+           local mlscript=wavlet_despike_${matlabBin/ */}.m # wavlet_despike_matlab.m or wavlet_despike_octave.m
            echo -e "$matlabCmd" > $mlscript
+
+           # PSU HPC: make sure MATLAB is loaded as a module
+	    if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then
+		if ! echo $LOADEDMODULES | grep -q "matlab/R2017b"; then module load "matlab/R2017b" >/dev/null 2>&1; fi
+	    fi
+	    
 	    #need to unset display on Linux (at least wallace) to avoid matlab exiting on subsequent runs of the script
 	    OLDDISPLAY="${DISPLAY}"
 	    unset DISPLAY

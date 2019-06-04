@@ -18,6 +18,7 @@ colcnt() {
 
 # create a motion.par file
 setup() {
+ cd $BATS_TEST_DIRNAME
  source ../preproc_functions/helper_functions
  source ../preproc_functions/nuisance_regression
  mkdir batsmotiontempdir
@@ -30,6 +31,9 @@ setup() {
 EOF
 
   nuisance_file=nf
+  ica_aroma=0
+  no_hp=1
+  bandpass_filter=0
 
 
 
@@ -57,7 +61,7 @@ teardown() {
   nuisance_regressors=d6motion
   compute_nuisance_regressors 
   [ "$(col .motion_deriv 1)" == "$firstd" ]
-  [ "$(col nf 1)" == "$firstd" ]
+  [ "$(col unfiltered_nf 1)" == "$firstd" ]
 }
 
 @test "q6motion" {
@@ -65,8 +69,8 @@ teardown() {
   nuisance_regressors=q6motion
   compute_nuisance_regressors 
   [ "$(col .motion_quad 1)" == "$firstquad" ]
-  [ "$(col nf 1)" == "$firstquad" ]
-  [ $(colcnt nf) -eq 6 ]
+  [ "$(col unfiltered_nf 1)" == "$firstquad" ]
+  [ $(colcnt unfiltered_nf) -eq 6 ]
 }
 
 @test "qd6motion" {
@@ -74,20 +78,20 @@ teardown() {
   nuisance_regressors=qd6motion
   compute_nuisance_regressors 
   [ "$(col .motion_deriv_quad 1)" == "$firstquadd" ]
-  [ "$(col nf 1)" == "$firstquadd" ]
-  [ $(colcnt nf) -eq 6 ]
+  [ "$(col unfiltered_nf 1)" == "$firstquadd" ]
+  [ $(colcnt unfiltered_nf) -eq 6 ]
 }
 # dry sorted before qd6motion, should be first in nuisance
-@test "qd6motion,dry" {
+@test "qd6motion,dry,dry -- sort and remove reps" {
   no_warp=1
   nuisance_regressors=qd6motion,dry
   compute_nuisance_regressors 
 
   # 7 regressors in final output
-  [ $(colcnt nf) -eq 7 ]
+  [ $(colcnt unfiltered_nf) -eq 7 ]
   # first line of motion deriv quad
   [ "$(col .motion_deriv_quad 1)" == "$firstquadd" ]
   # is not first line of final output
-  [ "$(col nf 1)" == "$dry" ]
+  [ "$(col unfiltered_nf 1)" == "$dry" ]
 }
 
