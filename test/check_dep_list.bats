@@ -5,7 +5,7 @@
 ####################
 
 setup() {
- source ../preproc_functions/parse_args
+ source $BATS_TEST_DIRNAME/../preproc_functions/parse_args
 }
 
 # check depends runs

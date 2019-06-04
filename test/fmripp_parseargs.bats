@@ -8,8 +8,8 @@ export testdir=batsparseargstest
 export funcdir=./
 # go into a special temp dir
 setup() {
- source ../preproc_functions/parse_args
- source ../preproc_functions/helper_functions
+ source $BATS_TEST_DIRNAME/../preproc_functions/parse_args
+ source $BATS_TEST_DIRNAME/../preproc_functions/helper_functions
  [ ! -d $testdir ] && mkdir $testdir
  cd $testdir
  touch fake.nii.gz
@@ -26,7 +26,7 @@ teardown() {
 @test "physio input: expected" {
  touch junk.txt junk.puls junk.json
  mkdir mrdir
- run parse_args -4d fake.nii.gz -physio_card junk.puls -physio_resp junk.txt -physio_func_info junk.json
+ run parse_args -4d fake.nii.gz -physio_card junk.puls -physio_resp junk.txt -physio_func_info junk.json 
  [ $status -eq 0 ]
  run parse_args -4d fake.nii.gz -physio_card junk.puls -physio_resp junk.txt -physio_func_info mrdir 
  [ $status -eq 0 ]

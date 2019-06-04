@@ -4,6 +4,7 @@
 # test lock funcs #
 ###################
 
+
 # source the functions we want to test
 setup() {
  TMPD=$(mktemp -d "$BATS_TMPDIR/XXXX")
@@ -30,13 +31,13 @@ cat > thingstosource <<EOF
  use_fm=1
  logFile="$(pwd)/log"
 
- source $BATS_TEST_DIRNAME/../preproc_functions/helper_functions
- source $BATS_TEST_DIRNAME/../preproc_functions/fast_wmseg
- source $BATS_TEST_DIRNAME/../preproc_functions/convert_or_use_nii
- source $BATS_TEST_DIRNAME/../preproc_functions/register_func2struct
- source $BATS_TEST_DIRNAME/../preproc_functions/onestep_warp
- source $BATS_TEST_DIRNAME/../preproc_functions/warp_to_template
- source $BATS_TEST_DIRNAME/../preproc_functions/prepare_mc_target
+ source ../preproc_functions/helper_functions
+ source ../preproc_functions/fast_wmseg
+ source ../preproc_functions/convert_or_use_nii
+ source ../preproc_functions/register_func2struct
+ source ../preproc_functions/onestep_warp
+ source ../preproc_functions/warp_to_template
+ source ../preproc_functions/prepare_mc_target
 
  find_and_source_fmconfig "$fm_cfg"
 
