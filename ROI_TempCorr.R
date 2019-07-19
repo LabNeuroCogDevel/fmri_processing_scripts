@@ -559,10 +559,13 @@ if (!is.null(roi_diagnostics_fname)) {
 }
 
 # check roi size. need at least 4 good voxels in badvox check
-roi_too_small <- sapply(roimats,dim)[2,] < 5
+roi_sizes <- sapply(roimats,dim)[2,]
+roi_too_small <- roi_sizes < 5
 if(any(roi_too_small) )
-   message("WARNING: have ROIs that are too small (<5vox); ROI #:",
-           paste(collpase=" ",sapply(roimats,attr,'maskval')[roi_too_small]))
+   message("WARNING: have ROIs that are too small (<5vox); ",
+           paste(collapse=" ", sprintf("#%d (%d voxs)",
+                 sapply(roimats,attr,'maskval')[roi_too_small],
+                 roi_sizes[roi_too_small])))
 
 message("Obtaining a single time series within each ROI using: ", roi_reduce)
 roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, .noexport=c("rsproc")) %do% { #minimal time savings from dopar here, and it prevents message output
