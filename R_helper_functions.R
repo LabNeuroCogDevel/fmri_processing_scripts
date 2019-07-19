@@ -221,8 +221,13 @@ fir1Bandpass <- function(x, TR=2.0, low=.009, high=.08, n=500, plotFilter=FALSE,
 }
 
 detrendts <- function(x, order=0) {
+
+  lenx = length(x)
+  # do nothing for an all NA timeseries
+  if(length(which(is.na(x))) == lenx) return(rep(NA,lenx))
+
   #order 0=demean; order 1=linear; order 2=quadratic
-  lin <- 1:length(x)
+  lin <- 1:lenx
   quad <- lin^2
 
   if (order == 0)

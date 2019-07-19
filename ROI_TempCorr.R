@@ -558,6 +558,12 @@ if (!is.null(roi_diagnostics_fname)) {
   nvox_good_per_roi <- rep(NA, length(nvox_observed_per_roi))
 }
 
+# check roi size. need at least 4 good voxels in badvox check
+roi_too_small <- sapply(roimats,dim)[2,] < 5
+if(any(roi_too_small) )
+   message("WARNING: have ROIs that are too small (<5vox); ROI #:",
+           paste(collpase=" ",sapply(roimats,attr,'maskval')[roi_too_small]))
+
 message("Obtaining a single time series within each ROI using: ", roi_reduce)
 roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, .noexport=c("rsproc")) %do% { #minimal time savings from dopar here, and it prevents message output
   ##roivox is a time x voxels matrix for a single ROI
@@ -578,7 +584,7 @@ roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, 
     ##otherwise return NA time series
     
     ##cat("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.\n", file=".roilog", append=TRUE)
-    message("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.")
+    message("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels of ", dim(roivox)[2]," had acceptable time series. Removing this ROI from correlations.")
     ts <- rep(NA_real_, nrow(roivox))
   } else {
     if (sum(badvox) > 0) {
