@@ -104,6 +104,7 @@ Command line options:
   -motion_sinc: (mcflirt only) Complete a 4th stage optimization of motion correction using sinc interpolation (slower but better): y or n. Default y.
   -mprage_bet: The betted structural scan for this participant. Required.
   -no_hp: Do not perform high-pass filtering.
+  -no_mc: Do not preform motion correction. (e.g. running after HCP minimum; added 20190916)
   -no_smooth: Do not perform spatial smoothing.
   -no_st: Do not perform slice timing correction.
   -no_warp: Maintain native space and resolution of input image. Do not warp to a template.
@@ -119,6 +120,7 @@ Command line options:
 	   computed using AFNI 3dmaskSVD.
         Example: -nuisance_regression 6motion,csf,wm,dcsf,dwm
   -output_basename: Base name of file output during DICOM -> NIfTI conversion. Default: functional
+  -partial_proc: do not run full pipeline. options are 'motion', 'despike', 'warp'. kills script, and marked as incomplete after desired step (20190729WF)
   -physio_resp: respitory file (1D or .resp [siemens])
   -physio_card: pulse file (1D or .puls [siemens])
   -physio_func_info: dicom directory/bidsjson file, used for timing info to extract resp+puls files
@@ -215,11 +217,16 @@ EndOfHelp
 #Written: 2010/5/18
 #Changelog:
 #
-#Last updated: 2019/5/02
-#Last defaults change: 2018/7/26
+#Last updated: 2019/09/16 - added no_mc, improve template checks
+#Last defaults change: 2018/7/26 - 3dREMLfit is default 'r'
 #
 #Changelog:
 #
+#09/16/2019 (WF) 
+#  - added -no_mc toption for running ontop of another pipeline
+#07/29/2019 (WF) 
+# - add partial_proc to stop in error at motion or warp 
+#   b/c we have >2000 NCANDA scans to preprocess but are not sure what fieldmap should be
 #05/02/2019 (WF)
 # - merge DEPENd and LNCD
 #  $autocorr_with_basis=>$rmautocorr
@@ -526,12 +533,18 @@ elif [ $mc_first -eq 1 ]; then
     register_func2struct
     onestep_warp mc_target #apply MC + FM unwarping before slice timing correction
     correct_slice_timing
+elif [ $no_mc -eq 1 ]; then
+   rel "WARNING: no motion correcton. assume you're just applying this pipeline ontop of another one" c
+    preMC="${prefix}${funcNifti}"
+    postMC="${prefix}${funcNifti}"   
 fi
 
 
 
 #make plots (and optional movie) of head motion
-motion_plots
+[ $no_mc -eq 0 ] && motion_plots
+# exit in error if we want to stop after motion correction
+check_partialproc "motion" "$partial_proc"
 
 #Skull strip and intensity threshold EPI
 skullstrip_threshold           # preproc_functions/skullstrip_threshold
@@ -542,6 +555,8 @@ despike_timeseries
 
 #compute motion/intensity outliers to be excluded from analysis
 compute_motion_censor
+
+check_partialproc "despike" "$partial_proc"
 
 # Warp functional to template
 # NOTE: This step is skipped for -no_warp.
@@ -566,6 +581,9 @@ if [[ $compute_warp -eq 1 && ! -f .compute_warp_complete ]]; then
     rel "Remember to use --rel with applywarp when applying this file to an image." c
     date > .compute_warp_complete    
 fi
+
+# exit in error if we want to stop after warping
+check_partialproc "warp" "$partial_proc"
 
 # spatial smoothing
 spatial_smooth                 # preproc_functions/spatial_smooth

@@ -45,6 +45,7 @@ function parse_args {
     motionSinc="y"
     no_hp=0
     no_st=0
+    no_mc=0
     no_smooth=0
     no_warp=0
     nuisance_regression=0
@@ -53,6 +54,7 @@ function parse_args {
     [ -z "$MATLAB_RAM_limit" ] && MATLAB_RAM_limit=3 #3GB wavelet despike RAM limit by default (more is faster, but can be a hog when processing in parallel).
     [ -z "$MATLAB_single_thread" ] && MATLAB_single_thread=
     output_basename=functional #base prefix of NIfTI file after dicom -> NIfTI conversion
+    partial_proc=""
     use_physio=""
     physio_resp="" # respitory file (1D or .resp [siemens])
     physio_card="" #pulse file (1D or .puls [siemens])
@@ -359,6 +361,9 @@ function parse_args {
 	elif [ $1 = -mprage_bet ]; then
 	    mprageBet="${2}"
 	    shift 2
+	elif [ $1 = -no_mc ]; then
+	    no_mc=1
+	    shift 1
 	elif [ $1 = -no_hp ]; then
 	    no_hp=1
 	    shift 1
@@ -387,6 +392,14 @@ function parse_args {
 	    shift 1
 	elif [ $1 = -output_basename ]; then
 	    output_basename="${2}"
+	    shift 2
+	elif [ $1 = -partial_proc ]; then
+           # 20190729 only supporting stopping after motion and warp 
+           partial_proc="${2}"
+           local partial_proc_opts="motion|despike|warp"
+           ! [[ $partial_proc =~ $partial_proc_opts ]] && 
+              echo "-partial_proc only supports ${partial_proc_opts//\|/ }" &&
+              return 1
 	    shift 2
 	elif [ $1 = -physio_resp ]; then
            physio_resp="$(abspath "${2}")"

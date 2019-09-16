@@ -2,6 +2,10 @@
 
 SPATIALSMOOTH_GLOBALS=(prefix funcFile smoothing_suffix no_smooth smoothing_kernel smoother susan_thresh p_2 median_intensity sigma)
 
+# form skullstrip_threshold:
+# p_2=$(fslstats epi_bet -p 2)
+# median_intensity=$(fslstats "${preSS}" -k "${postSS}_98_2_mask" -p 50)
+
 function spatial_smooth {
 
     preSmooth="${prefix}${funcFile}"

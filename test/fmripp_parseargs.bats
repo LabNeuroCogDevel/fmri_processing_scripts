@@ -55,6 +55,14 @@ teardown() {
 
 }
 
+@test "no mc" {
+ pwd
+ parse_args -4d fake.nii.gz
+ [ $no_mc -eq 0 ]
+ parse_args -4d fake.nii.gz -no_mc
+ [ $no_mc -eq 1 ]
+}
+
 # check setting trunc
 @test "trunc == 4" {
  parse_args -trunc 4 -no_warp
