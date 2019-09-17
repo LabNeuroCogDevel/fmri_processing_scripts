@@ -609,6 +609,12 @@ function parse_args {
        exit 1
     fi
 
+    # not legal to use motion regression and no_mc
+    if [[ "$nuisance_regressors" =~ (dq)?(6m|((r|t)[xyz])) && $no_mc -eq 1 && ! -r motion.par ]]; then
+       echo "Cannot request -nuisance_regression w/motion '$nuisance_regression' and -no_mc (unless motion.par exists)"
+       exit 1
+    fi
+
     # Not legal to use -rm_completefiles without warping
     if [[ -n "$rmgroup_component_1d" && $no_warp -ge 1 ]]; then
        echo "Cannot request -rmgroup_component and not preform a warp!"

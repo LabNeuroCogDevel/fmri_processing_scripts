@@ -508,7 +508,21 @@ reg_physio
 # add fm config settings to gobal environment (incase we already ran prepare_fieldmap, but need it for register_func2struct
 [ -n "$fm_cfg" ] && find_and_source_fmconfig $fm_cfg
 
-if [ $sliceMotion4D -eq 1 ]; then
+if [ $no_mc -eq 1 ]; then
+   rel "WARNING: no motion correcton. assume you're just applying this pipeline ontop of another one. This is not well tested!" c
+    preMC="${prefix}${funcNifti}"
+    postMC="${prefix}${funcNifti}"   
+
+    # mc_target is used in a few places. easier to make it here
+    ! imtestln mc_target && rel "3dTstat -overwrite -mean -prefix mc_target.nii.gz $preMC"
+    ! imtestln mc_target_brain_restore && rel "bet  mc_target.nii.gz mc_target_brain_restore.nii.gz"
+    prepare_mc_target
+
+    [ $no_st -eq 0 ] && correct_slice_timing
+    prepare_fieldmap
+    func_struct_dof=6
+    register_func2struct
+elif [ $sliceMotion4D -eq 1 ]; then
     #Option 1: 4-D slice timing + motion correction
     correct_slice_motion_4d
     prepare_mc_target
@@ -533,16 +547,13 @@ elif [ $mc_first -eq 1 ]; then
     register_func2struct
     onestep_warp mc_target #apply MC + FM unwarping before slice timing correction
     correct_slice_timing
-elif [ $no_mc -eq 1 ]; then
-   rel "WARNING: no motion correcton. assume you're just applying this pipeline ontop of another one" c
-    preMC="${prefix}${funcNifti}"
-    postMC="${prefix}${funcNifti}"   
 fi
 
 
 
 #make plots (and optional movie) of head motion
 [ $no_mc -eq 0 ] && motion_plots
+
 # exit in error if we want to stop after motion correction
 check_partialproc "motion" "$partial_proc"
 

@@ -115,6 +115,7 @@ teardown() {
  [ $nuisance_regressors = "dwm,gs,wm" ]
 }
 
+
 @test "-rmgroup_component" {
  parse_args -4d fake.nii.gz -rmgroup_component test.1d -tr 1
  [ $rmgroup_component_1d == "test.1d" ]
@@ -122,5 +123,19 @@ teardown() {
 @test "fail if -rmgroup_components and -no_warp" {
  run parse_args -4d fake.nii.gz -rmgroup_component test.1d -no_warp
  [ $status -ne 0 ]
+}
+@test "fail to use motion regressors with no motion" {
+ run parse_args -4d fake.nii.gz -gsr -nuisance_regression gs,rx
+ [ $status -eq 0 ]
+ run parse_args -4d fake.nii.gz -gsr -nuisance_regression gs -no_mc
+ [ $status -eq 0 ]
+ run parse_args -4d fake.nii.gz -gsr -nuisance_regression gs,rx -no_mc
+ [ $status -eq 1 ]
+ run parse_args -4d fake.nii.gz -gsr -nuisance_regression gs,drx -no_mc
+ [ $status -eq 1 ]
+ run parse_args -4d fake.nii.gz -gsr -nuisance_regression 6motion -no_mc
+ [ $status -eq 1 ]
+ run parse_args -4d fake.nii.gz -gsr -nuisance_regression qtz -no_mc
+ [ $status -eq 1 ]
 }
 
