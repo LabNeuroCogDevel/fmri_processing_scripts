@@ -23,6 +23,13 @@ teardown() {
  return 0
 }
 
+
+@test "cite" {
+ run parse_args -cite
+ [ $status -eq 0 ]
+ [ ${#lines} -gt 10 ]
+}
+
 # physio usage
 @test "physio input: expected" {
  ! command -v siemphysdat && skip

@@ -150,6 +150,9 @@ function parse_args {
 	elif [ $1 = -help ]; then
 	    printHelp
 	    exit 0
+	elif [ $1 = -cite ]; then
+           cat $(dirname $0)/citations.txt
+	    exit 0
 	elif [ $1 = -resume ]; then
 	    echo "Resuming preprocessing using existing settings."
 	else
