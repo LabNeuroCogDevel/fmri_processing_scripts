@@ -144,14 +144,14 @@ job_array_preamble <- Sys.getenv("job_array_preamble")
 if (job_array_preamble=="") {
   job_array_preamble <- c(
     "#!/usr/bin/env sh",
-  "",
-  # "#PBS -A mnh5174_a_g_hc_default", #old himem setup
-  "#PBS -A mnh5174_c_g_sc_default",
-  "#PBS -j oe",
-  "#PBS -W group_list=mnh5174_collab", #default to having correct group
-  "#PBS -l pmem=8gb", #make sure each process has enough memory
-  "#PBS -m n" #do not send emails related to job arrays
-  #"#PBS -M michael.hallquist@psu.edu", #job arrays generate one email per worker!! Too much pain
+    "",
+    # "#PBS -A mnh5174_a_g_hc_default", #old himem setup
+    "#PBS -A mnh5174_c_g_sc_default",
+    "#PBS -j oe",
+    "#PBS -W group_list=mnh5174_collab", #default to having correct group
+    "#PBS -l pmem=10gb", #make sure each process has enough memory
+    "#PBS -m n" #do not send emails related to job arrays
+    #"#PBS -M michael.hallquist@psu.edu", #job arrays generate one email per worker!! Too much pain
   )
 }
 
@@ -162,7 +162,7 @@ if (asynchronous_processing) {
   freesurfer_walltime <- Sys.getenv("freesurfer_walltime")
   if (freesurfer_walltime == "") { freesurfer_walltime <- "54:00:00" } # 54-hour max estimate for a single subject freesurfer to process
   functional_walltime <- Sys.getenv("functional_walltime")
-  if (functional_walltime == "") { functional_walltime <- "40:00:00" } # 40-hour max estimate for a single subject functional to process  
+  if (functional_walltime == "") { functional_walltime <- "60:00:00" } # 60-hour max estimate for a single subject functional to process  
 }
 
 detect_refimg = as.numeric(Sys.getenv("detect_refimg")) #whether to pass raw directory to preprocessFunctional in order to detect refimg
