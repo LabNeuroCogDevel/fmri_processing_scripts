@@ -145,7 +145,8 @@ if (job_array_preamble=="") {
   job_array_preamble <- c(
     "#!/usr/bin/env sh",
   "",
-  "#PBS -A mnh5174_a_g_hc_default",
+  # "#PBS -A mnh5174_a_g_hc_default", #old himem setup
+  "#PBS -A mnh5174_c_g_sc_default",
   "#PBS -j oe",
   "#PBS -W group_list=mnh5174_collab", #default to having correct group
   "#PBS -l pmem=8gb", #make sure each process has enough memory
