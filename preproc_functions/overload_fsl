@@ -34,26 +34,31 @@ findfslout(){
  # echo the file we found if it exists
  imfind $outfile
 }
-fslmkfunc(){
-cat <<EOF
-function $1 {
-   # run fsl command
-   $1  \\\$@
-   # try to make a note but dont die if we cant
-   out=\\\$\(findfslout \\\$@\) || return 0
-   if [ -n \"\\\$out\" -a -r \"\\\$out\" ]; then
-      3dNotes -h \"$1 \\\$@\" \\\$out
+mknote() {
+   cmd="$1"; shift;
+   args="$@"
+   out=$(findfslout $@) || return 0
+   if [ -n "$out" -a -r "$out" ]; then
+      3dNotes -h "$cmd $args" "$out"
    else 
       return 0
    fi
- }
-EOF
+}
+
+fslmkfunc(){
+echo -e '
+function $cmd {
+   # run fsl command
+   $fullcmd $@
+   # try to make a note but dont die if we cant
+   mknote $cmd $@
+};' | perl -spe 's/\$cmd/$cmd/g; s/\$fullcmd/$fullcmd/' -- -cmd="$1" -fullcmd="$(which "$1")"
+
 }
 
 #FLS_OVERLOAD=(fslmaths mcflirt fslreorient2std slicetimer flirt fast bet immv applywarp convertwarp )
-FLS_OVERLOAD=(fslmaths mcflirt fslreorient2std slicetimer flirt fast bet immv ) # untested on ^^
-
-for fslfunctooverload in $FSL_OVERLOAD; do
+FSL_OVERLOAD=(fslmaths mcflirt fslreorient2std slicetimer flirt fast bet immv ) # untested on ^^
+for fslfunctooverload in ${FSL_OVERLOAD[@]}; do
  eval "$(fslmkfunc $fslfunctooverload)"
 done
 

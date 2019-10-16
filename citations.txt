@@ -1,0 +1,28 @@
+ROBEX
+https://sites.google.com/site/jeiglesias/ROBEX
+Iglesias JE, Liu CY, Thompson P, Tu Z: "Robust Brain Extraction Across Datasets and Comparison with Publicly Available Methods", IEEE Transactions on Medical Imaging, 30(9), 2011, 1617-1634.
+
+ANTS warping
+http://stnava.github.io/ANTs/
+Diffeomorphisms: SyN, Independent Evaluation: Klein, Murphy, Template Construction (2004)(2010), Similarity Metrics, Multivariate registration, Multiple modality analysis and statistical bias
+
+FSL
+https://fsl.fmrib.ox.ac.uk/fsl/fslwiki
+M. Jenkinson, C.F. Beckmann, T.E. Behrens, M.W. Woolrich, S.M. Smith. FSL. NeuroImage, 62:782-90, 2012  
+
+AFNI
+https://afni.nimh.nih.gov/afni_papers
+https://afni.nimh.nih.gov/afni/community/board/read.php?1,148824,148855#msg-148855
+RW Cox. AFNI: Software for analysis and visualization of functional magnetic resonance neuroimages. Computers and Biomedical Research, 29: 162-173, 1996.
+
+MNI Tissue Probability
+http://www.bic.mni.mcgill.ca/ServicesAtlases/ICBM152NLin2009
+
+BRAIN WAVELET TOOLBOX
+Patel AX and Bullmore ET (2016) A wavelet-based estimator of the degrees of freedom in denoised fMRI time series for probabilistic testing of functional connectivity and brain graphs. NeuroImage. 142: 14-26.   (http://dx.doi.org/10.1016/j.neuroimage.2015.04.052).
+
+
+NIPY (4dslicewarp)
+https://nipype.readthedocs.io/en/0.12.0/about.html
+Gorgolewski, Krzysztof J. ; Esteban, Oscar ; Burns, Christopher ; Ziegler, Erik ; Pinsard, Basile ; Madison, Cindee ; Waskom, Michael ; Ellis, David Gage ; Clark, Dav ; Dayan, Michael ; Manhães-Savio, Alexandre ; Notter, Michael Philipp ; Johnson, Hans ; Dewey, Blake E ; Halchenko, Yaroslav O. ; Hamalainen, Carlo ; Keshavan, Anisha ; Clark, Daniel ; Huntenburg, Julia M. ; Hanke, Michael ; Nichols, B. Nolan ; Wassermann , Demian ; Eshaghi, Arman ; Markiewicz, Christopher ; Varoquaux, Gael ; Acland, Benjamin ; Forbes, Jessica ; Rokem, Ariel ; Kong, Xiang-Zhen ; Gramfort, Alexandre ; Kleesiek, Jens ; Schaefer, Alexander ; Sikka, Sharad ; Perez-Guevara, Martin Felipe ; Glatard, Tristan ; Iqbal, Shariq ; Liu, Siqi ; Welch, David ; Sharp, Paul ; Warner, Joshua ; Kastman, Erik ; Lampe, Leonie ; Perkins, L. Nathan ; Craddock, R. Cameron ; Küttner, René ; Bielievtsov, Dmytro ; Geisler, Daniel ; Gerhard, Stephan ; Liem, Franziskus ; Linkersdörfer, Janosch ; Margulies, Daniel S. ; Andberg, Sami Kristian ; Stadler, Jörg ; Steele, Christopher John ; Broderick, William ; Cooper, Gavin ; Floren, Andrew ; Huang, Lijie ; Gonzalez, Ivan ; McNamee, Daniel ; Papadopoulos Orfanos, Dimitri ; Pellman, John ; Triplett, William ; Ghosh, Satrajit (2016). Nipype: a flexible, lightweight and extensible neuroimaging data processing framework in Python. 0.12.0-rc1. Zenodo. 10.5281/zenodo.50186
+

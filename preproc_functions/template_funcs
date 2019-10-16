@@ -44,6 +44,10 @@ old_template_check(){
       if [[ ! $sext =~ ^$want && -z "$USE_OLD_TEMPLATE" ]]; then
          echo "ERROR need -use_old_mni: sext of $warp ($sext != $want) suggests old template!"
          exit 1
+      elif [[ $sext =~ ^$want && -n "$USE_OLD_TEMPLATE" ]]; then
+         echo "ERROR trying -use_old_mni but sext of $warp ($sext == $want) suggests new template!"
+         exit 1
+
       fi
    fi
 
@@ -63,12 +67,31 @@ old_template_check(){
 # make .18_09c.nii.gz from input file
 # optionally, if given second argument "mask", will use NN interp instead of sinc
 fixto1809c() { 
-  [ $# -lt 1 ] && echo "usage: $FUNCNAME to_correct.nii.gz [mask] (given $@)" && return 1
-  [ $# -eq 2 ] && [ "$2" != "mask" ] && echo "only valid second argument is 'mask', you gave $2" && return 1
-  local input=$1
+  [ $# -lt 1 ] && echo "usage: $FUNCNAME to_correct.nii.gz [-mask] [-mkbad] [-out newfile.nii.gz]" && return 1
 
+  local reffolder="/opt/ni_tools/standard/mni_icbm152_nlin_asym_09c"
+  local newname="18_09c"
   local mask=""
-  [ $# -eq 2 ] && mask=1
+  local output="";
+
+  local input=$1; shift
+  while [ $# -ne 0 ]; do
+     case $1 in
+        -?mask) mask=1; shift;;
+        -out) shift; output=$1; shift;;
+        -mkbad) 
+           reffolder="/opt/ni_tools/standard_old/mni_icbm152_nlin_asym_09c"
+           newname="bad_09c"
+           shift;;
+         *) echo "unkown argument $1! no args for help"; return 1;;
+    esac
+  done
+
+  [ $# -eq 2 ] && [ "$2" != "ismask" ] && echo "only valid second argument is 'ismask', you gave $2" && return 1
+
+  # output name cannot be changed, requires input be .nii.gz
+  [ -z "$output" ] && output="${input/.nii.gz/.$newname.nii.gz}"
+  #output="$(dirname $input)/$(basename "$input" .nii.gz).18_09c.nii.gz"
 
   # checks
   [ -z "$input" -o ! -r "$input" ] && echo "$FUNCNAME needs nifti to warp. given '$@'" >&2 && return 1
@@ -77,7 +100,7 @@ fixto1809c() {
   dim=$(3dinfo -adj $input|sed 's/0\+$//;s/\.$//')
   [ $dim != "1" ] && dim=_${dim}mm
 
-  local ref=/opt/ni_tools/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c${dim}.nii 
+  local ref=$reffolder/mni_icbm152_t1_tal_nlin_asym_09c${dim}.nii 
   # /opt/ni_tools/standard/09cFix/gen_mats.bash
   local mat=/opt/ni_tools/standard_old/09cFix/2mm_luna_to_fixed.mat 
   # file is identity:
@@ -87,7 +110,6 @@ fixto1809c() {
   # 0  0  0  1  
 
   [ ! -r $ref -o ! -r $mat ] && echo "$FUNCNAME cannot find ref or mat ($ref $mat)" >&2 && return 1
-  output="${input/.nii.gz/.18_09c.nii.gz}" #output="$(dirname $input)/$(basename "$input" .nii.gz).18_09c.nii.gz"
   [ -z "$REDOWARP" -a -r "$output" ] && echo "have $output" >&2 && return 0
   echo "createing $output ($dim)"
   cmd="applyxfm4D '$input'  $ref '$output'  $mat -singlematrix" # default to sinc

@@ -870,4 +870,12 @@ checkdepends() {
 # dummy function so we know if this file has been sourced
 helper_functions() { echo ${BASH_SOURCE[0]}; }
 
+check_partialproc() {
+   local current_proc="$1"; shift
+   local partial_proc="$1"
+   [ "$current_proc" != "$partial_proc" ] && return 0
+   rel "partial_proc stopping @ $partial_proc" c 
+   exit 1 
+}
+
 # vim: set tabstop=7:
