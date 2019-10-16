@@ -1,0 +1,96 @@
+#####
+# Config file for GRE Fieldmap Unwarping
+#
+# CLZ for prisma 20190418
+#
+# Values based on scanner sheet
+#  WPC-7225.pdf
+#
+# this file is sourced by the preprocessFMUnwarp script 
+#
+#@@@ 
+# bash does not accept spaces between the equal sign 
+#@@@ 
+
+
+######################################################################
+
+scanner=SIEMENS 
+
+### TE of epi acquisition
+# Scansheet: BOLD_REST_1 > Routine > TE
+
+epiTE=37  # ms
+
+######################################################################
+### EPI dwell time per phase-encode line -- same as effective echo spacing
+# Scansheet: BOLD_REST_1 > Resolution > Accel. factor PE
+# Scansheet: BOLD_REST_1 > Sequence - Part 1 > Echo spacing
+
+# From FSL documentation:
+#  Effective EPI echo spacing is the time between echoes in successive k-space lines.
+#  If you are using an accelerated sequence (parallel imaging) then the number you need here is the echo spacing 
+#  for the acquired lines divided by the acceleration factor. 
+
+GRAPPAAccel=8  # set to 1 if not an accelerated sequence
+
+echoSpacing=0.58 # ms
+
+######################################################################
+### TEs of gre fieldmap magnitude images -- used to convert fieldmap to rad/s
+# Siemens gradient echo fieldmaps acquire two images with different echo times. 
+# The change in MR phase from one image to the other is proportional to both 
+#    the field inhomogeneity in that voxel and the echo time difference. 
+# The field value is therefore given by the difference in phase between
+#    these two images divided by the echo time difference.
+
+# Scansheet: gre_fieldmapping > Routine > TE1
+# Scansheet: gre_fieldmapping > Routine > TE2
+
+greTE1=4.92 # ms
+greTE2=7.38 # ms
+
+######################################################################
+### Unwarp direction: i.e., the phase-encoding direction of the fMRI EPI sequence
+# From FSL documentation:
+#   The sign of this direction will depend on both the sign of the phase encode blips in the EPI sequence and on 
+#   the sign of the fieldmap.  As it can be difficult to predict this sign when using a particular 
+#   site/scanner/sequence for the first time, it is usual to try both positive and negative values in turn and 
+#   see which gives better undistortion (the wrong sign will increase the amount of distortion rather than 
+#   decrease it).
+
+# Scansheet: BOLD_REST_1 > Routine > Phase enc. dir.  A>>P
+# Scansheet: gre_field_mapping > Routine > Phase enc. dir. R>>L
+
+unwarpdir="y-" #
+
+######################################################################
+# Signal loss threshold: Determines where the signal loss in the EPI is too great
+# for registration to get a good match between the EPI data and other images. 
+# Areas where the % signal loss in the EPI exceeds this threshold will get masked out of 
+# the registration process between the EPI and the fieldmap and structural images.
+
+signallossthresh=0.9 # Areas with 90% or more signal loss in fieldmap are masked out
+
+######################################################################
+######################################################################
+### calculations and conversion to seconds
+# These should not typically be modified
+
+#CODE ADDED BY WILL FOR FSL_PREPARE_FIELDMAP
+# difference of gre magnitude TEs is used to calculate rad/s of fieldmap # 2.46     ms
+# NOW IN MS (for fsl_prepare_fieldmap)
+# TEdiff=$(echo "($greTE2 - $greTE1)" | bc -l)           
+# effective EPI echo spacing is used by fugue                            # 0.000425 sec
+# dweltime=$(echo "($echoSpacing/$GRAPPAAccel)/1000" |bc -l)
+# TE of the epi is used by sigloss                                       # 0.002    sec
+#epiTE=$(echo "($epiTE)/1000" |bc -l)  
+
+#Used by fugue to unwarp EPI
+dwelltime=$(echo "($echoSpacing/$GRAPPAAccel)/1000" | bc -l) # 0.000425 sec
+
+# difference of gre magnitude TEs is used to calculate rad/s of fieldmap
+TEdiff=$(echo "($greTE2 - $greTE1)/1000" | bc -l) # 0.00246  sec
+
+# TE of the epi is used by sigloss and expected in seconds
+epiTE=$( echo "($epiTE)/1000" | bc -l ) # 0.002 sec

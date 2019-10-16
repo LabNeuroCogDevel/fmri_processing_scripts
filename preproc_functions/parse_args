@@ -138,7 +138,7 @@ function parse_args {
           if ! (command -v matlab >/dev/null || command -v octave >/dev/null); then
              echo "Optional: matlab or octave is required for wavelet despiking" >&2
           fi
-          check_dep_list 3dcalc fslmaths python antsRegistrationSyN.sh c3d_affine_tool python:nipy python:nibabel perl:App::AFNI::SiemensPhysio python:future R:orthopolynom
+          check_dep_list 3dcalc fslmaths python antsRegistrationSyN.sh c3d_affine_tool python:nipy python:nibabel perl:App::AFNI::SiemensPhysio python:future R:orthopolynom python:seaborn
           exit $?
 	elif [ $1 = -cleanup_only ]; then
 	    cleanup_only=1
