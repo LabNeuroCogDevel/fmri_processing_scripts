@@ -50,7 +50,7 @@ function correct_motion {
     fi
 
     #for now, a slightly junky if else for 3dvolreg versus mcflirt
-    if [ $mc_program = "3dvolreg" ]; then
+    if [ "$mc_program" = "3dvolreg" ]; then
 	if [ -n $needToComputeMCStat ]; then
 	    #have to run motion correction twice to get a reasonable motion-corrected mean volume
 	    #cf. http://fcp-indi.github.io/docs/developer/workflows/func_preproc.html

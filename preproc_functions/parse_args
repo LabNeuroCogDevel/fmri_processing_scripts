@@ -811,13 +811,13 @@ check_dep_list(){
     for cmd in $@; do
        local module=${cmd#*:} # remove perl: python: or R:
        if [[ $cmd =~ ^python: ]]; then
-          ! python -c "import $module;import sys; sys.exit(0)" 2>/dev/null && 
-             echo "missing $cmd; consider 'pip install --user $module'"  && let ++missing_deps
+          ! python3 -c "import $module;import sys; sys.exit(0)" 2>/dev/null &&
+             echo "missing $cmd; consider 'python3 -m pip install --user $module'"  && let ++missing_deps
        elif [[ $cmd =~ ^perl: ]]; then
-          ! perl -M$module -e "exit(0)" 2>/dev/null && 
+          ! perl -M$module -e "exit(0)" 2>/dev/null &&
              echo "missing $cmd; consider 'cpanm $module'" && let ++missing_deps
        elif [[ $cmd =~ ^R: ]]; then
-          ! Rscript -e "quit(status=as.numeric(!is.element('$module',installed.packages()[,1])),save='no')" && 
+          ! Rscript -e "quit(status=as.numeric(!is.element('$module',installed.packages()[,1])),save='no')" &&
              echo "missing ${cmd}; consider Rscript -e 'install.packages(\"$module\")'" && let ++missing_deps
        else
           ! command -v $cmd >/dev/null && echo "missing $cmd" && let ++missing_deps

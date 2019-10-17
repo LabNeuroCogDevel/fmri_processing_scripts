@@ -853,9 +853,9 @@ checkdepends() {
    failunless 3dinfo        && warn "You do not have AFNI installed! This is required!" && let ++ret
 
    failunless perl          && warn "Your system does not have perl! This is required!" && let ++ret
-   failunless python        && warn "Your system does not have python! This is required!" && let ++ret
+   failunless python3        && warn "Your system does not have python3! This is required!" && let ++ret
 
-   ! python -c "import nipy" && warn "You do not have nipy for python! This is required for 4d_slice_motion"
+   ! python3 -c "import nipy" && warn "You do not have nipy for python3! This is required for 4d_slice_motion"
    ! which ffmpeg            && warn "You do not have ffmpeg installed! This is required for mcmove!" 
 
    failunless ANTS              && warn    "You do not have ANTS installed! This is not required, but will improve preprocessing" 
