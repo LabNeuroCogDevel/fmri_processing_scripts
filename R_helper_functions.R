@@ -83,7 +83,7 @@ exec_pbs_array <- function(max_concurrent_jobs, njobstorun, max_cores_per_node=4
     jobid <- c()
     for (i in 1:njobstorun) {
       qsub_preamble <- c(job_array_preamble,
-        paste0("#PBS -l nodes=1:ppn=1:himem"), #each individual run is a single-threaded job
+        paste0("#PBS -l nodes=1:ppn=1"), #each individual run is a single-threaded job
         paste0("#PBS -l walltime=", walltime) #max time for each job to run
       )
 
@@ -96,8 +96,8 @@ exec_pbs_array <- function(max_concurrent_jobs, njobstorun, max_cores_per_node=4
   } else {
     qsub_all <- c(job_array_preamble,
       paste0("#PBS -t 1-", njobstorun, "%", array_concurrent_jobs), #number of total datasets and number of concurrent jobs
-      ##paste0("#PBS -l nodes=", nnodes, ":ppn=", ppn, ":himem"), #this is a misunderstanding of the use of job arrays. we need to request resources *per job* as below
-      paste0("#PBS -l nodes=1:ppn=1:himem"), #each individual run is a single-threaded job
+      ##paste0("#PBS -l nodes=", nnodes, ":ppn=", ppn), #this is a misunderstanding of the use of job arrays. we need to request resources *per job* as below
+      paste0("#PBS -l nodes=1:ppn=1), #each individual run is a single-threaded job
       paste0("#PBS -l walltime=", walltime), #max time for each job to run
       paste("cd", qsubdir), #cd into the directory with preproc_one scripts
       paste0("bash ", jobprefix, "${PBS_ARRAYID}")
@@ -139,16 +139,24 @@ list.dirs <- function(...) {
 exec_pbs_iojob <- function(srclist, destlist, cpcmd="cp -Rp", njobs=12, qsubdir=getwd(), walltime="10:00:00", jobname="qsub_iojob") {
   stopifnot(length(srclist)==length(destlist))
 
+  if (njobs > 20) {
+    stop("Standard memory nodes have only 20 processors per node")
+  }
+  
   #remove email directives from PBS jobs
   #"#PBS -M michael.hallquist@psu.edu",
 
+  #old settings for himem setup
+  #"#PBS -A mnh5174_a_g_hc_default",
+  #paste0("#PBS -l nodes=1:ppn=",njobs,":himem"),
+  
   output_script <- c("#!/usr/bin/env sh",
   "",
   paste0("#PBS -l walltime=", walltime),
-  "#PBS -A mnh5174_a_g_hc_default",
+  "#PBS -A mnh5174_c_g_sc_default",
   "#PBS -j oe",
   "#PBS -m n", #no email
-  paste0("#PBS -l nodes=1:ppn=",njobs,":himem"),
+  paste0("#PBS -l nodes=1:ppn=",njobs),
   "#PBS -W group_list=mnh5174_collab",
   "#PBS -l pmem=8gb", #make sure each process has enough memory
   "source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash #setup environment",

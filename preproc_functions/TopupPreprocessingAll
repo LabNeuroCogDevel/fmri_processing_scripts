@@ -399,7 +399,7 @@ rel "convert_xfm -omat transforms/sefmap_to_epiref.mat -inverse transforms/epire
 #create epiref -> fmap image
 qa_image "${WD}/${setarget}_vol1" "${WD}/epiref_to_${setarget}" "epiref_to_${setarget}.png" "Same-phase SE image overlaid with coregistered epiref (in TopupPreprocessingAll)"
 
-rel "imrm ${WD}/epiref_to_${setarget}InverseWarped ${WD}/${setarget}_vol1" #not useful long-term
+rel "imrm ${WD}/epiref_to_${setarget}InverseWarped" #not useful long-term
 
 #setup the relevant unwarping coefficients
 #removing the epiref -> sefmap transform from HCP pipeline
@@ -427,8 +427,11 @@ rel "applywarp --rel --interp=spline -i ${WD}/PhaseNeg_gdc -r ${WD}/PhaseNeg_gdc
 rel "fslmaths ${WD}/PhaseNeg_gdc_dc -mul ${WD}/SE_Jacobian_${vnum} ${WD}/PhaseNeg_gdc_dc_jac"
 
 # Scout - warp and Jacobian modulate to get distortion corrected output
-rel "applywarp --rel --interp=spline -i ${WD}/epiref -r ${WD}/${setarget} --premat=transforms/epiref_to_sefmap.mat -w ${WD}/SE_WarpField -o ${WD}/SE_UD_epiref"
+# Use vol1 as the target to avoid applywarp creating a 4D SE_UD_epiref file
+rel "applywarp --rel --interp=spline -i ${WD}/epiref -r ${WD}/${setarget}_vol1 --premat=transforms/epiref_to_sefmap.mat -w ${WD}/SE_WarpField -o ${WD}/SE_UD_epiref"
 rel "fslmaths ${WD}/SE_UD_epiref -mul ${WD}/SE_Jacobian.nii.gz ${WD}/SE_UD_epiref_jac"
+
+rel "imrm ${WD}/${setarget}_vol1" #cleanup vol1 temp file
 
 rel "applywarp --rel --interp=spline -i ${WD}/epiref -r ${WD}/epiref -w ${WD}/ER_WarpField -o ${WD}/ER_UD_epiref"
 rel "fslmaths ${WD}/ER_UD_epiref -mul ${WD}/ER_Jacobian ${WD}/ER_UD_epiref_jac"
