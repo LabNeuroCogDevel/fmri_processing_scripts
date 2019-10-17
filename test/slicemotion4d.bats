@@ -34,7 +34,7 @@ teardown() {
 
  # check that we did something to the data
  res="$(3dBrickStat -non-zero -mean -slow "3dcalc( -a mt_example.nii.gz -b example.nii.gz -expr a-b )")"
- [[ "$results" != "-nan" ]]
+ [[ ! "$results" =~ "-nan" ]]
 
 }
 
@@ -45,5 +45,5 @@ teardown() {
  ../../sliceMotion4d_py2 -i example.nii.gz --siemens --slice_times interleaved --prefix mt2_ -t 1.5
  results=$(3dBrickStat -non-zero -mean -slow "3dcalc( -a mt_example.nii.gz -b mt2_example.nii.gz -expr a-b )")
 
- [[ "$results" == "-nan" ]]
+ [[ "$results" =~ "-nan" ]]
 }
