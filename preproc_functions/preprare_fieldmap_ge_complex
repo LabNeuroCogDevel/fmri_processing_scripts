@@ -1,0 +1,82 @@
+# functions to unwrap GE scanner fieldmap
+#  with fieldmap-{real,imaginary,magnitude}-{1,2} images
+#  (NCANDA)
+# intended to be used by prepare_fieldmap
+# exiterr from helper_functions
+
+get_echo_time(){
+    local f="${1/.gz/.xml}"
+    must_exist $f "$FUNCNAME: could not get echo time of $1"
+    local te=$(perl -lne 'print $1 if m/<dicom:EchoTime units="ms">(.*?)</' $f)
+    # NB. probalby run in subshell, so this exit wont kill the whole script
+    [ -z "$te" ] && exiterr "no EchoTime ms in $f"
+    echo $te
+}
+TE_diff(){
+    [ $# -ne 3 ] && exiterr "TE_diff mag1 mag2 <ms|s>; given $@"
+    te1=$(get_echo_time "$1")
+    te2=$(get_echo_time "$2")
+    local delta_te=0
+    # seconds or ms?
+    [ $3 == "s" ] \
+      && delta_te=$(python -c "print abs(${te2} - ${te1})/1000.0") \
+      || delta_te=$(echo $te2 - $te1 | bc -l | sed s/-// ) 
+
+    awk -vte=$delta_te 'BEGIN{exit (te==0)?0:1 }' &&
+      exiterr "Cannot process delta_te = ${delta_te} (should be non-zero) (te1: ${te1}; te2: ${te2}) and thus was unable to compute fieldmap."
+    echo $delta_te
+}
+function prepare_fieldmap_ge_complex {
+    # need FM_UD_fmap and FM_UD_fmap_mag
+    # based on prepare_se_fieldmap: just need to computer
+    #  FM_UD_fmap{,mag}
+    #  FM_UD_fmap_mag_brain
+    
+    [ $# -ne 3 ] && exiterr "$FUNCNAME: rawdir fmoutdir  REVERSE"
+    local rawdir="$1"; shift
+    local fmapdir="$1"; shift
+    local REVERSE="$1"; shift # if "1", will reverse order of real array
+
+    declare -a real_array=($rawdir/fieldmap-real-{1,2}.nii.gz)
+    declare -a imag_array=($rawdir/fieldmap-imaginary-{1,2}.nii.gz)
+    declare -a magnitude_array=($rawdir/fieldmap-magnitude-{1,2}.nii.gz)
+    all_must_exist ${real_array[@]} ${imag_array[@]} ${magnitude_array[@]} "missing raw files!"
+    
+    #declare -a real_array=(${RESTING_DIR}/native/fieldmap/fieldmap-real-1.nii.gz ${RESTING_DIR}/native/fieldmap/fieldmap-real-2.nii.gz)
+    #declare -a imag_array=(${RESTING_DIR}/native/fieldmap/fieldmap-imaginary-1.nii.gz ${RESTING_DIR}/native/fieldmap/fieldmap-imaginary-2.nii.gz)
+
+    ## unwrap w/2x imaginary and 2x real
+    # !!TODO: which site is site C -- set REVERSE
+    # djk: reverted the order (to torsten's last version r1497) for site B and E as computed fieldmap has reversed sign
+    [ "${REVERSE}" == "1" ] \
+      && inputs=(${real_array[1]} ${imag_array[1]} ${real_array[0]} ${imag_array[0]}) \
+      || inputs=(${real_array[0]} ${imag_array[0]} ${real_array[1]} ${imag_array[1]})
+
+    # make real and imaginary
+    cmtk imagemath --in ${inputs[@]} --complex-div --out fmap_i.nii.gz --pop --out fmap_r.nii.gz
+
+    if [ ! -e fmap_r.nii.gz ] || [ ! -e fmap_i.nii.gz ]; then
+      echo "ERROR: ${fmapdir}: cmtk imagemath has failed to make fmap_i and fmap_r "
+      return 1
+    fi
+
+    # make phase and magnitude from real/imaginary
+    3dcalc -a fmap_r.nii.gz -b fmap_i.nii.gz -expr 'atan2(b,a)' -prefix fm_phase_radians.nii.gz
+    3dcalc -a fmap_r.nii.gz -b fmap_i.nii.gz -expr 'sqrt(a^2+b^2)' -prefix FM_UD_fmap_mag.nii.gz
+
+    # make it look like other pipelines
+    rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
+    rel "fslmaths FM_UD_fmap_mag_brain -thr 0.00000001 -bin mag_mask"
+    # unwrap
+    rel "prelude -p fm_phase_radians -a FM_UD_fmap_mag_brain -m mag_mask -u fm_phase_radians_unwrapped -f -v"
+    
+    # radians per second
+    delta_te_sec=$(TE_diff ${magnitude_array[@]} s)
+    [ -z "$delta_te_sec" ] && exiterr "failed to get delta_te_sec"
+    rel "fslmaths fm_phase_radians_unwrapped -div ${delta_te_sec} fm_phase_rps -odt float"
+    # create map
+    rel "fugue --loadfmap=fm_phase_rps --mask=mag_mask --savefmap=FM_UD_fmap"
+
+    #remove magnitude mask
+    rel "imrm mag_mask"
+}
