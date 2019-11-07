@@ -878,4 +878,22 @@ check_partialproc() {
    exit 1 
 }
 
+# quick file checks
+must_exist(){
+    [ $# -eq 0 ] && exiterr "must_exist given no file to test!"
+    local f="$1"; shift
+    [ -r "$f" ] && return 0
+    [ $# -gt 0 ] && msg="$@" || msg=""
+    exiterr "$msg (DNE: $f)"
+}
+all_must_exist(){
+    # give a list of files and a message to echo if any don't exist
+    [ $# -le 1 ] && exiterr "too few arguments given to $FUNCNAME. Need at least 1 file and a msg" 
+    msg="${!#}"
+    while [ $# -gt 1 ]; do
+	must_exist "$1" "$msg"
+	shift
+    done
+}
+
 # vim: set tabstop=7:
