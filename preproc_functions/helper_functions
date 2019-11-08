@@ -797,6 +797,12 @@ find_fmconfig(){
     local fm_cfg="$1"
     [ -z "$fm_cfg" ] && echo "Want to correct with fieldmaps but dont have a config file!" >&2 && return 1
 
+    # if is a file, use that
+    if [ -r $fm_cfg ]; then
+	readlink -f $fm_cfg
+	return 0
+    fi
+
     ## need to find fmcfgdir
     # expect it to be in the fmcfg directory alongside our script ($0)
     local fmcfgdir=""

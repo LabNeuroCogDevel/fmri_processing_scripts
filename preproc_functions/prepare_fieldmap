@@ -921,7 +921,7 @@ function preproc_fieldmap {
     #adapted from epi_reg
     rel "Coregister the fieldmap to the structural image for use in func2struct alignment with BBR cost function." c
 
-    if [ $use_ants -eq 1 ]; then
+    if [ "$use_ants" -eq 1 ]; then
 	#MH: preliminary tests suggest that coregistration without the head is very slightly better, though I haven't looked systematically
 	rel "antsRegistrationSyN.sh -d 3 -f ${mprageBet} -m FM_UD_fmap_mag_brain${ext} -t r -o fmap_to_struct" #rigid transformation (6dof)
 	#convert to FSL-compatible transformation
@@ -948,7 +948,7 @@ function preproc_fieldmap {
     
     # further testing indicates that BBR makes substantial improvements in (magnitude) -> struct coregistration for some subjects
     # But: this requires good WM contrast in the fieldmap, which is not always the case. Issue a warning about this!
-    if [[ $bbrCapable -eq 1 && $fmap_struct_dof = "bbr" ]]; then
+    if [[ "$bbrCapable" -eq 1 && "$fmap_struct_dof" = "bbr" ]]; then
 	local mprageBet_base=$( remove_ext ${mprageBet} ) #skull-stripped mprage image basename
 	rel "Using BBR algortihm to refine fmap -> struct transformation. This requires good WM contrast on the fieldmap or this will go badly! Check the results carefully!" c
 	rel "immv fmap_to_struct fmap_to_struct_init"

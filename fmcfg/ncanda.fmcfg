@@ -1,0 +1,17 @@
+scanner=GE
+
+unwarpdir="y"
+signallossthresh=0.9 # Areas with 90% or more signal loss in fieldmap are masked out
+
+#Used by fugue to unwarp EPI
+# grep dwell -i /Volumes/Hera/Raw/Datasets/NCANDA/baseline/NCANDA_IMAGEDATA_*/cases/NCANDA_S00059/standard/baseline/restingstate/native/rs-fMRI/bold-092.nii.xml
+dwelltime=0.000198 # seconds
+
+# difference of gre magnitude TEs is used to calculate rad/s of fieldmap
+# delta_te_sec=0.002, calc from xml "EchoTime" abs(mag1 - mag2)
+TEdiff=0.002 # seconds
+
+# TE of the epi is used by sigloss and expected in seconds
+# grep echo -i /Volumes/Hera/Raw/Datasets/NCANDA/baseline/NCANDA_IMAGEDATA_*/cases/NCANDA_S00059/standard/baseline/restingstate/native/rs-fMRI/bold-092.nii.xml
+epiTE=30  # ms
+epiTE=$( echo "($epiTE)/1000" | bc -l ) # 0.002 sec

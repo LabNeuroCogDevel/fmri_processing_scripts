@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # functions to unwrap GE scanner fieldmap
 #  with fieldmap-{real,imaginary,magnitude}-{1,2} images
 #  (NCANDA)
@@ -28,14 +29,15 @@ TE_diff(){
 }
 function prepare_fieldmap_ge_complex {
     # need FM_UD_fmap and FM_UD_fmap_mag
-    # based on prepare_se_fieldmap: just need to computer
+    # based on prepare_se_fieldmap: just need to compute
     #  FM_UD_fmap{,mag}
     #  FM_UD_fmap_mag_brain
     
-    [ $# -ne 3 ] && exiterr "$FUNCNAME: rawdir fmoutdir  REVERSE"
+    [ $# -ne 2 ] && exiterr "$FUNCNAME: rawdir REVERSE"
     local rawdir="$1"; shift
-    local fmapdir="$1"; shift
     local REVERSE="$1"; shift # if "1", will reverse order of real array
+    [ ! -r "$rawdir" ] && exiterr "'$rawdir' doesnt exist!"
+    rawdir="$(readlink -f "$rawdir")"
 
     declare -a real_array=($rawdir/fieldmap-real-{1,2}.nii.gz)
     declare -a imag_array=($rawdir/fieldmap-imaginary-{1,2}.nii.gz)
@@ -52,31 +54,67 @@ function prepare_fieldmap_ge_complex {
       && inputs=(${real_array[1]} ${imag_array[1]} ${real_array[0]} ${imag_array[0]}) \
       || inputs=(${real_array[0]} ${imag_array[0]} ${real_array[1]} ${imag_array[1]})
 
-    # make real and imaginary
-    cmtk imagemath --in ${inputs[@]} --complex-div --out fmap_i.nii.gz --pop --out fmap_r.nii.gz
+    # match gre preprocessing -- put files in unwarp
+    [ ! -d unwarp ] && mkdir unwarp
+    cd unwarp
 
-    if [ ! -e fmap_r.nii.gz ] || [ ! -e fmap_i.nii.gz ]; then
-      echo "ERROR: ${fmapdir}: cmtk imagemath has failed to make fmap_i and fmap_r "
-      return 1
-    fi
+
+    rel "FM prelude and fugue with GE data" c
+    # get average magnitude and bet it
+    rel "cmtk imagemath --in ${magnitude_array[0]} ${magnitude_array[1]} --average --out FM_UD_fmap_mag.nii.gz"
+    # make it look like other pipelines
+    rel "bet FM_UD_fmap_mag  FM_UD_fmap_mag_brain -R"
+    rel "fslmaths FM_UD_fmap_mag_brain -thr 0.00000001 -bin mag_mask"
+
+    # make real and imaginary
+    # N.B. if $inputs has spaces, will cause problem!
+    #      cannot use inputs[@] without giving too many args to rel
+    rel "cmtk imagemath --in ${inputs[*]} --complex-div --out fmap_i.nii.gz --pop --out fmap_r.nii.gz"
+
+    [ ! -e fmap_r.nii.gz -o ! -e fmap_i.nii.gz ] &&
+	exiterr "$(pwd): cmtk imagemath has failed to make fmap_i and fmap_r"
 
     # make phase and magnitude from real/imaginary
-    3dcalc -a fmap_r.nii.gz -b fmap_i.nii.gz -expr 'atan2(b,a)' -prefix fm_phase_radians.nii.gz
-    3dcalc -a fmap_r.nii.gz -b fmap_i.nii.gz -expr 'sqrt(a^2+b^2)' -prefix FM_UD_fmap_mag.nii.gz
+    # input to prelude
+    rel "3dcalc -a fmap_r.nii.gz -b fmap_i.nii.gz -expr 'atan2(b,a)' -prefix fm_phase_radians.nii.gz"
+    rel "3dcalc -a fmap_r.nii.gz -b fmap_i.nii.gz -expr 'sqrt(a^2+b^2)' -prefix fmap_m.nii.gz"
 
-    # make it look like other pipelines
-    rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
-    rel "fslmaths FM_UD_fmap_mag_brain -thr 0.00000001 -bin mag_mask"
-    # unwrap
-    rel "prelude -p fm_phase_radians -a FM_UD_fmap_mag_brain -m mag_mask -u fm_phase_radians_unwrapped -f -v"
+    # Phase Region Expanding Labeller for Unwrapping Discrete Estimates
+    #  -a is "absolute input" -p "raw phase" -m "mask" -u "unwrapped output"
+
+    # killian uses:
+    #  fsl prelude -p ${tmpdir}/fmap_p.nii.gz -a ${tmpdir}/fmap_m.nii.gz -m ${t1_brainmask_aligned_to_fieldmap} -u ${phasemap_unwrapped} -f
+    #  fsl fugue --loadfmap=${tmpdir}/fieldmap_1.nii.gz --mask=${t1_brainmask_aligned_to_fieldmap} --savefmap=${tmpdir}/fieldmap_2.nii.gz -m
+    #  plus demean and despike -> $fieldmap
+    # halquist uses:
+    #  rel "prelude -p \"${fm_phase}_radians\" -a FM_UD_fmap_mag_brain -m mag_mask -o \"${fm_phase}_radians_unwrapped\" -v"
+    #  rel "fugue --loadfmap=\"${fm_phase}_rps\" --mask=mag_mask --savefmap=${fm_phasedir}/FM_UD_fmap" #FM_UD_fmap is the fieldmap used in subsequent processing
+    #  #NOTE: fsl_prepare_fieldmap de-medians the fieldmap and despikes the edges.
+    #  #These steps, however, are already performed standard in FEAT, and are included below accordingly.
+    #  #Thus, de-median and de-spike at this point would be redundant.
+    rel "prelude -p fm_phase_radians -a fmap_m -m mag_mask -u fm_phase_radians_unwrapped -f -v"
     
     # radians per second
     delta_te_sec=$(TE_diff ${magnitude_array[@]} s)
+    rel "using delta_te_sec=$delta_te_sec" c
     [ -z "$delta_te_sec" ] && exiterr "failed to get delta_te_sec"
     rel "fslmaths fm_phase_radians_unwrapped -div ${delta_te_sec} fm_phase_rps -odt float"
     # create map
-    rel "fugue --loadfmap=fm_phase_rps --mask=mag_mask --savefmap=FM_UD_fmap"
+    rel "fugue --loadfmap=fm_phase_rps --mask=mag_mask --savefmap=FM_UD_fmap -m"
 
     #remove magnitude mask
     rel "imrm mag_mask"
+
+    # copy out of unwarp for other processes
+    rel "3dcopy FM_UD_fmap_mag.nii.gz ../FM_UD_fmap_mag.nii.gz"
+    rel "3dcopy FM_UD_fmap_mag_brain.nii.gz ../FM_UD_fmap_mag_brain.nii.gz"
+
+    # afterward, hallquist
+    #  rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -dof 6 -omat $funcdir/transforms/fmap_to_struct.mat -out fmap_to_struct -interp spline" #skull-stripped magnitude to structural
+    # rel "fugue --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mask --unmaskfmap --savefmap=FM_UD_fmap_unmasked --unwarpdir=$fugue_unwarpdir"
+    # rel "convertwarp -s EF_UD_shift -o EF_UD_warp -r EF_D_mc_target --shiftdir=$unwarpdir --relout"
+    # afterward, killian/NCANDA
+    #  epi_reg --fmap=${fieldmap} --fmapmag=${t1_aligned_to_fieldmap} --fmapmagbrain=${t1_brain_aligned_to_fieldmap} ...
+    #  c3d ${fieldmap_to_bold_pfx}_fieldmaprads2epi_shift.nii.gz -o ${shiftmap_bold}
+    #  convertwarp -r ${bold_4d} -s ${shiftmap_bold} --shiftdir=${warp_dir} --absout -o ${fieldmap_bold_warp} 
 }
