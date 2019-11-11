@@ -102,7 +102,7 @@ pointstonii_or_rm(){
    ## check the file we are point to
    read pointto < $f
    # if the file we point to is good, echo it and move on
-   [ -n "$pointo" -a -r "$pointto${ext}" ] && return 0
+   [ -n "$pointo" ] && imtestln "$pointto${ext}" && return 0
 
    # otherwise
    rel "File $pointto specified in $f does not exist. Removing $f" c
@@ -113,6 +113,7 @@ cp_master_ifneeded() {
     local base="$1";    shift
     local flagfile="$1"  # looks like .fieldmap_phase or .fieldmap_magnitude
     local masterflag=${dir}/$(basename $flagfile)
+    [ -z "$ext" ] && local ext=".nii.gz" && warn "setting ext to $ext"
 
     # funcdir can be empty, but if it's not, our flagfile is relative to it
     [ -z "$funcdir" ] && funcdir=$(pwd)
@@ -174,6 +175,8 @@ prepare_gre_fieldmap_phase() {
        #TODO: use SESSIONBIDS elsewhere?
        fm_phase_niidir="$fm_phasedir"
        [ -n "$SESSIONBIDS" -a -d "$SESSIONBIDS" ] && fm_phase_niidir=$SESSIONBIDS/phase1
+
+       echo "funcdir: $funcdir fm_phase_niidir: $fm_phase_niidir" >&2
 	
        local workingrootdir=$(pwd)
        cd $fm_phase_niidir
@@ -214,10 +217,10 @@ prepare_gre_fieldmap_mag(){
 	if [ $numechos -eq 1 ]; then
 	    rel "Only one echo detected based on ACQ Echo Number in DICOM header. Converting all $fm_magnitudebase in $fm_magnitudedir to one NIfTI." c
 
-           convert_or_use_nii fm_magnitude ./
-           ! imtestln fm_magnitude && echo "Failed to create fm_magnitude.nii.gz in $(pwd)!" >&2  && return 1
-           #[ "$fm_mag_niidir" = "$fm_magnitudedir" ] && 
-           archive_dcm "$fm_magnitudebase" fm_magnitude_dicom.tar.gz
+            convert_or_use_nii fm_magnitude ./
+            ! imtestln fm_magnitude && echo "Failed to create fm_magnitude.nii.gz in $(pwd)!" >&2  && return 1
+            #[ "$fm_mag_niidir" = "$fm_magnitudedir" ] && 
+            archive_dcm "$fm_magnitudebase" fm_magnitude_dicom.tar.gz
 
 	    #dimon "$fm_magnitudebase" fm_magnitude #convert dicom to nifti using Dimon
 	    fm_magnitude="${fm_magnitudedir}/fm_magnitude" #update fm_magnitude to point to NIfTI.
@@ -286,9 +289,15 @@ phase_mag_need_swap(){
   [ $isbackwards -eq 1  -a $iszero -eq 0 ]
 }
 
-# fm_cfg fm_pahse fm_magnitude funcdir
-# TODO: re-add backup/extract from backup
-prepare_gre_fieldmap() {
+
+fieldmap_arrange_dicoms(){
+    # globals: fm_phase and fm_magnitude
+    # come in as maybe dicom globs
+    # leave as paths to nii.gz file
+    #
+    # also makes sure phase and mag do not need to be swapped
+    # 
+
     # we need to do this before testing if complete
     # because we use the warpdir sourced from the file
     # later (one-step warp)
@@ -296,7 +305,7 @@ prepare_gre_fieldmap() {
     # check that all required variables exist (defined in cfg)
     for inputName in fm_phase fm_magnitude epiTE dwelltime unwarpdir TEdiff signallossthresh scanner; do
 	inputVal="${!inputName}"
-	[ -z "${inputVal}" ] && echo "$inputName cannot be empty" && exit 1
+	[ -z "${inputVal}" ] && echo "$inputName cannot be empty" && return 1
     done
 
     # make log and fm_* absolute 
@@ -365,10 +374,44 @@ prepare_gre_fieldmap() {
        prepare_gre_fieldmap_phase "$fm_phasedir" "$fm_phasebase" "$funcdir"
 	read fm_phase < .fieldmap_phase
     fi
+} 
+
+# fm_cfg fm_pahse fm_magnitude funcdir
+# TODO: re-add backup/extract from backup
+prepare_gre_fieldmap() {
+    # give mag and phase
+    # or will extract from $fm_magnitude and $fm_phase dicom glob pattern
+
+
+    # we need to do this before testing if complete
+    # because we use the warpdir sourced from the file
+    # later (one-step warp)
+    find_and_source_fmconfig "$fm_cfg" || return 1
+
+    # if we dont have anyting, try to figure it out
+    # otherwise $@ inputs are magnitude and phase
+    if [ $# -ne 2 ]; then
+	# globals: fm_magnitude and fm_phase
+	fieldmap_arrange_dicoms
+
+	# doesn't work -- lots of output
+	#read  fm_magnitude fm_phase < <(fieldmap_arrange_dicoms)
+    else
+	echo "# using input arguments: $@" >&2
+	fm_magnitude=$(readlink -f "$1"); shift
+	fm_phase=$(readlink -f "$1"); shift
+    fi
+
+    # cannot find any file?
+    ( ! imtestln "$fm_magnitude" || ! imtestln "$fm_phase") &&
+	warn "Could get fieldmaps! '$fm_magnitude' and '$fm_phase'" && return 1
+
+    [ -z "$fm_phasedir" ] && local fm_phasedir=$(mktemp -d $(pwd)/phasedirXXXX)
+        
 
     #make sure that magnitude image is without extension (to allow for suffixes below)
-    fm_magnitude=$( remove_ext "$fm_magnitude" )
-    fm_phase=$( remove_ext "$fm_phase" )
+    fm_magnitude=$(remove_ext "$fm_magnitude" )
+    fm_phase=$(remove_ext "$fm_phase" )
 
     #convert phase to rads/sec, depends on both phase and mag (for mask)
     # writes FM_UD_fmap in fm_phasedir

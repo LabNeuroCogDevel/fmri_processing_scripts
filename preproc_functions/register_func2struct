@@ -218,7 +218,7 @@ function register_func2struct {
 	    rel "convertwarp -r \"$mprageBet\" -s unwarp/EF_UD_shift_bbr -o unwarp/T1_UD_warp_bbr --postmat=$funcdir/transforms/func_to_struct.mat --shiftdir=$unwarpdir --relout" #warp coefficients to undistort and transform EPI into structural space
 	fi
 	
-	touch .func2struct_complete
+	date >> .func2struct_complete
     fi
 }
 
