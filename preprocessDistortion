@@ -96,27 +96,6 @@ parsenewargs(){
     done
 }
 
-parsefmargs() {
- # get input arguements from NEEDARGS
- # globally exported in printf
- # probably more cleanly written as case $1 in );;
- while [ -n "$1" ]; do
-  arg="$1"
-  [[ $arg =~ ^-*h(elp)?$ ]] && ppdistortion_usage 
-  for var in ${NEEDARGS[@]} ${OPTIONALARGS[@]}; do
-    if [ $arg = "-$var" ]; then #-o $arg = "--$var" ]; then 
-      shift; 
-      val=$1;
-      printf -v "$var" "$val"
-    fi
-  done
-  shift
- done
-
- for var in ${NEEDARGS[@]}; do
-   [ -z  "${!var}" ] && echo "need to specify -$var" >&2 && exit 1
- done
-}
 
 testExpected() {
    # return true if all expected files exist
@@ -143,7 +122,9 @@ _preprocessDistortion() {
    # get functions and args
    sourceall 
    parsenewargs "$@"
-   #parsefmargs "$@" # todo: rm me
+
+   # needed for some functions
+   export fmcfg="$FMCFG"
 
    ## did we already finish? 
    # EXPECT=( FM_UD_fmap_mag{,_brain}.nii.gz \
