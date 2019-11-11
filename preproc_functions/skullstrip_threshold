@@ -87,6 +87,9 @@ function skullstrip_threshold {
 	#the FEAT calculation is p2 + (brain_thresh * (p98 -p2))/100. When brain_thresh is 10, cancels a zero.
 	thresh=$( echo "scale=5; $p_2 + ($p_98 - $p_2)/10" | bc )
 
+       rel "fslstats epi_bet -p 2 -p 98 # p_2=$p2 p_98=$p_98" c
+       rel " p_2 + (p_98 - p_2)/10 = $thresh" c
+
 	#create mask that zeroes anything below threshold.
 	#because this mask is computed on the skull-stripped data, it also reflects skull stripping
 	rel "fslmaths epi_bet -thr $thresh -Tmin -bin \"${postSS}_98_2_mask\" -odt char"
@@ -123,6 +126,9 @@ function skullstrip_threshold {
 
     #define intensity threshold mask used downstream in pipeline
     [ $thresholdMethod = "10" ] && threshMask="mask_${funcFile}_Tmin_10pctThr" || threshMask="${postSS}_98_2_mask_dil1x"
+
+    mean=$(fslstats ${postSS} -m)
+    awk "BEGIN{exit($mean > 1)}" && echo "${postSS} is all zeros! error skullstripping!" >&2 && exit 1
 
     #explicit return code needed to avoid implicit status of prior command
     return 0

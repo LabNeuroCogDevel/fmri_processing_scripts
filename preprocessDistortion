@@ -124,7 +124,7 @@ _preprocessDistortion() {
    parsenewargs "$@"
 
    # needed for some functions
-   export fmcfg="$FMCFG"
+   export fm_cfg="$FM_CFG"
 
    ## did we already finish? 
    # EXPECT=( FM_UD_fmap_mag{,_brain}.nii.gz \
