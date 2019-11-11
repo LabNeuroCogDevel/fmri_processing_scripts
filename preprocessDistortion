@@ -3,15 +3,15 @@
 ppdistortion_usage() {
    cat  >&2 <<HEREDOC
 USAGE:
-  preprocessDistortion -phasedir path/to/fm_phase_dicoms/ -magdir path/to/fm_mag_dicoms/ -fm_cfg protocol_cfg [-mrpatt "MR*" ] [-savedir $(pwd) ]
+  preprocessDistortion -phasedir path/to/fm_phase_dicoms/ -magdir path/to/fm_mag_dicoms/ -fm_cfg protocol_cfg [-mrpatt "MR*" ] [-savedir $(pwd) ] [-reverse]
 
   manditory:
-    -phasedir
-    -magdir
-    -fm_cfg
+    -phasedir and -magdir ||  -mag and -phase || -mag  -real -complex || -niidir
+    -fm_cfg     info about protocols, mabye optional
   optional:
-    -mrpatt
-    -savedir
+    -mrpatt     what dicoms look like
+    -savedir    where to save outputs
+    -reverse    NCANDA reverse (all but site C)
 
 HEREDOC
 exit 1
@@ -22,9 +22,78 @@ sourceall() {
  local scriptdir=$(dirname $0)
  local sourcedir=$scriptdir/preproc_functions
  [ ! -d $sourcedir ] && echo "bad source dir! $sourcedir" >&2 && exit 1
- for f in convert_or_use_nii waitforlock prepare_gre_fieldmap helper_functions;do
+ for f in convert_or_use_nii waitforlock prepare_gre_fieldmap \
+          helper_functions preprare_fieldmap_ge_complex;do
    source $sourcedir/$f
  done
+}
+
+val2ARG(){ local s="$1"; s=${s:1}; s=${s^^}; echo "$s";}
+parsenewargs(){
+    local setting=""
+    local val=""
+    [ $# -lt 1 ] && ppdistortion_usage;
+    while [ -n "$1" ]; do
+	case "$1" in
+	    -h|-help) ppdistortion_usage;;
+	    -r|-reverse) REVERSE="1"; shift ;;
+	    -phasedir|-magdir|-phase|-fm_cfg|-mrpatt|-savedir|-niidir)
+		setting="$(val2ARG "$1")"
+		val="$2"
+	        # remove default unless value could be an array arg
+		! [[ $setting =~ MAG|REAL|COMPLEX ]] && unset $setting; 
+		shift 2;;
+	    -*) exiterr "unkown switch '$1'";;
+	    *)
+		# if not -arg, add to the last -arg given
+		[ -z "$setting" ] && exiterr "dont know what to set as '$1'";
+		val="$1"
+		shift
+		;;
+	esac
+	if [ -z "${!setting}" ]; then
+	    # everything is an array. if only one item e.g. $MAGDIR will get it
+	    eval "declare -ag $setting=\"$val\"";
+	else
+	    # not sure if there is another way to extend an array with varaible name
+	    # using mixed '' and "" like 'literal '"$intereted"' more litteral'
+	    eval "declare -ag $setting"'=(${'"$setting"'[@]}'" $val )"
+	fi
+    done
+    # sanity check
+    [ -n "$PHASEDIR" -a -n "$PHASE" ] && exiterr "give -phase or -phasedir, not both" 
+    [ -n "$MAGDIR" -a -n "$MAG" ] && exiterr "give -mag or -magdir, not both" 
+    [ -n "$NIIDIR" -a -n "$MAG" ] && exiterr "-niidir only if no other nifitis to provide" 
+    [ -n "$PHASEDIR"  -o -n "$PHASE" ] && [ -n "$COMPLEX" -o -n "$REAL" ] &&
+	exiterr "phase cannot be used with complex/real" 
+    local sep="xxxxxxxxx"
+    local all_ge=$MAG$sep$COMPLEX$sep$REAL$sep
+    # just mag is okay.  but complex or real without the other 2 is a problem
+    [[ $all_ge =~ $sep$sep ]] && ! [[ $all_ge =~ ^$sep$sep$sep$ ]] &&
+	exiterr "GE needs all -mag -complex and -real"
+
+    ## set METHOD
+    #  20191107: only gre (Siemens, Hallquist) and ge (NCANDA)
+    #            unimplmenented BIDSFM
+    [[ $all_ge =~ ^$sep$sep$sep$ ]]  && METHOD="gre" || METHOD="ge"
+
+    # NIIDIR is setup to be NCANDA raw dir
+    # but might be adapted for BIDS compatible directory
+    if [[ -n "$NIIDIR" ]]; then
+	# if we have a "real" nifti file it's ncanda
+	[ -n "$(find "$NIIDIR" -maxdepth 1 -iname '*real*nii*'\
+                -type f,l -print -quit)" ] &&
+	    METHOD="NCANDA" ||
+	    METHOD="BIDSFM" # TODO: implement me!
+    fi
+    
+
+    # for debuging, print settings
+    for var in  REVERSE NIIDIR PHASEDIR MAGDIR MAG PHASE\
+		REAL COMPLEX FM_CFG MRPATT SAVEDIR; do
+	[ -z ${!var} ] && continue
+	eval 'echo '"$var"': ${'"$var"'[@]}'
+    done
 }
 
 parsefmargs() {
@@ -50,10 +119,11 @@ parsefmargs() {
 }
 
 testExpected() {
-   # global EXPECT,HAVEEXPECT, savedir
+   # return true if all expected files exist
+   # global EXPECT,HAVEEXPECT, SAVEDIR
    HAVEEXPECT=()
    for f in "${EXPECT[@]}"; do
-      [ -r "$savedir/$f" ] && HAVEEXPECT=(${HAVEEXPECT[@]} $f)
+      [ -r "$SAVEDIR/$f" ] && HAVEEXPECT=(${HAVEEXPECT[@]} $f)
    done
 
    [ ${#HAVEEXPECT[@]} -eq ${#EXPECT[@]} ] 
@@ -61,66 +131,88 @@ testExpected() {
 
 _preprocessDistortion() {
    starttime=$(date +%s)
-   NEEDARGS=(phasedir magdir fm_cfg)
-   OPTIONALARGS=(mrpatt savedir)
    # optional defaults
-   savedir=$(pwd)
-   mrpatt="MR*"
+   SAVEDIR=$(pwd)
+   MRPATT="MR*"
+   REVERSE="0"
+   # helperFunctions uses this for rel
+   export logFile="preprocessDistortion.log"
 
 
    ## prepare
    # get functions and args
-   parsefmargs "$@"
-   sourceall
+   sourceall 
+   parsenewargs "$@"
+   #parsefmargs "$@" # todo: rm me
 
    ## did we already finish? 
+   # EXPECT=( FM_UD_fmap_mag{,_brain}.nii.gz \
+   #          unwarp/FM_UD_fmap{,_mag}.nii.gz \
+   #          .fieldmap_{magnitude,phase} )
    EXPECT=( FM_UD_fmap_mag{,_brain}.nii.gz \
-            unwarp/FM_UD_fmap{,_mag}.nii.gz \
-            .fieldmap_{magnitude,phase} )
+            unwarp/FM_UD_fmap{,_mag}.nii.gz )
 
-   testExpected && echo "skipping '$savedir'; have all final files: ${HAVEEXPECT[@]}" && exit 0
+   testExpected && echo "skipping '$SAVEDIR'; have all final files: ${HAVEEXPECT[@]}" && exit 0
 
    if [ ${#HAVEEXPECT[@]}  -gt 0 ] ; then
-      rel "rm -r $savedir; # and try again; have ${#HAVEEXPECT[@]}/${#EXPECT[@]} expected files: ${HAVEEXPECT[@]}" c 
+      rel "rm -r $SAVEDIR; # and try again; have ${#HAVEEXPECT[@]}/${#EXPECT[@]} expected files: ${HAVEEXPECT[@]}" c 
       exit 1
    fi
 
-   [ -r "$savedir/phase" -o -r "$savedir/mag" ] &&  rel "have $savedir/{phase,mag} but did not run prepare, remove $savedir and try again?" c && exit 1
+   [ -r "$SAVEDIR/phase" -o -r "$SAVEDIR/mag" ] && 
+       rel "have $SAVEDIR/{phase,mag} but did not run prepare, remove $SAVEDIR and try again?" c && exit 1
 
 
    ## get files
-   [ ! -d $savedir ] && mkdir $savedir
-   rel "cp -r \"$magdir\" \"$savedir/mag\" "
-   rel "cp -r \"$phasedir\" \"$savedir/phase\" "
-   cd $savedir
+   [ ! -d $SAVEDIR ] && mkdir $SAVEDIR
+   SAVEDIR="$(readlink -f $SAVEDIR)"
 
-   # run
-   fm_phase="phase/$mrpatt"
-   fm_magnitude="mag/$mrpatt"
-   prepare_gre_fieldmap 
-   # bet'ed brain needs to be in unwarp directory
-   if [ -r ../FM_UD_fmap_mag_brain.nii.gz ]; then
+   # functions create unwarp and cd into it
+   case $METHOD in
+       gre)
+	   rel "cp -r \"$magdir\" \"$SAVEDIR/mag\" "
+	   rel "cp -r \"$phasedir\" \"$SAVEDIR/phase\" "
+	   cd $SAVEDIR
+
+	   # run
+	   fm_phase="phase/$MRPATT"
+	   fm_magnitude="mag/$MRPATT"
+	   prepare_gre_fieldmap 
+	   ;;
+       NCANDA)
+	   NIIDIR="$(readlink -f $NIIDIR)"
+	   cd $SAVEDIR
+	   prepare_fieldmap_ge_complex "$NIIDIR" $REVERSE
+	   ;;
+       *)
+	   exiterr "dont yet know what to do for METHOD=$METHOD"
+    esac
+    # all methods should drop into "unwarp"
+    ! [[ $(basename $(pwd)) == unwarp ]] && exiterr "$METHOD: in $(pwd) not unwarp"
+
+    # bet'ed brain needs to be in unwarp directory
+    [ ! -r FM_UD_fmap_mag_brain.nii.gz -a -r ../FM_UD_fmap_mag_brain.nii.gz ] &&
       cp ../FM_UD_fmap_mag_brain.nii.gz ./
-   else
+    [ ! -r FM_UD_fmap_mag_brain.nii.gz ] &&
       echo "WARNING: missing $(pwd)/FM_UD_fmap_mag_brain.nii.gz !"
-   fi
 
    # also need the FM_UD from fm_phase -- actually have it already!
    #[ -r fm_phase/FM_UD_fmap.nii.gz -a -d unwarp ] && cp fm_phase/FM_UD_fmap.nii.gz unwarp/
 
    # copy config to save directory
-   fmcfgfile=$(find_fmconfig $fm_cfg)
-   [ -z "$fmcfgfile" -o ! -r "$fmcfgfile" ] && warn "cannot find config file '$fm_cfg', how did the above work!?" && exit 1
-   rel "cp $fmcfgfile $savedir/unwarp/fm.cfg"
+   fmcfgfile=$(find_fmconfig $FM_CFG)
+   [ -z "$fmcfgfile" -o ! -r "$fmcfgfile" ] && exiterr "cannot find config file '$FM_CFG', how did the above work!?"
+   rel "cp $fmcfgfile $SAVEDIR/unwarp/fm.cfg"
 
-   ! testExpected && echo "DID NOT FINISH '$savedir'; have ${HAVEEXPECT[@]}, want ${EXPECT[@]}" && exit 1
+   ! testExpected && echo "DID NOT FINISH '$SAVEDIR'; have ${HAVEEXPECT[@]}, want ${EXPECT[@]}" && exit 1
 
    # all done
    rel "$(date) Finished distortion preprocessing" c
 
-   # write git version in completed file flag
+   # write git version in completed file flag 
+   command -v preprocessDistortion || return 0 # if sourcing, this doesn't makes sense
    gitver=$(cd $(dirname $(which preprocessDistortion )); git log --pretty=format:'%ci %h' -n 1)
-   echo -e "$gitver\t$(date +%FT%H:%M)\t$(whoami)@$(hostname)\t$starttime\t$(date +%s)" > $savedir/.preprocessDistortion_complete
+   echo -e "$gitver\t$(date +%FT%H:%M)\t$(whoami)@$(hostname)\t$starttime\t$(date +%s)" > $SAVEDIR/.preprocessDistortion_complete
 }
 
 # if we did not source this file
