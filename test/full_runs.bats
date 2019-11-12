@@ -7,7 +7,7 @@ setup() {
 }
 teardown() {
  cd ..
- rm -r $TMPDIR
+ rm -r $MYTMPDIR
  return 0
 }
 
@@ -16,7 +16,7 @@ teardown() {
   3dWarp -prefix func.nii.gz -overwrite -deoblique $EXDIR/short_func.nii.gz
   3dTcat -prefix "func.nii.gz" -overwrite func.nii.{gz,gz,gz,gz,gz}
   $BATS_TEST_DIRNAME/../preprocessFunctional -4d func.nii.gz -bandpass_filter 0.009 .08 -nuisance_regression gs -rmautocorr  -no_mc -no_st -no_warp -tr 1 -mprage_bet $EXDIR/mprage09c18/mprage_bet.nii.gz
-  ls >&2
-  ls >&3
+  #ls >&2
+  #ls >&3
   [ -r Abrnsk_func_5.nii.gz ]
 }

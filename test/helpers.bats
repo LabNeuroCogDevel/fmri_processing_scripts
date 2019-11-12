@@ -6,8 +6,7 @@
 
 # source the functions we want to test
 setup() {
- cd $BATS_TEST_DIRNAME
- source ../preproc_functions/helper_functions
+ source $BATS_TEST_DIRNAME/../preproc_functions/helper_functions
 }
 
 #teardown() {
@@ -15,6 +14,7 @@ setup() {
 
 @test "imtestln" {
   # setup
+  testdir=$(pwd)
   d=$(mktemp -d $BATS_TMPDIR/imtestlnXXXX)
   cd $d
   mkdir -p a b/c
@@ -68,7 +68,7 @@ setup() {
 
 
   # cleanup
-  cd
+  cd $testdir
   rm -r $d
 
 }

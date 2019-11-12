@@ -97,7 +97,7 @@ exec_pbs_array <- function(max_concurrent_jobs, njobstorun, max_cores_per_node=4
     qsub_all <- c(job_array_preamble,
       paste0("#PBS -t 1-", njobstorun, "%", array_concurrent_jobs), #number of total datasets and number of concurrent jobs
       ##paste0("#PBS -l nodes=", nnodes, ":ppn=", ppn), #this is a misunderstanding of the use of job arrays. we need to request resources *per job* as below
-      paste0("#PBS -l nodes=1:ppn=1), #each individual run is a single-threaded job
+      paste0("#PBS -l nodes=1:ppn=1"), #each individual run is a single-threaded job
       paste0("#PBS -l walltime=", walltime), #max time for each job to run
       paste("cd", qsubdir), #cd into the directory with preproc_one scripts
       paste0("bash ", jobprefix, "${PBS_ARRAYID}")

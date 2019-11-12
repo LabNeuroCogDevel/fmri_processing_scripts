@@ -10,7 +10,14 @@ from builtins import str
 from builtins import range
 from past.utils import old_div
 import numpy as np
+import os
 
+VERBOSE = True
+
+def runcmd(cmd):
+    if VERBOSE:
+        print(cmd)
+    os.system(cmd)
 
 def runICA(fslDir, inFile, outDir, melDirIn, mask, dim, TR):
     """ This function runs MELODIC and merges the mixture modeled thresholded ICs into a single 4D nifti file
@@ -31,7 +38,6 @@ def runICA(fslDir, inFile, outDir, melDirIn, mask, dim, TR):
     melodic_IC_thr.nii.gz   merged file containing the mixture modeling thresholded Z-statistical maps located in melodic.ica/stats/ """
 
     # Import needed modules
-    import os
     import subprocess
 
     # Define the 'new' MELODIC directory and predefine some associated files
@@ -91,7 +97,13 @@ def runICA(fslDir, inFile, outDir, melDirIn, mask, dim, TR):
     cmd = ' '.join([os.path.join(fslDir, 'fslinfo'),
                     melIC,
                     '| grep dim4 | head -n1 | awk \'{print $2}\''])
-    nrICs = int(float(subprocess.getoutput(cmd)))
+    dim4fslout = subprocess.getoutput(cmd)
+    print("ndims of " + melIC + " = " + dim4fslout)
+    try:
+        nrICs = int(float(dim4fslout))
+    except:
+	print("WARNING: failed to make '%s' a float, setting nrICs to 0!" % dim4fslout)
+        nrICs = 0
 
     # Merge mixture modeled thresholded spatial maps. Note! In case that mixture modeling did not converge, the file will contain two spatial maps. The latter being the results from a simple null hypothesis test. In that case, this map will have to be used (first one will be empty).
     for i in range(1, nrICs + 1):
@@ -100,7 +112,13 @@ def runICA(fslDir, inFile, outDir, melDirIn, mask, dim, TR):
         cmd = ' '.join([os.path.join(fslDir, 'fslinfo'),
                         zTemp,
                         '| grep dim4 | head -n1 | awk \'{print $2}\''])
-        lenIC = int(float(subprocess.getoutput(cmd)))
+	subprocess.getoutput(cmd)
+        print("ndims of " + zTemp + " = " + dim4fslout)
+        try:
+	    lenIC = int(float(dim4fslout))
+        except:
+	    print("WARNING: failed to make '%s' a float, setting lenIC to 0!" % dim4fslout)
+	    lenIC = 0
 
         # Define zeropad for this IC-number and new zstat file
         cmd = ' '.join([os.path.join(fslDir, 'zeropad'),
@@ -110,19 +128,23 @@ def runICA(fslDir, inFile, outDir, melDirIn, mask, dim, TR):
         zstat = os.path.join(outDir, 'thr_zstat' + ICnum)
 
         # Extract last spatial map within the thresh_zstat file
-        os.system(' '.join([os.path.join(fslDir, 'fslroi'),
+        runcmd(' '.join([os.path.join(fslDir, 'fslroi'),
                             zTemp,      # input
                             zstat,      # output
                             str(lenIC - 1),   # first frame
                             '1']))      # number of frames
 
+        print('made ' + zstat + ' with fslroi')
+	if not os.path.isfile(zstat):
+            raise Exception('failed to make ' + zstat)
     # Merge and subsequently remove all mixture modeled Z-maps within the output directory
+    zthres_files = os.path.join(outDir, 'thr_zstat????.nii.gz')
     os.system(' '.join([os.path.join(fslDir, 'fslmerge'),
                         '-t',                       # concatenate in time
                         melICthr,                   # output
-                        os.path.join(outDir, 'thr_zstat????.nii.gz')]))  # inputs
+                        zthres_files]))  # inputs
 
-    os.system('rm ' + os.path.join(outDir, 'thr_zstat????.nii.gz'))
+    os.system('rm ' + zthres_files)
 
     # Apply the mask to the merged file (in case a melodic-directory was predefined and run with a different mask)
     os.system(' '.join([os.path.join(fslDir, 'fslmaths'),

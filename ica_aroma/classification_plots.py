@@ -158,53 +158,58 @@ def classification_plot(myinput, outDir):
     ax1.set_yticks(np.arange(0, 1.2, 0.2))
     ax1.tick_params(axis='both', labelsize=12)
 
-    # plot distributions
-    # RP
-    sns.distplot(df.loc[df['Motion'] == "True", "RP"],
-                 ax=ax1t,
-                 color=colortrue,
-                 hist_kws={'alpha': 0.2})
-    sns.distplot(df.loc[df['Motion'] == "False", "RP"],
-                 ax=ax1t,
-                 color=colorfalse,
-                 hist_kws={'alpha': 0.2})
-    ax1t.set_xlim([0, 1])
+    # TODO: Fix
+    # failing 20190913
+    try:
+	    # plot distributions
+	    # RP
+	    sns.distplot(df.loc[df['Motion'] == "True", "RP"],
+			 ax=ax1t,
+			 color=colortrue,
+			 hist_kws={'alpha': 0.2})
+	    sns.distplot(df.loc[df['Motion'] == "False", "RP"],
+			 ax=ax1t,
+			 color=colorfalse,
+			 hist_kws={'alpha': 0.2})
+	    ax1t.set_xlim([0, 1])
 
-    # Edge
-    sns.distplot(df.loc[df['Motion'] == "True", "Edge"],
-                 ax=ax1r,
-                 vertical=True,
-                 color=colortrue,
-                 hist_kws={'alpha': 0.2})
-    sns.distplot(df.loc[df['Motion'] == "False", "Edge"],
-                 ax=ax1r,
-                 vertical=True,
-                 color=colorfalse,
-                 hist_kws={'alpha': 0.2})
-    ax1r.set_ylim([0, 1])
+	    # Edge
+	    sns.distplot(df.loc[df['Motion'] == "True", "Edge"],
+			 ax=ax1r,
+			 vertical=True,
+			 color=colortrue,
+			 hist_kws={'alpha': 0.2})
+	    sns.distplot(df.loc[df['Motion'] == "False", "Edge"],
+			 ax=ax1r,
+			 vertical=True,
+			 color=colorfalse,
+			 hist_kws={'alpha': 0.2})
+	    ax1r.set_ylim([0, 1])
 
-    # cosmetics
-    for myax in [ax1t, ax1r]:
-        myax.set_xticks([])
-        myax.set_yticks([])
-        myax.set_xlabel('')
-        myax.set_ylabel('')
-        myax.spines['right'].set_visible(False)
-        myax.spines['top'].set_visible(False)
-        myax.spines['bottom'].set_visible(False)
-        myax.spines['left'].set_visible(False)
+	    # cosmetics
+	    for myax in [ax1t, ax1r]:
+		myax.set_xticks([])
+		myax.set_yticks([])
+		myax.set_xlabel('')
+		myax.set_ylabel('')
+		myax.spines['right'].set_visible(False)
+		myax.spines['top'].set_visible(False)
+		myax.spines['bottom'].set_visible(False)
+		myax.spines['left'].set_visible(False)
 
-    # bring tickmarks back
-    for myax in fig.get_axes():
-        myax.tick_params(which="major", direction='in', length=3)
+	    # bring tickmarks back
+	    for myax in fig.get_axes():
+		myax.tick_params(which="major", direction='in', length=3)
 
-    # add figure title
-    plt.suptitle('Component Assessment', fontsize=20)
+	    # add figure title
+	    plt.suptitle('Component Assessment', fontsize=20)
 
-    # outtakes
-    plt.savefig(os.path.join(outDir, 'ICA_AROMA_component_assessment.pdf'),
-                bbox_inches='tight')
+	    # outtakes
+	    plt.savefig(os.path.join(outDir, 'ICA_AROMA_component_assessment.pdf'),
+			bbox_inches='tight')
 
+    except:
+	    print('failed to plot')
     return
 
 
