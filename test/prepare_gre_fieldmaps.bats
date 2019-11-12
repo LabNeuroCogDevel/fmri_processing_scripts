@@ -37,8 +37,8 @@ teardown() {
 }
 
 @test "prepare_gre_fieldmap" {
- SAVETEST=1
- pwd >&2
+ #SAVETEST=1
+ #pwd >&2
  cat >> sourceme <<HEREDOC
  fm_cfg="pet"
  fm_phase="$phased/MR*"

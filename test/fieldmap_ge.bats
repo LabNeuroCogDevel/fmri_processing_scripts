@@ -95,8 +95,6 @@ teardown() {
 }
 
 @test "prepare_ge_fieldmap" {
- skip
- SAVETEST="1"
  # runs fsl's prelude -- slow
  run prepare_fieldmap_ge_complex $INPUTDIR 0
  [ $status -eq 0 ]
@@ -104,8 +102,6 @@ teardown() {
  [ -r unwarp/FM_UD_fmap.nii.gz ]
 }
 @test "prepare_gre_fieldmap" {
- skip
- SAVETEST="1"
  # runs fsl's prelude -- slow
  fm_cfg="pet"
  cp -r $BATS_TEST_DIRNAME/exampledata/func+fm+ref/gre_field_mapping_96x96.[34]/ ./
@@ -127,7 +123,7 @@ teardown() {
  SAVETEST="1"
  # do fieldmaps
  echo 'unwarpdir="y"' > ge.fm
- fm_cfg="ncanda"
+ fm_cfg="ncanda-ge"
  run $BATS_TEST_DIRNAME/../preprocessDistortion -niidir $INPUTDIR -fm_cfg $fm_cfg -savedir fm -reverse
  [ -r fm/unwarp/FM_UD_fmap_mag.nii.gz ]
  [ -r fm/unwarp/FM_UD_fmap.nii.gz ]

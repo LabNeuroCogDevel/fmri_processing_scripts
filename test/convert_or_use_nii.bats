@@ -57,7 +57,7 @@ teardown() {
 }
 
 @test "convert_or_use and reuse" {
-  SAVETEST=1
+  #SAVETEST=1
   ### first try
   # converts
   convert_or_use_nii fm_phase $phased

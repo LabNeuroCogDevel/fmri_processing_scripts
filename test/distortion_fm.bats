@@ -111,7 +111,7 @@ teardown() {
 
 
 @test "preprocessDistortion gre + register_func2struct + onestep_warp (slow!)" {
- SAVETEST=1
+ #SAVETEST=1
 
  ## files
  # get functional data
