@@ -42,10 +42,12 @@ usage() {
     echo "   -h   this help message"
     echo " OUTPUT:"
     echo "   tsnr directory with *_tsnr.{nii.gz,txt} for each preprocessing step"
-    echo " EXAMPLE:"
+    echo " EXAMPLE: start with warped func, specify warpfile and template"
     echo "   cd /Volumes/Hera/preproc/cog_task/rest_spikemin/10124_20070829/snip"
     echo "   o=\$(dirname \$(readlink -f _func.nii.gz ))"
-    echo "   ppf_tsnr -f -s wdktm_func.nii.gz  -t  \$o/template_brain.nii -w \$o/func_to_standard_warp_allv.nii.gz -v -v"
+    echo "   ppf_tsnr -s wdktm_func.nii.gz  -t  \$o/template_brain.nii -w \$o/func_to_standard_warp_allv.nii.gz -v -v"
+    echo " EXAMPLE: run for only the input file with native space mask (mask mc_target.nii.gz), ignore missing .preprocessfunctional_complete"
+    echo "   ppf_tsnr -O _func.nii.gz  -n -f "
     exit 0
 }
 
@@ -131,8 +133,8 @@ TSNR_onerun(){
          gm_mask=$GM_MNI
       # 20190604 - allow nowarp
       elif [ $IS_WARP -eq 0 ]; then
-         # if we didn't specify a mask then we have the MNI
-         # default to mprage_bet.nii.gz
+         # if user didn't specify a mask (-g) then GM_MNI space = "MNI" (still default)
+         # change default to mprage_bet.nii.gz
          if [ $(3dinfo -space "$GM_MNI") == "MNI" ]; then
             local nw_input="mc_target.nii.gz"
             local nw_mask="$(pwd)/tsnr/func_bet.nii.gz"
@@ -140,11 +142,13 @@ TSNR_onerun(){
               echo "missing '$nw_input' to make mask. set your own mask with -g"
               exit 1
            fi
+           [ $VERBOSE -gt 0 ] && echo "# using mask '$nw_input' ($nw_mask)"
            [ ! -r $nw_mask ] && bet $nw_input $nw_mask -F -m
            gm_mask=${nw_mask/.nii.gz/_mask.nii.gz} 
          else
             # GM_MNI is what was specified by -g, hopefully not MNI and probalby not GM
             gm_mask=$GM_MNI
+            [ $VERBOSE -gt 0 ] && echo "# using specifed mask $gm_mask without warping"
          fi
       else
          gm_mask=$pdir/tsnr/gm_mask_native.nii.gz
@@ -201,8 +205,16 @@ TSNR_onerun(){
       fi
       echo "creating txt output '$txtout'"
       3dmaskave -quiet -mask "$gm_mask" "$tsnrout" |tee "$txtout"
-      [ ! -s "$txtout" ] && echo -e "FAILED "$txtout" is empty!\n\t3dmaskave -quiet -mask '$gm_mask' '$tsnrout'" >&2  && continue
+
+      if [ ! -s "$txtout" ]; then 
+         echo -e "FAILED "$txtout" is empty!\n\t3dmaskave -quiet -mask '$gm_mask' '$tsnrout'" >&2
+         [ -n "$ONLYONE" ] && return 1
+      fi
+
    done
+
+   # no need to run count check if we ran for only one and we have it
+   [ -n "$ONLYONE" ] && return 0 
 
    # return success if we have as many txt files as expected
    txtcnt=$(ls $pdir/tsnr/*.txt|wc -l)
@@ -256,6 +268,7 @@ parse_args(){
 
 
 parse_args $@
+[ $VERBOSE -ge 3 ] && set -x
 # rundir is dir of input if input is a file, otherwise rundir is input
 # setup other options (cleanup, flag, etc)
 
