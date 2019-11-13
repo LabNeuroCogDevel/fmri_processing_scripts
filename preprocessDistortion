@@ -134,6 +134,8 @@ _preprocessDistortion() {
             unwarp/FM_UD_fmap{,_mag}.nii.gz )
 
    testExpected && echo "skipping '$SAVEDIR'; have all final files: ${HAVEEXPECT[@]}" && exit 0
+   local theseargs="$@"
+   rel "RUNNING: $0 $theseargs" c
 
    if [ ${#HAVEEXPECT[@]}  -gt 0 ] ; then
       rel "rm -r $SAVEDIR; # and try again; have ${#HAVEEXPECT[@]}/${#EXPECT[@]} expected files: ${HAVEEXPECT[@]}" c 
