@@ -600,6 +600,9 @@ check_partialproc "warp" "$partial_proc"
 # spatial smoothing
 spatial_smooth                 # preproc_functions/spatial_smooth
 
+
+check_partialproc "smooth" "$partial_proc"
+
 # ICA-AROMA (denoising of motion artifacts)
 ica_aroma                      # preproc_functions/ica_aroma
 

@@ -399,7 +399,7 @@ function parse_args {
 	elif [ $1 = -partial_proc ]; then
            # 20190729 only supporting stopping after motion and warp 
            partial_proc="${2}"
-           local partial_proc_opts="motion|despike|warp"
+           local partial_proc_opts="motion|despike|warp|smooth"
            ! [[ $partial_proc =~ $partial_proc_opts ]] && 
               echo "-partial_proc only supports ${partial_proc_opts//\|/ }" &&
               return 1
