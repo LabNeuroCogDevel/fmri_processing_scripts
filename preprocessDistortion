@@ -82,7 +82,7 @@ parsenewargs(){
     if [[ -n "$NIIDIR" ]]; then
 	# if we have a "real" nifti file it's ncanda
 	[ -n "$(find "$NIIDIR" -maxdepth 1 -iname '*real*nii*'\
-                -type f,l -print -quit)" ] &&
+                \( -type f -or -type l \) -print -quit)" ] &&
 	    METHOD="NCANDA" ||
 	    METHOD="BIDSFM" # TODO: does this work for actual bids spec?
     fi
@@ -172,9 +172,9 @@ _preprocessDistortion() {
 	   cd $SAVEDIR
 	   # TODO: look for json that has "intended for" instead of just using the first
 	   # take the first mag
-	   mag=$(find $NIIDIR -maxdepth 1 -type f,l -iname '*mag*.nii.gz' -print -quit)
+	   mag=$(find $NIIDIR -maxdepth 1 \( -type f -or -type l \) -iname '*mag*.nii.gz' -print -quit)
 	   # and first phase
-	   phase=$(find $NIIDIR -maxdepth 1 -type f,l -iname '*phase*.nii.gz' -print -quit)
+	   phase=$(find $NIIDIR -maxdepth 1 \( -type f -or -type l \) -iname '*phase*.nii.gz' -print -quit)
 	   [ -z "$mag" -o -z "$phase" ] && exiterr "cant find phase and mag nii.gz in $NIIDIR!"
 	   prepare_gre_fieldmap $mag $phase
 	   ;;
