@@ -880,7 +880,7 @@ check_partialproc() {
    local current_proc="$1"; shift
    local partial_proc="$1"
    [ "$current_proc" != "$partial_proc" ] && return 0
-   rel "partial_proc stopping @ $partial_proc" c 
+   rel "partial_proc stopping @ $partial_proc $(date +%F)" c 
    exit 1 
 }
 

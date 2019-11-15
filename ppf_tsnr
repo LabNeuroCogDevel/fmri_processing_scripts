@@ -12,6 +12,7 @@
 [ -z "$CLEANUP" ]   && CLEANUP=yes   # remove ~850MB of nifti files when we are done
 [ -z "$CHECKFLAG" ] && CHECKFLAG=yes # should we check for complete file flag .preprocessfunctional_complete?
 [ -z "$IS_WARP" ] && IS_WARP=1 # usually we have warped the data (20190604: pp w/ -no_warp)
+[ -z "$DROPVOLS" ] && DROPVOLS=0 # default to not truncating 
 ONLYONE=""
 PDIR=""
 VERBOSE=0
@@ -35,10 +36,11 @@ usage() {
     echo "   -w WARPCOEF  native to mni warp ($WARPCOEF)"
     echo "   -s STARTFILE example (#tr, suffix) file to use ($STARTFILE)"
     echo "   -O NIIFILE   only calculate for this file"
-    echo "   -f   do not look for flag file"
-    echo "   -c   do not clean up"
+    echo "   -x X         remove first X volumes (ideal usage is in preprocessFunctional, not here)"
+    echo "   -f   do not look for .preprocessfunctional_complete 'flag' file"
+    echo "   -c   do not clean up tsnr/ temporary files"
     echo "   -n   native/no warp preprocessing, bet mc_target.nii.gz for mask instead"
-    echo "   -v   be verbose, repeat for more text (-v -v)"
+    echo "   -v   be verbose, repeat for more text; -v -v -v => set -x"
     echo "   -h   this help message"
     echo " OUTPUT:"
     echo "   tsnr directory with *_tsnr.{nii.gz,txt} for each preprocessing step"
@@ -76,22 +78,32 @@ TSNR_onerun(){
    firstfile=$(3dinfo -iname -nt $STARTFILE |awk '($2>10){print $1;exit}')
    [ -z "$firstfile" -o ! -r "$firstfile" ] && usage "cannot find start file ($(pwd)/$STARTFILE w/more than 10 trs); use '-s STARTFILE' option" 
    [ "$CHECKFLAG" == "yes" -a ! -r "$pdir/.preprocessfunctional_complete" ] && usage "$(pwd) does not contain a preprocessfunctional_complete flag file (use '-f' to ignore)"
-   for v in TEMPLATE GM_MNI WARPCOEF; do
-      [ $IS_WARP -ne 1 ] && break
-      [ ! -r "${!v}" ] && usage "cannot find $v (${!v}), consider changing with command options"
-   done
+
+   # only need to warp if we are starting before warp file 
+   # and we are not doing native space thing
+   NEEDWARP=0
+   [ $IS_WARP -eq 1 ] && ! [[ $(basename $STARTFILE) =~ w[a-z]*_ ]] && NEEDWARP="yes"
+   [ $VERBOSE -gt 1 ] && echo "# NEEDWARP? $NEEDWARP"
+
+   # make sure we have files
+   [ $NEEDWARP -eq 1 ]  && 
+    for v in TEMPLATE GM_MNI WARPCOEF; do
+       # if start file is already warped, we dont need to warp anything else
+       [ ! -r "${!v}" ] && usage "cannot find $v (${!v}), consider changing with command options"
+    done
+
    [ ! -d tsnr ] && mkdir -p tsnr
 
    # find pipeline's first imaging file (nii.gz starts with _, has more than 10 trs) 
 
    # suffix is all but the first _, includes .nii.gz: _func.nii.gz -> func.nii.gz; brnswdktm_func_5.nii.gz -> func_5.nii.gz
    suffix=${firstfile#*_} #suffix=${firstfile:1:${#firstfile}}  # does not work if firstfile is not _
-   ntr=$(3dinfo -nt $firstfile)
+   ntr=$(3dinfo -nt "$firstfile")
    [ $VERBOSE -gt 0 ] && echo "first file $firstfile, pipeline suffix $suffix, $ntr trs"
 
    # make sure we are using the correct mask
    [ $IS_WARP -eq 1 ] && ! is_same_grid $TEMPLATE $GM_MNI &&
-      usage "$TEMPLATE does not match grid of mask ($GM_MNI), maybe different templates!?"
+      usage "$TEMPLATE does not match grid of mask ($GM_MNI)! Does voxel size match? use -g to specify mask"
    #finalfile=$(find_final $suffix $ntr)
    #[ $(3dinfo -same_grid $finalfile $GM_MNI ) -ne 1 ] &&
    #   usage "final file ($finalfile) does not match grid of mask ($GM_MNI)"
@@ -119,11 +131,13 @@ TSNR_onerun(){
       fname=$(basename $file) #the file name of 'file'
       prefix=${fname//.nii.gz/} #the file name of 'file' without the extension
       outname=${fname//_${suffix}/}_tsnr.nii.gz
+      [ $DROPVOLS -ne 0 ] && outname=${fname//_${suffix}/}_tsnr-$DROPVOLS.nii.gz
 
       # remove nii.gz from txt filename
       prefix_=${prefix%%_*}
       stepnum=$(printf "%02d" ${#prefix_})
       txtout=$pdir/tsnr/$stepnum-$prefix.txt
+      [ $DROPVOLS -ne 0 ] && txtout=${txtout/.txt}-$DROPVOLS.txt && echo "# making $txtout from $outname"
       # dont do anything if we already have txt file
       [ -s "$txtout" ] && [ $(cat "$txtout" | wc -l  ) -gt 0 ] && continue
        
@@ -138,13 +152,14 @@ TSNR_onerun(){
          if [ $(3dinfo -space "$GM_MNI") == "MNI" ]; then
             local nw_input="mc_target.nii.gz"
             local nw_mask="$(pwd)/tsnr/func_bet.nii.gz"
+            # make the "gm" mask (actually just brain here) the output of bet
+            gm_mask=${nw_mask/.nii.gz/_mask.nii.gz} 
             if [ ! -r $nw_input ]; then
               echo "missing '$nw_input' to make mask. set your own mask with -g"
               exit 1
            fi
            [ $VERBOSE -gt 0 ] && echo "# using mask '$nw_input' ($nw_mask)"
-           [ ! -r $nw_mask ] && bet $nw_input $nw_mask -F -m
-           gm_mask=${nw_mask/.nii.gz/_mask.nii.gz} 
+           [ ! -r "$gm_mask" ] && bet "$nw_input" "$nw_mask" -F -m
          else
             # GM_MNI is what was specified by -g, hopefully not MNI and probalby not GM
             gm_mask=$GM_MNI
@@ -186,19 +201,19 @@ TSNR_onerun(){
          # need to put mean back in for tsnr calc
          if [ ${file:0:1} == "b" ]; then
             #remove drift, this artificially inflate your SD, make SD look bigger than what it is
-            [ ! -r $pdir/tsnr/$prefix.det.nii.gz ] && 3dDetrend -prefix $pdir/tsnr/$prefix.det.nii.gz -polort 4 $pdir/$prefix.nii.gz
+            [ ! -r $pdir/tsnr/$prefix.det.nii.gz ] && 3dDetrend -prefix $pdir/tsnr/$prefix.det.nii.gz -polort 4 $pdir/$prefix.nii.gz"[$DROPVOLS..$]"
             #calcualte SD on detrended data
             [ ! -r $pdir/tsnr/$prefix.det.stdev.nii.gz ] && 3dTstat -stdev -prefix $pdir/tsnr/$prefix.det.stdev.nii.gz $pdir/tsnr/$prefix.det.nii.gz
 
             # need to put back mean, use norm tmean -- this may have been calculated earlier
             normprefix=n${prefix#*n}     # e.g. nswudktm_func_5 from brgnswudktm_func_5
-            [ ! -r $pdir/tsnr/$normprefix.tmean.nii.gz ] && 3dTstat -mean -prefix $pdir/tsnr/$normprefix.tmean.nii.gz $pdir/${normprefix}.nii.gz  
+            [ ! -r $pdir/tsnr/$normprefix.tmean.nii.gz ] && 3dTstat -mean -prefix $pdir/tsnr/$normprefix.tmean.nii.gz $pdir/${normprefix}.nii.gz"[$DROPVOLS..$]" 
 
             [ ! -r $pdir/tsnr/$outname ] && 3dcalc -a $pdir/tsnr/${normprefix}.tmean.nii.gz -b $pdir/tsnr/$prefix.det.stdev.nii.gz -expr 'a/b' -float -prefix $pdir/tsnr/$outname
          else
 
-            [ ! -r $pdir/tsnr/$prefix.tmean.nii.gz ] && 3dTstat -mean -prefix $pdir/tsnr/$prefix.tmean.nii.gz $pdir/$prefix.nii.gz
-            [ ! -r $pdir/tsnr/$prefix.det.nii.gz ] && 3dDetrend -prefix $pdir/tsnr/$prefix.det.nii.gz -polort 4 $pdir/$prefix.nii.gz
+            [ ! -r $pdir/tsnr/$prefix.tmean.nii.gz ] && 3dTstat -mean -prefix $pdir/tsnr/$prefix.tmean.nii.gz $pdir/$prefix.nii.gz"[$DROPVOLS..$]"
+            [ ! -r $pdir/tsnr/$prefix.det.nii.gz ] && 3dDetrend -prefix $pdir/tsnr/$prefix.det.nii.gz -polort 4 $pdir/$prefix.nii.gz"[$DROPVOLS..$]"
             [ ! -r $pdir/tsnr/$prefix.det.stdev.nii.gz ] && 3dTstat -stdev -prefix $pdir/tsnr/$prefix.det.stdev.nii.gz $pdir/tsnr/$prefix.det.nii.gz
             [ ! -r $pdir/tsnr/$outname ] && 3dcalc -a $pdir/tsnr/$prefix.tmean.nii.gz -b $pdir/tsnr/$prefix.det.stdev.nii.gz -expr 'a / b' -float -prefix $pdir/tsnr/$outname
          fi
@@ -227,13 +242,15 @@ parse_args(){
       case "$1" in
          # files
          -t |-temp )   TEMPLATE="$2"; shift 2;;
-         -g |-gm_mni )   GM_MNI="$2"; shift 2;;
+         -g |-gm_mni ) GM_MNI="$2"; shift 2;;
          -s |-start )  STARTFILE="$2"; shift 2;;
+         -O |-only)    STARTFILE="$2"; ONLYONE=1; shift 2;;
          -w |-warp )   WARPCOEF="$2"; shift 2;;
+         # settings
+         -x)   DROPVOLS="$2"; shift 2;;
          # flags
          -c |-no-clean)  CLEANUP="no"; shift 1;;
          -f |-no-flag) CHECKFLAG="no"; shift 1;;
-         -O |-only)   STARTFILE="$2"; ONLYONE=1; shift 2;;
          -n ) IS_WARP=0; shift;; 
          -v ) let ++VERBOSE; shift;;
          # help

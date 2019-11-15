@@ -692,7 +692,7 @@ function parse_args {
 	logFile="${funcdir}/$( basename $logFile )" ##TODO: make path handling more robust to non-local directories
 	
 	echo "#!/bin/bash" > "${logFile}"
-	echo "## Log of preprocessFunctional commands" >> "${logFile}"
+       echo "## Log of preprocessFunctional commands. started $(date)" >> "${logFile}"
 	echo -e "## Call: $thiscommandinfo" >> "${logFile}"
     fi
 
