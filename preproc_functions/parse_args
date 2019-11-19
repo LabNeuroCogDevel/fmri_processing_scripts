@@ -830,6 +830,11 @@ check_dep_list(){
        else
           command -v $cmd >/dev/null && continue
           echo "missing $cmd" && let ++missing_deps
+          case $cmd in
+            antsRegistrationSyN.sh) echo "# see https://github.com/stnava/ANTs.git";;
+            c3d_affine_tool) echo "# maybe 'apt install convert3d'; www.itksnap.org";;
+            3dcalc|afni) echo "# maybe 'apt install afni'; https://afni.nimh.nih.gov";;
+          esac
        fi
     done
     [ $missing_deps -eq 0 ] && echo "$0 has all dependencies met!" 
