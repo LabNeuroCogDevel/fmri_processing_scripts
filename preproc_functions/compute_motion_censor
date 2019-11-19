@@ -1,6 +1,6 @@
 #!/bin/bash
 
-COMPUTE_MOTION_CENSOR_GLOBALS=(motionCensor despike postDespike postMC)
+COMPUTE_MOTION_CENSOR_GLOBALS=(motionCensor despike postDespike postMC n_rm_firstvols)
 function compute_motion_censor {
     #parse -censor_motion syntax
 
@@ -52,6 +52,9 @@ function compute_motion_censor {
 
 		local intensMask=
 		local inImg="${funcFile}" #image to pass to fsl_motion_outliers
+
+                # 20191119 - if trunctating, get motion on truncated image, not original
+                # [ $n_rm_firstvols -gt 0 ] && inImg=0_${funcFile}
 
 		if [[ $metric =~ refrms|refmse|dvars ]]; then
 

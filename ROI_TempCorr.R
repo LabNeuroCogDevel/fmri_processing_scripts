@@ -775,6 +775,9 @@ if (nchar(ts_out_file) > 0L) {
   if(is.null(fname_censor1D)) {
     df <- roiavgmat
   } else {
+    ncen <- length(censorvec)
+    nts <- nrow(roiavgmat)
+    if(ncen != nts) error("censor length %d != roi ts length %d!", ncen, nts)
     df <- cbind(censor=censorvec, roiavgmat)
   }
   write.table(df, file=ts_out_file, col.names=write_header, row.names=FALSE)

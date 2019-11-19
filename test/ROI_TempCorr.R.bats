@@ -3,7 +3,7 @@
 
 setup() {
   scriptdir=$(cd $BATS_TEST_DIRNAME/..;pwd)
-  shortrestfile="$BATS_TEST_DIRNAME//inputs/functest.nii.gz"  # 6 time points from a fully preproc'ed WM run1
+  shortrestfile="$BATS_TEST_DIRNAME/inputs/functest.nii.gz"  # 6 time points from a fully preproc'ed WM run1
   mask="$BATS_TEST_DIRNAME/inputs/gm_50mask.nii.gz"
   roi="$BATS_TEST_DIRNAME/inputs/wm_spheres.nii.gz"
   TDIR=$(mktemp -d $BATS_TMPDIR/roitemp-XXXX)
@@ -18,6 +18,15 @@ teardown() {
   cd -
   rm -r "$TDIR"
   return 0
+}
+
+@test "fail if censor different than roi ts" {
+  perl -le "print 0 for (1 .. $(3dinfo -nt $shortrestfile))" > cen_good
+  cat cen_good; echo "0" > cen_long
+  sed 1d cen_good > cen_short
+  $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -censor cen_good
+  ! $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -censor cen_short
+  ! $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -censor cen_long
 }
 
 
@@ -79,5 +88,3 @@ teardown() {
 @test "semi cor fail with bad type" {
   ! $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 10 -pcorr_method semi:pairwiseGK 
 }
-
-
