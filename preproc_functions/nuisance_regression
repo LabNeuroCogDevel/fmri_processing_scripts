@@ -482,7 +482,7 @@ function compute_nuisance_regressors {
 
     done
 
-    rel "Creating ${nuisance_file} containing regressors ($reg) as columns: ${nuisancecols[*]}" c
+    rel "Creating ${nuisance_file} containing regressors ($(echo $reg|tr '\n' ' ')) as columns: ${nuisancecols[*]}" c
     #rel "1dcat -overwrite ${nuisancecols[@]} > ${nuisance_file}"
     # 20151218 WF -- "star" instead of "at" so single shell-world (one argument) sent to rel
     rel "1dcat ${nuisancecols[*]} > unfiltered_${nuisance_file}"

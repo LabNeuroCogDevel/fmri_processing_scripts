@@ -195,6 +195,7 @@ function rel() {
     local pipesave=""
     local cmdExit=0
     local qaout=0
+    local rtime=""
 
     if [ -n "${2}" ]; then
 	if [[ ${2} = c ]]; then
@@ -212,8 +213,10 @@ function rel() {
 	pipesave="|tee -a '$logFile'"
 	if [ $comment -eq 1 ]; then
 	    cmd="## ${cmd}"
+       else
+          rtime=" # $(date +%Y%m%dT%H:%M)"
 	fi
-	echo -e "${cmd}" >> "${logFile}"
+       echo -e "${cmd}${rtime}" >> "${logFile}"
     fi
 
     if [ $comment -eq 0 ]; then
