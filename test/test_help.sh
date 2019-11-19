@@ -24,6 +24,9 @@ teardown_TMPD() {
 # if 16 and 17, returns 1617
 ncol(){ awk '{print NF}' $@ |sort -u|tr -d '\n';}
 
+# test file's last row and column like "192 16"
+last_rowcol() { [[ "$(awk 'END{ print NR,NF}' $1)" == "$2" ]]; }
+
 checkrange(){
  paste <( tr ' ' '\n' < $1 ) <( tr ' ' '\n' < $2 ) | 
  perl -salne '$a+=abs($F[0]-$F[1]); END{$m=$a/$.; $s=$m>$mn && $m<$mx; print("$mn < $m < $mx: ", !$s); exit(!$s)}' -- -mn=$3 -mx=$4
