@@ -1,6 +1,6 @@
 .PHONY: test
 test: .test-results.txt
 
-.test-results.txt:  preprocessDistortion preprocessFunctional preprocessMprage $(wildcard preproc_functions/*)
+.test-results.txt:  preprocessDistortion preprocessFunctional preprocessMprage $(wildcard preproc_functions/*) $(wildcard test/*bats)
 	cd test/;\
 	bats --tap *bats | tee ../$@

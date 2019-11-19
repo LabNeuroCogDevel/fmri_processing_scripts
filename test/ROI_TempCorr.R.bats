@@ -2,48 +2,49 @@
 
 
 setup() {
-  scriptdir=$(cd $BATS_TEST_DIRNAME/..;pwd)
   shortrestfile="$BATS_TEST_DIRNAME/inputs/functest.nii.gz"  # 6 time points from a fully preproc'ed WM run1
   mask="$BATS_TEST_DIRNAME/inputs/gm_50mask.nii.gz"
   roi="$BATS_TEST_DIRNAME/inputs/wm_spheres.nii.gz"
-  TDIR=$(mktemp -d $BATS_TMPDIR/roitemp-XXXX)
-  cd $TDIR
-  pwd >&2
-
+  source $BATS_TEST_DIRNAME/test_help.sh # setup_TMPD, teardown_TMPD, ncol, checkrange
+  setup_TMPD # make and go to $TMPD, sets path
 }
-
-
-# remove cor text file a the end
 teardown() {
-  cd -
-  rm -r "$TDIR"
+  teardown_TMPD # remove TMPD unless SAVETEST is not empty
   return 0
 }
 
+
 @test "fail if censor different than roi ts" {
+  #SAVETEST=1
   perl -le "print 0 for (1 .. $(3dinfo -nt $shortrestfile))" > cen_good
-  cat cen_good; echo "0" > cen_long
+  (cat cen_good; echo "0") > cen_long
   sed 1d cen_good > cen_short
-  $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -censor cen_good
-  ! $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -censor cen_short
-  ! $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -censor cen_long
+  run ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -censor cen_long -njobs 1
+  [ $status -eq 1 ] 
+  run ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -censor cen_short -njobs 1
+  echo "$status" >&2
+  [ $status -eq 1 ] 
+
+  # make sure censor works at all
+  run ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -censor cen_good -njobs 1
+  [ $status -eq 0 ] 
 }
 
 
 @test "run with mask" {
-  $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi
+  ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 1
   results=$(awk 'END{print NR,NF}' corr_rois_pearson.txt)
   [ "$results" == "33 33" ]
 }
 
 @test "run with 1 job" {
-  $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 1
+  ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 1
   results=$(awk 'END{print NR,NF}' corr_rois_pearson.txt)
   [ "$results" == "33 33" ]
 }
 
 @test "multiple methods" {
-  $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -corr_method pearson,kendall
+  ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -corr_method pearson,kendall
   results=$(awk 'END{print NR,NF}' corr_rois_pearson.txt)
   [ "$results" == "33 33" ]
   results=$(awk 'END{print NR,NF}' corr_rois_kendall.txt)
@@ -52,31 +53,40 @@ teardown() {
 
 ## Partial correlation
 @test "partial cor" {
-  $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 1 -pcorr_method pearson
+  ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 1 -pcorr_method pearson
   results=$(awk 'END{print NR,NF}' corr_rois_pearson.txt)
   [ "$results" == "33 33" ]
 }
 @test "partial and full" {
-  $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 1 -corr_method pearson -pcorr_method pearson
+  ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 1 -corr_method pearson -pcorr_method pearson
   results=$(awk 'END{print NR,NF}' corr_rois_pearson_partial.txt)
   [ "$results" == "33 102" ]
   results=$(awk 'END{print NR,NF}' corr_rois_pearson.txt)
   [ "$results" == "33 33" ]
 }
 @test "partial -- reset 10 jobs to 1" {
-  $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 10 -pcorr_method pearson
+  #SAVETEST=1
+  # occastional error:
+  #   Error in socketConnection("localhost", port = port, server = TRUE, blocking = TRUE,  :
+  #     cannot open the connection
+  #   Calls: makePSOCKcluster -> newPSOCKnode -> socketConnection
+  #   In addition: Warning message:
+  #   In socketConnection("localhost", port = port, server = TRUE, blocking = TRUE,  :
+  #     port 11290 cannot be opened
+
+  ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 10 -pcorr_method pearson
   results=$(awk 'END{print NR,NF}' corr_rois_pearson.txt)
   [ "$results" == "33 33" ]
 }
 
 ## Semi
 @test "semi cor" {
-  $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 1 -pcorr_method semi:pearson
+  ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 1 -pcorr_method semi:pearson
   results=$(awk 'END{print NR,NF}' corr_rois_pearson_semipartial.txt)
   [ "$results" == "33 102" ]
 }
 @test "semi+partial+full cor" {
-  $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 1 -pcorr_method semi:pearson,pearson -corr_method pearson
+  ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 1 -pcorr_method semi:pearson,pearson -corr_method pearson
   results=$(awk 'END{print NR,NF}' corr_rois_pearson.txt)
   [ "$results" == "33 33" ]
   results=$(awk 'END{print NR,NF}' corr_rois_pearson_partial.txt)
@@ -86,5 +96,5 @@ teardown() {
 }
 
 @test "semi cor fail with bad type" {
-  ! $scriptdir/ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 10 -pcorr_method semi:pairwiseGK 
+  ! ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 10 -pcorr_method semi:pairwiseGK 
 }

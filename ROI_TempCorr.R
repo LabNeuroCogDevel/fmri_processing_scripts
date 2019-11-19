@@ -613,6 +613,14 @@ roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, 
   return(ts)
 }
 
+## check censor makes sense
+if (!is.null(fname_censor1D)) {
+   ncen <- length(censor1D)
+   nts <- nrow(roiavgmat)
+   if(ncen != nts) stop(sprintf("censor length %d != roi ts length %d!", ncen, nts))
+   else warning(sprintf("censor length %d == roi ts length %d!", ncen, nts))
+}
+
 
 ##drop initial volumes if requested
 ##this should be implemented before censoring so that ARIMA models and bandpass filtering are applied on the truncated data
@@ -775,9 +783,6 @@ if (nchar(ts_out_file) > 0L) {
   if(is.null(fname_censor1D)) {
     df <- roiavgmat
   } else {
-    ncen <- length(censorvec)
-    nts <- nrow(roiavgmat)
-    if(ncen != nts) error("censor length %d != roi ts length %d!", ncen, nts)
     df <- cbind(censor=censorvec, roiavgmat)
   }
   write.table(df, file=ts_out_file, col.names=write_header, row.names=FALSE)

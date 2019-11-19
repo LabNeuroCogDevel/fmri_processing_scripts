@@ -2,18 +2,12 @@
 setup() {
  export PATH="$(readlink -f $BATS_TEST_DIRNAME/..):$PATH"
  exampledata=$BATS_TEST_DIRNAME/exampledata/short_func.nii.gz
- TMPD=$(mktemp -d "$BATS_TMPDIR/XXXX")
- cd $TMPD
+ source $BATS_TEST_DIRNAME/test_help.sh # setup_TMPD, teardown_TMPD, ncol, checkrange
+ setup_TMPD # make and go to $TMPD
 }
 teardown() {
- cd ..
- rm -r $TMPD
+ teardown_TMPD # remove TMPD unless SAVETEST is not empty
  return 0
-}
-ncol(){ awk '{print NF}' $@ |sort -u|tr -d '\n';}
-checkrange(){
- paste <(tr ' ' '\n' < $1)  <(tr ' ' '\n' < $2) | 
- perl -salne '$a+=abs($F[0]-$F[1]); END{$m=$a/$.; $s=$m>$mn && $m<$mx; print("$mn < $m < $mx: ", !$s); exit(!$s)}' -- -mn=$3 -mx=$4
 }
 
 # testing because fsl6 caused issue
