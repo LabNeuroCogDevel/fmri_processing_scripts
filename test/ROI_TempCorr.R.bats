@@ -13,6 +13,31 @@ teardown() {
   return 0
 }
 
+@test "warn about bad voxel unless -no_badmsg" {
+  # put a whole at roi#21 voxel ijk 32,50,38 -- not actually needed -- func has holes elsewhere already
+  #   ROI 3: 30 voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.
+  #   ROI 4: 25 voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.
+  #   ROI 12: 4 voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.
+  #   ROI 19: 3 voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.
+  3dcalc -f $shortrestfile -expr 'f*iszero(iszero(i-32)*iszero(j-50)*iszero(k-38))' -overwrite -prefix whole@32,50,38.nii.gz
+  run ROI_TempCorr.R -ts whole@32,50,38.nii.gz -rois $roi -njobs 1
+  [ $status -eq 0 ] 
+  [[ $output =~ 'had bad time series' ]]
+  run ROI_TempCorr.R -ts whole@32,50,38.nii.gz -rois $roi -njobs 1 -no_badmsg
+  [ $status -eq 0 ] 
+  ! [[ $output =~ 'had bad time series' ]]
+}
+
+@test "warn about bad rois unless -no_badmsg" {
+  3dUndump -overwrite -prefix bad_roi.nii.gz -master $shortrestfile <(echo -e "10 10 10 1 10\n30 30 30 2 10")
+  run ROI_TempCorr.R -ts $shortrestfile -rois bad_roi.nii.gz -njobs 1
+  [ $status -eq 0 ] 
+  [[ $output =~ 'fewer than 5 voxel' ]]
+  run ROI_TempCorr.R -ts $shortrestfile -rois bad_roi.nii.gz -njobs 1 -no_badmsg
+  [ $status -eq 0 ] 
+  ! [[ $output =~ 'fewer than 5 voxel' ]]
+}
+
 
 @test "fail if censor different than roi ts" {
   #SAVETEST=1

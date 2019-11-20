@@ -43,6 +43,7 @@ printHelp <- function() {
       "  -fisherz: Apply Fisher's z transformation (arctanh) to normalize correlation coefficients. Not applied by default.",
       "  -njobs <n>: Number of parallel jobs to run when computing correlations. Default: 4.",
       "  -na_string: Character string indicating how to represent missing correlations in output file. Default NA.",
+      "  -no_badmsg: dont warn for all badvoxes",
       "  -ts_out_file <filename for time series output>: Output a file containing the average time series for each region before computing correlations.",
       "  -ts_only: stop before running correlations. useful with -ts_out_file",
       "  -prewhiten_arima <p> <d> <q>: prewhiten all time series by fitting an ARIMA model of order p (autoregressive), d (integrated), q (moving average) before computing correlation.",
@@ -88,6 +89,7 @@ if (is.null(args) || length(args) == 0L) {
 njobs <- 4
 out_file <- "corr_rois.txt"
 ts_out_file <- ""
+no_badmsg <- FALSE
 fname_censor1D <- NULL
 fname_brainmask <- NULL
 cm <- "pearson"
@@ -197,6 +199,9 @@ while (argpos <= length(args)) {
   } else if (args[argpos] == "-na_string") {
     na_string <- args[argpos + 1]
     argpos <- argpos + 2
+  } else if (args[argpos] == "-no_badmsg") {
+    no_badmsg <- TRUE
+    argpos <- argpos + 1
   } else if (args[argpos] == "-dropvols") {
     drop_vols <- as.numeric(args[argpos + 1]) #number of vols to drop
     if (is.na(drop_vols)) { stop("Could not understand argument ", args[argpos+1], "to -dropvols") }
@@ -587,12 +592,16 @@ roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, 
     ##otherwise return NA time series
     
     ##cat("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.\n", file=".roilog", append=TRUE)
-    message("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels of ", dim(roivox)[2]," had acceptable time series. Removing this ROI from correlations.")
+    if(!no_badmsg)
+       message("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels of ", dim(roivox)[2],
+               " had acceptable time series. Removing this ROI from correlations.")
     ts <- rep(NA_real_, nrow(roivox))
   } else {
     if (sum(badvox) > 0) {
       ##cat("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.\n", file=".roilog", append=TRUE)
-      message("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.")
+       if(!no_badmsg)
+         message("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox),
+                 " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.")
       roivox <- roivox[,!badvox] #remove bad voxels (columns)
     }
     
