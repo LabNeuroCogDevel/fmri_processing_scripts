@@ -520,8 +520,9 @@ if (!identical(dim(rsproc)[1:3], dim(roimask)[1:3])) {
 maskvals <- sort(unique(as.vector(roimask)))
 maskvals <- maskvals[which(maskvals != 0)] #omit zero
 
-if (length(maskvals) > 1000) {
-  warning("More than 1000 putative ROIs identified in mask file: ", fname_roimask)
+if (length(maskvals) > 1050) {
+  warning(sprintf(">1050 putative ROIs identified in mask file '%s'. Is -roi file a mask or a timeseries!? n=%d; vals: %.02f-%.02f",
+                  fname_roimask, length(maskvals), min(maskvals), max(maskvals)))
 }
 
 if (njobs > 1) {
@@ -627,7 +628,6 @@ if (!is.null(fname_censor1D)) {
    ncen <- length(censor1D)
    nts <- nrow(roiavgmat)
    if(ncen != nts) stop(sprintf("censor length %d != roi ts length %d!", ncen, nts))
-   else warning(sprintf("censor length %d == roi ts length %d!", ncen, nts))
 }
 
 
