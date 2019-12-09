@@ -54,7 +54,7 @@ function compute_motion_censor {
 		local inImg="${funcFile}" #image to pass to fsl_motion_outliers
 
                 # 20191119 - if trunctating, get motion on truncated image, not original
-                # [ $n_rm_firstvols -gt 0 ] && inImg=0_${funcFile}
+                [ $n_rm_firstvols -gt 0 ] && inImg=0_${funcFile}
 
 		if [[ $metric =~ refrms|refmse|dvars ]]; then
 
@@ -103,7 +103,8 @@ function compute_motion_censor {
     done
     IFS="${OLDIFS}"
 
-    paste $allcensor > motion_info/allcensor_wide.1D
+    rel "paste $allcensor > motion_info/allcensor_wide.1D"
+
     rel "Making union and intersection files of all motion censoring criteria." c
     #awk union call checks whether the sum across the row is equal to the number of columns (indicating all 1=good)
     rel "awk '{ for ( i=1 ; i<=NF ; i++ ) { t+=\$i } if ( t == NF ) { print 1 } else { print 0 }; t=0 }' motion_info/allcensor_wide.1D > motion_info/censor_union.1D"
@@ -111,28 +112,28 @@ function compute_motion_censor {
     #awk intersection call checks whether row sum is 0 across all metrics, indicating convergence that all metrics indicate bad
     rel "awk '{ for ( i=1 ; i<=NF ; i++ ) { t+=\$i } if ( t == 0 ) { print 0 } else { print 1 }; t=0 }' motion_info/allcensor_wide.1D > motion_info/censor_intersection.1D"
 
-    rm -f motion_info/allcensor_wide.1D
+    rel "rm -f motion_info/allcensor_wide.1D"
 
     #make a spike regression censor_union.mat file. Need to drop any duplicate spike regressors (if metrics flag same volumes) before writing to disk.
     if [ -n "$allmats" ]; then
-	paste $allmats > motion_info/allmats_wide.1D
-	local rcmd1="allc <- read.table(\"motion_info/allmats_wide.1D\"); rbad <- which(rowSums(allc) > 1); if (length(rbad) > 0L) { "
-	local rcmd2="cdrop <- unlist(sapply(rbad, function(r) { which(allc[r,] == 1)[-1L] })); allc <- allc[,-1*cdrop] }; "
-	local rcmd3="write.table(allc, file=\"motion_info/censor_union.mat\", row.names=FALSE, col.names=FALSE)"
-	
-	Rscript -e "$rcmd1 $rcmd2 $rcmd3"
+	local rscript_cmd="censor_calc.R"
+        cat > $rscript_cmd <<EOF
+allc <- read.table("motion_info/allmats_wide.1D"); rbad <- which(rowSums(allc) > 1); if (length(rbad) > 0L) {
+cdrop <- unlist(sapply(rbad, function(r) { which(allc[r,] == 1)[-1L] })); allc <- allc[,-1*cdrop] }; 
+write.table(allc, file="motion_info/censor_union.mat", row.names=FALSE, col.names=FALSE)
 
-	rm -f motion_info/allmats_wide.1D
-
-	#use censor_intersection.1D to generate corresponding .mat file.
-	local rcmd1="allc <- read.table(\"motion_info/censor_intersection.1D\")\$V1; badVols <- which(allc == 0); if (length(badVols) > 0L) { "
-	local rcmd2="intmat <- matrix(0, nrow=length(allc), ncol=length(badVols)); for (v in 1:length(badVols)) { intmat[badVols[v], v] <- 1 }; "
-	local rcmd3="write.table(intmat, file=\"motion_info/censor_intersection.mat\", row.names=FALSE, col.names=FALSE) } else { system(\"touch motion_info/censor_intersection.mat\") }"
-
-	Rscript -e "$rcmd1 $rcmd2 $rcmd3"
+# use censor_intersection.1D to generate corresponding .mat file.
+allc <- read.table("motion_info/censor_intersection.1D")\$V1; badVols <- which(allc == 0); if (length(badVols) > 0L) { 
+intmat <- matrix(0, nrow=length(allc), ncol=length(badVols)); for (v in 1:length(badVols)) { intmat[badVols[v], v] <- 1 }; 
+write.table(intmat, file="motion_info/censor_intersection.mat", row.names=FALSE, col.names=FALSE) } else { system("touch motion_info/censor_intersection.mat") }
+EOF
+	rel "paste $allmats > motion_info/allmats_wide.1D"
+	rel "Rscript $rscript_cmd"
+	rel "rm -f motion_info/allmats_wide.1D"
 
     else
-	touch motion_info/censor_union.mat #no censoring needed. create empty file
+        # no censoring needed. create empty files
+	touch motion_info/censor_union.mat
 	touch motion_info/censor_intersection.mat
     fi
 
