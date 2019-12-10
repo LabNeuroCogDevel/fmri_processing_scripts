@@ -4,7 +4,9 @@
 #  tsnr(){ 3dTstat -overwrite -prefix mean.nii.gz -mean $1; 3dDetrend -overwrite -polort 4 -prefix det.nii.gz $1; 3dTstat -overwrite -prefix std.nii.gz -stdev det.nii.gz; 3dcalc -overwrite -prefix tsnr.nii.gz -m mean.nii.gz -s std.nii.gz -exp 'm/s';}
 
 # default files -- also can be set by command switches
-[ -z $GM_MNI ]      && GM_MNI="/opt/ni_tools/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_gm_tal_nlin_asym_09c_2.3mm.nii"
+DEFRES=2.3
+gm_mask() { echo "/opt/ni_tools/standard/mni_icbm152_nlin_asym_09c/mni_icbm152_gm_tal_nlin_asym_09c_${1}mm.nii";}
+[ -z $GM_MNI ]      && GM_MNI="$(gm_mask $DEFRES)"
 [ -z "$TEMPLATE" ]  && TEMPLATE=template_brain.nii # what does mni look like
 [ -z "$WARPCOEF" ]  && WARPCOEF=func_to_standard_warp_allv.nii.gz  # how to warp native to mni
 [ -z "$STARTFILE" ] && STARTFILE="_*.nii.gz"
@@ -82,7 +84,7 @@ TSNR_onerun(){
    # only need to warp if we are starting before warp file 
    # and we are not doing native space thing
    NEEDWARP=0
-   [ $IS_WARP -eq 1 ] && ! [[ $(basename $STARTFILE) =~ w[a-z]*_ ]] && NEEDWARP="yes"
+   [ $IS_WARP -eq 1 ] && ! [[ $(basename $STARTFILE) =~ w[a-z]*_ ]] && NEEDWARP=1
    [ $VERBOSE -gt 1 ] && echo "# NEEDWARP? $NEEDWARP"
 
    # make sure we have files
@@ -102,8 +104,14 @@ TSNR_onerun(){
    [ $VERBOSE -gt 0 ] && echo "first file $firstfile, pipeline suffix $suffix, $ntr trs"
 
    # make sure we are using the correct mask
-   [ $IS_WARP -eq 1 ] && ! is_same_grid $TEMPLATE $GM_MNI &&
-      usage "$TEMPLATE does not match grid of mask ($GM_MNI)! Does voxel size match? use -g to specify mask"
+   if [ $IS_WARP -eq 1 ] && ! is_same_grid $TEMPLATE $GM_MNI; then
+      # if we are using the default mask, try one that is the same
+      local tmpl_res=$(3dinfo -adi $TEMPLATE | sed 's/.\?0*$//')
+      # if we have the default, try at current template res res
+      [ "$GM_MNI" = "$(gm_mask $DEFRES)" ] && GM_MNI=$(gm_mask $tmpl_res)
+      [ ! -r "$GM_MNI" ] ||  ! is_same_grid $TEMPLATE $GM_MNI &&
+        usage "$TEMPLATE does not match grid of mask ($GM_MNI)! Does voxel size match? use -g to specify mask"
+   fi
    #finalfile=$(find_final $suffix $ntr)
    #[ $(3dinfo -same_grid $finalfile $GM_MNI ) -ne 1 ] &&
    #   usage "final file ($finalfile) does not match grid of mask ($GM_MNI)"
