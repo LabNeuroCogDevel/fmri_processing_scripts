@@ -24,7 +24,7 @@ old_template_check(){
    #rel "MPRAGE: $mprageBet" c
    if [ -n "$mprageBet" ] && imtestln "$mprageBet" ; then
       local mprage_prefix="$(basename $mprageBet bet.nii.gz)"
-      local warppat="$(dirname $mprageBet)/${mprage_prefix}nonlinear_warp_MNI*.nii.gz"
+      local warppat="$(dirname $(readlink -f $mprageBet))/${mprage_prefix}nonlinear_warp_MNI*.nii.gz"
       local warp="$(ls $warppat|sed 1q)" 
       local sext=114
       if [ -n "$warp" -a -r "$warp" ]; then
@@ -34,11 +34,13 @@ old_template_check(){
          rel "WARNING: cannot find $warppat, cannot test if old or new template is being used" c
       fi
 
-      rel "MPRAGE: $dim $sext for $warp" c
+      rel "MPRAGE: dim '$dim'mm sext '$sext'vx for warp '$warp'" c
       local want=114
       case $dim in
          2.0*) want=114;;
-         *) echo "old_template_check undefined 'want' dim for $dim mm res; no valid check"; want=$sext;;
+         *) echo "old_template_check undefined 'want' dim for '$dim' mm res; no valid check";
+            # want shouldn't match if we are using old template and we dont have a dim
+            [ -z "$USE_OLD_TEMPLATE" ] &&  want=$sext || want=0;;
       esac
 
       if [[ ! $sext =~ ^$want && -z "$USE_OLD_TEMPLATE" ]]; then
