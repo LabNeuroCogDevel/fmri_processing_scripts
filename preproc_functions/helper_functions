@@ -785,7 +785,10 @@ randomsleep(){ sleep $(echo "scale=9; $RANDOM/32767*2"|bc)s; }
 # imtest but return w/exit status and can handle relative symlnks
 # if basename is not a file, readlink wont find it and will return "", abspath of "" is "". imtest "" fails
 # TODO: need imglob -extension ?
-imtestln() { [ -n "$1" ] && [ $( imtest $1 ) -eq 1 -o $(cd $(dirname $1); imtest $(abspath $(readlink $(basename $1)))) -eq 1 ]; }
+# linux gets a real readlink that is recursive. OSX/BSD only gets one pass
+[[ $(uname) =~ Linux ]] && 
+   imtestln() { [ -n "$1" ] && [ $( imtest $1 ) -eq 1 -o $(imtest $(readlink -f "$1")) -eq 1 ]; } ||
+   imtestln() { [ -n "$1" ] && [ $( imtest $1 ) -eq 1 -o $(cd $(dirname $1); imtest $(abspath $(readlink $(basename $1)))) -eq 1 ]; }
 # is file one really file 2, returns 0 (true) if same
 a_is_b() { diff -q $1 $2; }
 # is the input a glob (e.g "MR*", "path/to/*dcm")
