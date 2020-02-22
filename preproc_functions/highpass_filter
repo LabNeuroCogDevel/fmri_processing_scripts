@@ -8,8 +8,10 @@ function highpass_filter {
 	rel "High-pass filtering functional data to remove signals slower than $hpFilter volumes" c
 
 	#Beginning with FSL 5.0.7, bptf removes the mean component. Thus, need to add this back after filtering.
-	read fslversion < $FSLDIR/etc/fslversion || echo "Read of fslversion fails. Probably an issue of missing newline in $FSLDIR/etc/fslversion"
+   fslversion=$(cat $FSLDIR/etc/fslversion)
+   [ -z "$fslversion" ] && echo "Read of fslversion fails. Does $FSLDIR/etc/fslversion exist?"
 	fslversion=${fslversion//./} #remove all periods
+   fslversion=${fslversion/:*/} # also remove ':' and anything after (6.0.2:a4f562d -> 602)
 	if [ $fslversion -ge 507 ]; then
 	    rel "fslmaths \"${prefix}${funcFile}${smoothing_suffix}\" -Tmean tempMean"
 	    rel "fslmaths \"${prefix}${funcFile}${smoothing_suffix}\" -bptf $hpFilter -1 -add tempMean \"f${prefix}${funcFile}${smoothing_suffix}\""
