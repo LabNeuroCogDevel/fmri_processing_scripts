@@ -94,7 +94,7 @@ function onestep_warp {
     # do they all exist
     for warpnii in  mask ref ${warp_target_list[@]}; do
       if ! imtestln "${!warpnii}"; then
-          rel "$FUNCNAME: missing $warpnii file '${!warpnii}'" c
+          rel "$FUNCNAME: missing $warpnii file '$(pwd)/${!warpnii}' (imtestln failed)" c
           return 1
       fi
     done

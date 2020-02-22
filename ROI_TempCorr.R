@@ -568,7 +568,7 @@ if (!is.null(roi_diagnostics_fname)) {
 roi_sizes <- sapply(roimats,dim)[2,]
 roi_too_small <- roi_sizes < 5
 if(any(roi_too_small) )
-   message("WARNING: have ROIs that are too small (<5vox); ",
+   message("WARNING: have ROIs that are too small (<5vox); will always be removed from correlation (NA) b/c TS has < 5 good voxels",
            paste(collapse=" ", sprintf("#%d (%d voxs)",
                  sapply(roimats,attr,'maskval')[roi_too_small],
                  roi_sizes[roi_too_small])))
