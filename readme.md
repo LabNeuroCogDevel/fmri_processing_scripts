@@ -1,5 +1,13 @@
 # MRI Preprocessing
 
+## Tools
+
+  * `preprocessMprage`
+  * `preprocessFunctional`
+    * `sliceMotion4d`
+  * `ROI_TempCorr.R`
+
+
 ## Depends
 see [citations](./citations.txt) and `preprocessFunctional -check_dependencies`
 
@@ -21,3 +29,6 @@ see `make test` ([Makefile](./Makefile))
  * [fmriprep](https://fmriprep.readthedocs.io/en/stable/index.html)
  * [afni\_proc](https://afni.nimh.nih.gov/pub/dist/doc/program_help/afni_proc.py.html)
 
+## FYI OSS
+
+The code is "for your information." There are no plans (or avaiable resources) to support external usage.
