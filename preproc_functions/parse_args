@@ -8,6 +8,7 @@ function parse_args {
     funcFile=
     arma_nuisance_regression=1 #use 3dREMLfit by default when fitting nuisance regression (see Bright & Murphy 2017)
     bandpass_filter=0 #no bandpass by default
+    local bids_sidecar="" # json sidecar with slicetiming information
     betFrac=0.3 #default fractional intensity threshold
     cleanup=0
     cleanup_only=0
@@ -218,6 +219,10 @@ function parse_args {
 	    sliceMotion4D=1
 	    mc_program="sliceMotion4d"
 	    shift 1
+	elif [ $1 = -bids_sidecar ]; then
+          bids_sidecar="$2";
+          [ ! -r "$bids_sidecar" ] && echo "ERROR: no sidecar '$bids_sidecar'" && exit 1
+          shift 2
 	elif [ $1 = -bandpass_filter ]; then
 	    no_hp=1 #bandpass and high-pass are mutually exclusive
 	    bandpass_filter=1
@@ -592,6 +597,11 @@ function parse_args {
 	    lenSub=$( expr $lenFile - 4 )
 	    funcFile=${funcFile:0:$lenSub}
 	fi
+
+       # tr and slicetiming defined by sidecar if it exists
+       [ -z "$bids_sidecar" ] &&
+         load_func_bids "$funcFile.json" ||
+         load_func_bids "$bids_sidecar"
     fi
 
     #Not legal to pass in requests for MC versus ST order when using 4d slice + motion.
@@ -841,4 +851,33 @@ check_dep_list(){
     return $missing_deps
 }
 
+load_func_bids(){
+ # try to use BIDS json sidecar for sliceacquisition and tr
+ local bids_json="$1"
+ [ ! -r $bids_json ] && rel "No bids sidecar '$bids_json' (pwd: '$(pwd)')" && return
+ rel "Using BIDS json sidecar $bids_json!" c
+ local bids_tr=$(jq .RepetitionTime < $bids_json)
+ if [ -n "$bids_json" ]; then
+    [ -n "$tr" -a "$tr" != "$bids_tr" ] &&
+       rel "Overwriting '-tr $tr' to $bids_tr" c ||
+       rel "setting TR to $bids_tr usig bids sidecar" c
+    tr="$bids_tr"
+ fi
+
+ # slice timing
+ local bids_slice=$(jq -r '.SliceTiming|@csv'< $bids_json)
+ [ -z "$no_st" ] && no_st=0 # should be set by parse_args, but just in case
+ if [  "$no_st" -eq 0 -a -n "$bids_slice" ]; then
+    local bids_cst="$(pwd)/.bids_custom_slice.txt"
+    echo "$bids_slice" > $bids_cst
+    echo "$bids_cst" >&2
+    cat "$bids_cst" >&2
+    [ -n "$sliceTimesFile" -o -n "$sliceAcquisition" ] &&
+       rel "Overwriting slicetime: file '$custom_slice_times' or order '$sliceAcquisition' to $bids_cst. using 4dmotion" c ||
+       rel "Setting slice timing to $bids_cst" c
+    custom_slice_times="$bids_cst"
+    sliceMotion4D=1
+ fi
+ 
+}
 # vim: set tabstop=7:

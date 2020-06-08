@@ -23,6 +23,26 @@ teardown() {
  return 0
 }
 
+@test "bids_json" {
+ run parse_args -4d fake.nii.gz
+ [ $status -eq 0 ]
+ echo '{"RepetitionTime": 2, "SliceTiming": [.5, 1, 1.5] }' > fake.json
+ echo '{"RepetitionTime": 3, "SliceTiming": [.5, 1, 1.5] }' > other_fake.json
+ run parse_args -4d fake.nii.gz
+ [ $status -eq 0 ]
+ run parse_args -4d fake.nii.gz  -bids_sidecar other_fake.json
+ [ $status -eq 0 ]
+ run parse_args -4d fake.nii.gz -bids_sidecar DNE.json
+ [ $status -eq 1 ]
+}
+@test "bids_json_vals" {
+ echo '{"RepetitionTime": 2, "SliceTiming": [.5, 1, 1.5] }' > fake.json
+ echo '{"RepetitionTime": 3, "SliceTiming": [.5, 1, 1.5] }' > other_fake.json
+ parse_args -4d fake.nii.gz
+ [ $tr -eq 2 ]
+ parse_args -4d fake.nii.gz  -bids_sidecar other_fake.json
+ [ $tr -eq 3 ]
+}
 
 @test "cite" {
  run parse_args -cite
