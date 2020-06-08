@@ -54,25 +54,21 @@ for id in $SUBJS; do
      t1s=($(find -L $BIDSROOT/sub-$id -name '*.nii.gz' -path '*/T1w/*'))
      [ ${#t1s[@]} -gt 1 ] && echo "ERROR: $id: more than one T1 ${t1s[@]}" && continue
      [ ! -d $t1out ] && echo mkdir $t1out
-     cat <<HERE
      cd $t1out
      3dcopy $t1s mprage.nii.gz
      preprocessMprage -n mprage.nii.gz
-HERE
   fi
 
   find -L $BIDSROOT/sub-$id -name '*.nii.gz' -path '*/func/*' | while read func; do
-     thisout=$(echo "$func" | perl -pe "s/:/_/g;s:^$BIDSROOT:$OUTDIR/$T2ROOT:;s/sub-//;s:/func/:/:;s/.nii.gz//;")
-     [ ! -d "$thisout" ] && echo mkdir "$thisout"
+     thisout=$(echo "$func" | perl -pe "s:/func/sub-:/sub-:g;s/:/_/g;s:^$BIDSROOT:$OUTDIR/$T2ROOT:;s/sub-//;s/.nii.gz//;")
+     [ ! -d "$thisout" ] && mkdir -p "$thisout"
 
-     cat <<HERE
      cd $thisout
-     3dcopy $func func.nii.gz
-     cp ${func/.nii.gz/.json} func.json
-     preprocessFunctional -4d $(dirname $func) \
-       -mprage_bet $t1out/mprage_bet.nii.gz -warpcoef mprage_warpcoef.nii.gz \
+     [ ! -r func.nii.gz ] && 3dcopy $func func.nii.gz
+     [ ! -r func.json ] && cp ${func/.nii.gz/.json} func.json
+     preprocessFunctional -4d func.nii.gz \
+       -mprage_bet $t1out/mprage_bet.nii.gz -warpcoef $t1out/mprage_warpcoef.nii.gz \
        $ARGS
-HERE
 
   done
 done

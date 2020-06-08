@@ -854,7 +854,7 @@ check_dep_list(){
 load_func_bids(){
  # try to use BIDS json sidecar for sliceacquisition and tr
  local bids_json="$1"
- [ ! -r $bids_json ] && rel "No bids sidecar '$bids_json' (pwd: '$(pwd)')" && return
+ [ ! -r "$bids_json" ] && rel "No bids sidecar '$bids_json' (pwd: '$(pwd)')" c && return
  rel "Using BIDS json sidecar $bids_json!" c
  local bids_tr=$(jq .RepetitionTime < $bids_json)
  if [ -n "$bids_json" ]; then
@@ -875,7 +875,7 @@ load_func_bids(){
     [ -n "$sliceTimesFile" -o -n "$sliceAcquisition" ] &&
        rel "Overwriting slicetime: file '$custom_slice_times' or order '$sliceAcquisition' to $bids_cst. using 4dmotion" c ||
        rel "Setting slice timing to $bids_cst" c
-    custom_slice_times="$bids_cst"
+    sliceTimesFile="$bids_cst"
     sliceMotion4D=1
  fi
  
