@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+#
+# BIDS app
+#
+# generic formula:
+# $0 bids_root output [participant] [options]
+usage(){ echo "USAGE: $0 bidsroot outputdir [--participant_label participant1 [participant2 ...]] [options]"; exit 1; }
+
+[ $# -lt 2 ] && usage
+BIDSROOT="$1";
+OUTDIR="$2";
+shift 2;
+
+SUBJS=""
+# default arguements for rest
+ARGS=" -wavelet_despike  \
+       -wavelet_threshold 10 \
+       -threshold 98_2 \
+       -ica_aroma \
+       -bandpass_filter 0.009 .08  \
+       -rescaling_method 10000_globalmedian \
+       -template_brain MNI_2mm\
+       -func_struc_dof bbr  \
+       -warp_interpolation spline  \
+       -constrain_to_template y  \
+       -motion_censor fd=0.3,dvars=20  \
+       -smoothing_kernel 4\
+       -nuisance_file nuisance_regressors.txt \
+       -nuisance_compute csf,dcsf,wm,dwm \
+       -nuisance_regression 6motion,d6motion,csf,dcsf,wm,dwm"
+
+# where data will be saved
+T1DNAME="MHT1_2mm"
+T2ROOT="func"
+while [ $# -gt 0 ]; do
+ case "$1" in
+   --participant_label) SUBJS="$SUBJS $2"; shift 2;;
+   [^-]*) SUBJS="$SUBJS $1"; shift 1;;
+   --t1*) T1DNAME="$2"; shift 2;;
+   --t2*) T2ROOT="$2"; shift 2;;
+   # push unknown args onto preprocessFunctional
+   *) ARGS="$@"; break;;
+ esac
+done
+
+[ -z "$SUBJS" ] &&
+   SUBJS=$(find -L $BIDSROOT -maxdepth 3 -type d -name func | perl -lne 'print $1 if m:sub-([^/]*):')
+for id in $SUBJS; do
+
+  t1out="$OUTDIR/$T1DNAME/$id"
+  if [ ! -r $t1out/mprage_warpcoef.nii.gz ]; then
+     t1s=($(find -L $BIDSROOT/sub-$id -name '*.nii.gz' -path '*/T1w/*'))
+     [ ${#t1s[@]} -gt 1 ] && echo "ERROR: $id: more than one T1 ${t1s[@]}" && continue
+     [ ! -d $t1out ] && echo mkdir $t1out
+     cat <<HERE
+     cd $t1out
+     3dcopy $t1s mprage.nii.gz
+     preprocessMprage -n mprage.nii.gz
+HERE
+  fi
+
+  find -L $BIDSROOT/sub-$id -name '*.nii.gz' -path '*/func/*' | while read func; do
+     thisout=$(echo "$func" | perl -pe "s/:/_/g;s:^$BIDSROOT:$OUTDIR/$T2ROOT:;s/sub-//;s:/func/:/:;s/.nii.gz//;")
+     [ ! -d "$thisout" ] && echo mkdir "$thisout"
+
+     cat <<HERE
+     cd $thisout
+     3dcopy $func func.nii.gz
+     cp ${func/.nii.gz/.json} func.json
+     preprocessFunctional -4d $(dirname $func) \
+       -mprage_bet $t1out/mprage_bet.nii.gz -warpcoef mprage_warpcoef.nii.gz \
+       $ARGS
+HERE
+
+  done
+done
+
