@@ -1,17 +1,74 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 #
 # BIDS app
 #
 # generic formula:
 # $0 bids_root output [participant] [options]
-usage(){ echo "USAGE: $0 bidsroot outputdir [--participant_label participant1 [participant2 ...]] [options]"; exit 1; }
 
+# 20200608WF - init and POD docs
+
+:<<=cut
+=head1 NAME
+
+lncdprep - run preprocess{Mprage,Functional} on a BIDS directory tree
+
+=head1 SYNOPSIS
+
+lncdprep bidsroot outputdir [--participant_label participant1 [participant2 ...]] [options]  -- [preprocessFunctionalOptions]
+
+
+=head2 Options
+
+=over 4
+
+=item C<--t1> - Folder name within outputdir for preprocessMprage.
+default C<MHT1_2mm>.
+
+=item C<--t2> - Folder name within outputdir for preprocessFunctional.
+=item C<--njobs> - number of process to fork. default is 1.
+
+=back
+
+Within this dir., there will be subdirectoires for each C<*.nii.gz>.
+
+=head2 preprocessFunctionalOptions
+
+see C<preprocessFunctional -help>
+
+=cut
+
+# where data will be saved
+T1DNAME="MHT1_2mm"
+T2ROOT="func"
+MAXJOBS=1
+
+usage(){ pod2usage $0; exit 1; }
+
+[[ $# -eq 1 && $1 =~ -?-h* ]] && pod2text $0 && exit 1
 [ $# -lt 2 ] && usage
 BIDSROOT="$1";
 OUTDIR="$2";
 shift 2;
+
+## setup dryrun
+:<<=cut
+=head2 Environmental Variables
+
+C<DRYRUN> - if set, will echo instead of running
+
+=cut
+env|grep -q ^DRYRUN= && DRYRUN=echo || DRYRUN=""
+
+
+## default globals
+:<<=cut
+=head1 DESCRIPTION
+
+=head2 Subject list
+
+C<SUBJS> is either provided in as arguments or from traversing the BIDS root at depth 1. matching and removing C<sub->
+=cut
 
 SUBJS=""
 # default arguements for rest
@@ -31,45 +88,85 @@ ARGS=" -wavelet_despike  \
        -nuisance_compute csf,dcsf,wm,dwm \
        -nuisance_regression 6motion,d6motion,csf,dcsf,wm,dwm"
 
-# where data will be saved
-T1DNAME="MHT1_2mm"
-T2ROOT="func"
+## parse arguments
 while [ $# -gt 0 ]; do
  case "$1" in
    --participant_label) SUBJS="$SUBJS $2"; shift 2;;
    [^-]*) SUBJS="$SUBJS $1"; shift 1;;
    --t1*) T1DNAME="$2"; shift 2;;
    --t2*) T2ROOT="$2"; shift 2;;
+   --njobs) MAXJOBS="$2"; shift 2;;
    # push unknown args onto preprocessFunctional
-   *) ARGS="$@"; break;;
+   --|--ppfmri_args) shift; ARGS="$ARGS $@"; break;;
+   --ppfmri_newargs) shift; ARGS="$@"; break;;
+   *) echo "ERROR: unknown arg '$1'" && usage;;
  esac
 done
 
+:<<=cut
+=head2 preprocessMprage
+
+We copy the sole T1w nifti to this subjects directory (C</output/t1prefix/>)
+and run preprocessMprage with the default settings
+=cut
+mprage() {
+ local t1out="$1"; shift
+ local t1s="$1"
+ [ ! -d $t1out ] && mkdir $t1out
+ cd $t1out
+ 3dcopy $t1s mprage.nii.gz
+ preprocessMprage -n mprage.nii.gz
+}
+
+# needs ARGS defined
+:<<=cut
+=head2 preprocessFunctional
+
+We copy the each nifti to this subjects directory (C</output/t2prefix/nifti_name/>)
+and run preprocessFunctional with the a mix of settings not necissaily the default for the sole command.
+
+N.B. repeated command overwrite the previous setting. 
+e.g. C<-smoothing_kernel 4 -smoothing_kernel 5> runs at 5mm
+=cut
+func() {
+ local t1out="$1"; shift
+ local thisout="$1"; shift
+ local func="$1"; shift
+
+ [ ! -d "$thisout" ] && mkdir -p "$thisout"
+ cd $thisout
+ [ ! -r func.nii.gz ] && 3dcopy $func func.nii.gz
+ [ ! -r func.json ] && cp ${func/.nii.gz/.json} func.json
+ preprocessFunctional -4d func.nii.gz \
+   -mprage_bet $t1out/mprage_bet.nii.gz -warpcoef $t1out/mprage_warpcoef.nii.gz \
+   $ARGS
+}
+
 [ -z "$SUBJS" ] &&
    SUBJS=$(find -L $BIDSROOT -maxdepth 3 -type d -name func | perl -lne 'print $1 if m:sub-([^/]*):')
+
 for id in $SUBJS; do
 
   t1out="$OUTDIR/$T1DNAME/$id"
   if [ ! -r $t1out/mprage_warpcoef.nii.gz ]; then
      t1s=($(find -L $BIDSROOT/sub-$id -name '*.nii.gz' -path '*/T1w/*'))
      [ ${#t1s[@]} -gt 1 ] && echo "ERROR: $id: more than one T1 ${t1s[@]}" && continue
-     [ ! -d $t1out ] && echo mkdir $t1out
-     cd $t1out
-     3dcopy $t1s mprage.nii.gz
-     preprocessMprage -n mprage.nii.gz
+     $DRYRUN mprage $t1out $t1s
   fi
 
   find -L $BIDSROOT/sub-$id -name '*.nii.gz' -path '*/func/*' | while read func; do
      thisout=$(echo "$func" | perl -pe "s:/func/sub-:/sub-:g;s/:/_/g;s:^$BIDSROOT:$OUTDIR/$T2ROOT:;s/sub-//;s/.nii.gz//;")
-     [ ! -d "$thisout" ] && mkdir -p "$thisout"
-
-     cd $thisout
-     [ ! -r func.nii.gz ] && 3dcopy $func func.nii.gz
-     [ ! -r func.json ] && cp ${func/.nii.gz/.json} func.json
-     preprocessFunctional -4d func.nii.gz \
-       -mprage_bet $t1out/mprage_bet.nii.gz -warpcoef $t1out/mprage_warpcoef.nii.gz \
-       $ARGS
-
+     if [ $MAXJOBS -eq 1 -o -n "$DRYRUN" ]; then
+        $DRYRUN func "$t1out" "$thisout" "$func" 
+     else
+        func "$t1out" "$thisout" "$func" &
+        local i=1;
+        while [ $(jobs -p|wc -l) -gt $MAXJOBS ]; do
+           echo "[$i@$(date +%FT%H:%m)] $id $func; $MAXJOBS jobs. waiting";
+           let ++i
+           sleep 30
+        done
+     fi
   done
 done
 
