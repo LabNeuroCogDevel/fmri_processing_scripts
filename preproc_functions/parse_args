@@ -142,7 +142,7 @@ function parse_args {
              echo "Optional: matlab or octave is required for wavelet despiking" >&2
           fi
           check_dep_list 3dcalc fslmaths python antsRegistrationSyN.sh c3d_affine_tool \
-             python:nipy python:nibabel python:future R:orthopolynom python:seaborn \
+             python:nipy python:nibabel python:future R:oro.nifti R:orthopolynom python:seaborn \
              python:icaaroma \
              perl:App::AFNI::SiemensPhysio \
 
@@ -842,7 +842,7 @@ check_dep_list(){
           echo "missing $cmd" && let ++missing_deps
           case $cmd in
             antsRegistrationSyN.sh) echo "# see https://github.com/stnava/ANTs.git";;
-            c3d_affine_tool) echo "# maybe 'apt install convert3d'; www.itksnap.org";;
+            c3d_affine_tool) echo "# maybe 'apt install convert3d'; www.itksnap.org; http://www.nitrc.org/frs/downloadlink.php/1261";;
             3dcalc|afni) echo "# maybe 'apt install afni'; https://afni.nimh.nih.gov";;
           esac
        fi
