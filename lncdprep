@@ -27,6 +27,9 @@ default C<MHT1_2mm>.
 
 =item C<--t2> - Folder name within outputdir for preprocessFunctional.
 =item C<--njobs> - number of process to fork. default is 1.
+=item C<--docker> - specify docker label to use
+=item C<--ppfmri_args|--> append to default settings. will override with specified if redundent
+=item C<--ppfmri_newargs> replace all defaults with what is provided aver
 
 =back
 
@@ -58,8 +61,16 @@ shift 2;
 C<DRYRUN> - if set, will echo instead of running
 
 =cut
-env|grep -q ^DRYRUN= && DRYRUN=echo || DRYRUN=""
+env|grep -q ^DRYRUN=. && DRYRUN=echo || DRYRUN=""
 
+
+maybedocker() {
+  if [ -n "$DOCKERLABEL" ]; then
+     dokcer run -v /opt/ni_tools/standard:/opt/ni_tools/standard -v $(pwd):/data $@
+  else
+     $@
+  fi
+}
 
 ## default globals
 :<<=cut
@@ -74,6 +85,7 @@ SUBJS=""
 # default arguements for rest
 ARGS=" -wavelet_despike  \
        -wavelet_threshold 10 \
+       -siemens -slice_acquisition interleaved \
        -threshold 98_2 \
        -ica_aroma \
        -bandpass_filter 0.009 .08  \
@@ -96,6 +108,7 @@ while [ $# -gt 0 ]; do
    --t1*) T1DNAME="$2"; shift 2;;
    --t2*) T2ROOT="$2"; shift 2;;
    --njobs) MAXJOBS="$2"; shift 2;;
+   --docker) DOCKERLABEL="$2"; shift 2;;
    # push unknown args onto preprocessFunctional
    --|--ppfmri_args) shift; ARGS="$ARGS $@"; break;;
    --ppfmri_newargs) shift; ARGS="$@"; break;;
@@ -115,7 +128,7 @@ mprage() {
  [ ! -d $t1out ] && mkdir $t1out
  cd $t1out
  3dcopy $t1s mprage.nii.gz
- preprocessMprage -n mprage.nii.gz
+ maybedocker preprocessMprage -n mprage.nii.gz
 }
 
 # needs ARGS defined
@@ -137,7 +150,7 @@ func() {
  cd $thisout
  [ ! -r func.nii.gz ] && 3dcopy $func func.nii.gz
  [ ! -r func.json ] && cp ${func/.nii.gz/.json} func.json
- preprocessFunctional -4d func.nii.gz \
+ maybedocker preprocessFunctional -4d func.nii.gz \
    -mprage_bet $t1out/mprage_bet.nii.gz -warpcoef $t1out/mprage_warpcoef.nii.gz \
    $ARGS
 }
