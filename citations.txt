@@ -6,6 +6,11 @@ ANTS warping
 http://stnava.github.io/ANTs/
 Diffeomorphisms: SyN, Independent Evaluation: Klein, Murphy, Template Construction (2004)(2010), Similarity Metrics, Multivariate registration, Multiple modality analysis and statistical bias
 
+c3d_affine_tool (Convert3d, ITK snap)
+Paul A. Yushkevich, Joseph Piven, Heather Cody Hazlett, Rachel Gimpel Smith, Sean Ho, James C. Gee, and Guido Gerig. User-guided 3D active contour segmentation of anatomical structures: Significantly improved efficiency and reliability. Neuroimage. 2006 Jul 1; 31(3):1116-28.
+doi:10.1016/j.neuroimage.2006.01.015
+
+
 FSL
 https://fsl.fmrib.ox.ac.uk/fsl/fslwiki
 M. Jenkinson, C.F. Beckmann, T.E. Behrens, M.W. Woolrich, S.M. Smith. FSL. NeuroImage, 62:782-90, 2012  
