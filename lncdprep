@@ -27,9 +27,16 @@ default C<MHT1_2mm>.
 
 =item C<--t2> - Folder name within outputdir for preprocessFunctional.
 
+=item C<--onlyt1> - just run preprocessMprage
+
+=item C<--use_ses> - when finding subjects, look for ses- dir. TODO: autodetect
+
 =item C<--njobs> - number of process to fork. default is 1.
+
 =item C<--docker> - specify docker label to use
+
 =item C<--ppfmri_args|--> append to default settings. will override with specified if redundent
+
 =item C<--ppfmri_newargs> replace all defaults with what is provided aver
 
 =item C<--pattern> - only run on pattern for functional images (default '*.nii.gz')
@@ -49,6 +56,9 @@ T1DNAME="MHT1_2mm"
 T2ROOT="func"
 PATT="*.nii.gz"
 MAXJOBS=1
+ONLYT1=0
+DOCKERLABEL="" # empty label means don't use
+USE_SES=0 # default to just sub-*/, instead of sub-*/ses-*
 
 usage(){ pod2usage $0; exit 1; }
 
@@ -70,7 +80,10 @@ env|grep -q ^DRYRUN=. && DRYRUN=echo || DRYRUN=""
 
 maybedocker() {
   if [ -n "$DOCKERLABEL" ]; then
-     dokcer run -v /opt/ni_tools/standard:/opt/ni_tools/standard -v $(pwd):/data $@
+     set -x
+     pwd
+     docker run -v /opt/ni_tools/standard:/opt/ni_tools/standard_templates -v $(pwd):/data $DOCKERLABEL $@
+     set +x
   else
      $@
   fi
@@ -110,6 +123,8 @@ while [ $# -gt 0 ]; do
    --participant_label) SUBJS="$SUBJS $2"; shift 2;;
    [^-]*) SUBJS="$SUBJS $1"; shift 1;;
    --t1*) T1DNAME="$2"; shift 2;;
+   --onlyt1) ONLYT1=1;;
+   --use_ses) USE_SES=1;;
    --t2*) T2ROOT="$2"; shift 2;;
    --njobs) MAXJOBS="$2"; shift 2;;
    --docker) DOCKERLABEL="$2"; shift 2;;
@@ -130,9 +145,9 @@ and run preprocessMprage with the default settings
 mprage() {
  local t1out="$1"; shift
  local t1s="$1"
- [ ! -d $t1out ] && mkdir $t1out
+ [ ! -d $t1out ] && mkdir -p $t1out
  cd $t1out
- 3dcopy $t1s mprage.nii.gz
+ 3dcopy $t1s mprage.nii.gz -overwrite
  maybedocker preprocessMprage -n mprage.nii.gz
 }
 
@@ -160,17 +175,23 @@ func() {
    $ARGS
 }
 
-[ -z "$SUBJS" ] &&
-   SUBJS=$(find -L $BIDSROOT -maxdepth 3 -type d -name func | perl -lne 'print $1 if m:sub-([^/]*):')
+if [ -z "$SUBJS" ]; then
+   [ $USE_SES -eq 0 ] &&
+     SUBJS=$(find -L $BIDSROOT -maxdepth 3 -type d -name func | perl -lne 'print $1 if m:sub-([^/]*):') ||
+     SUBJS=$(find -L $BIDSROOT -maxdepth 4 -type d -name func | perl -lne 'print $1 if m:sub-([^/]*/ses-[^/]*):')
+fi
 
 for id in $SUBJS; do
 
   t1out="$OUTDIR/$T1DNAME/$id"
   if [ ! -r $t1out/mprage_warpcoef.nii.gz ]; then
-     t1s=($(find -L $BIDSROOT/sub-$id -name '*.nii.gz' -path '*/T1w/*'))
+     t1s=($(find -L $BIDSROOT/sub-$id -name '*T1w*.nii.gz' -path '*/anat/*'))
+     [ ${#t1s[@]} -eq 0 ] && echo "ERROR: $id: no T1 in $BIDSROOT/sub-$id!?" && continue
      [ ${#t1s[@]} -gt 1 ] && echo "ERROR: $id: more than one T1 ${t1s[@]}" && continue
-     $DRYRUN mprage $t1out $t1s
+     $DRYRUN mprage $t1out ${t1s[0]}
   fi
+
+  [ $ONLYT1 -ne 0 ] && continue
 
   find -L $BIDSROOT/sub-$id -name "$PATT" -path '*/func/*' | while read func; do
      thisout=$(echo "$func" | perl -pe "s:/func/sub-:/sub-:g;s/:/_/g;s:^$BIDSROOT:$OUTDIR/$T2ROOT:;s/sub-//;s/.nii.gz//;")
