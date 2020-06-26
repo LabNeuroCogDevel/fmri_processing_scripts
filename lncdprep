@@ -26,10 +26,13 @@ lncdprep bidsroot outputdir [--participant_label participant1 [participant2 ...]
 default C<MHT1_2mm>.
 
 =item C<--t2> - Folder name within outputdir for preprocessFunctional.
+
 =item C<--njobs> - number of process to fork. default is 1.
 =item C<--docker> - specify docker label to use
 =item C<--ppfmri_args|--> append to default settings. will override with specified if redundent
 =item C<--ppfmri_newargs> replace all defaults with what is provided aver
+
+=item C<--pattern> - only run on pattern for functional images (default '*.nii.gz')
 
 =back
 
@@ -44,6 +47,7 @@ see C<preprocessFunctional -help>
 # where data will be saved
 T1DNAME="MHT1_2mm"
 T2ROOT="func"
+PATT="*.nii.gz"
 MAXJOBS=1
 
 usage(){ pod2usage $0; exit 1; }
@@ -109,6 +113,7 @@ while [ $# -gt 0 ]; do
    --t2*) T2ROOT="$2"; shift 2;;
    --njobs) MAXJOBS="$2"; shift 2;;
    --docker) DOCKERLABEL="$2"; shift 2;;
+   --pattern) PATT="$2"; shift 2;;
    # push unknown args onto preprocessFunctional
    --|--ppfmri_args) shift; ARGS="$ARGS $@"; break;;
    --ppfmri_newargs) shift; ARGS="$@"; break;;
@@ -167,7 +172,7 @@ for id in $SUBJS; do
      $DRYRUN mprage $t1out $t1s
   fi
 
-  find -L $BIDSROOT/sub-$id -name '*.nii.gz' -path '*/func/*' | while read func; do
+  find -L $BIDSROOT/sub-$id -name "$PATT" -path '*/func/*' | while read func; do
      thisout=$(echo "$func" | perl -pe "s:/func/sub-:/sub-:g;s/:/_/g;s:^$BIDSROOT:$OUTDIR/$T2ROOT:;s/sub-//;s/.nii.gz//;")
      if [ $MAXJOBS -eq 1 -o -n "$DRYRUN" ]; then
         $DRYRUN func "$t1out" "$thisout" "$func" 
