@@ -76,6 +76,8 @@ C<DRYRUN> - if set, will echo instead of running
 
 =cut
 env|grep -q ^DRYRUN=. && DRYRUN=echo || DRYRUN=""
+env|grep -q ^DEGUB=. || DEBUG=""
+debug() { [ -n "$DEBUG" ] && echo $@ || :; }
 
 
 maybedocker() {
@@ -123,8 +125,8 @@ while [ $# -gt 0 ]; do
    --participant_label) SUBJS="$SUBJS $2"; shift 2;;
    [^-]*) SUBJS="$SUBJS $1"; shift 1;;
    --t1*) T1DNAME="$2"; shift 2;;
-   --onlyt1) ONLYT1=1;;
-   --use_ses) USE_SES=1;;
+   --onlyt1) ONLYT1=1;shift;;
+   --use_ses) USE_SES=1; shift;;
    --t2*) T2ROOT="$2"; shift 2;;
    --njobs) MAXJOBS="$2"; shift 2;;
    --docker) DOCKERLABEL="$2"; shift 2;;
@@ -134,6 +136,7 @@ while [ $# -gt 0 ]; do
    --ppfmri_newargs) shift; ARGS="$@"; break;;
    *) echo "ERROR: unknown arg '$1'" && usage;;
  esac
+ debug "now parsing $@"
 done
 
 :<<=cut
@@ -176,12 +179,15 @@ func() {
 }
 
 if [ -z "$SUBJS" ]; then
+   debug "finding subjects"
    [ $USE_SES -eq 0 ] &&
      SUBJS=$(find -L $BIDSROOT -maxdepth 3 -type d -name func | perl -lne 'print $1 if m:sub-([^/]*):') ||
      SUBJS=$(find -L $BIDSROOT -maxdepth 4 -type d -name func | perl -lne 'print $1 if m:sub-([^/]*/ses-[^/]*):')
+   debug "have $SUBJS"
 fi
 
 for id in $SUBJS; do
+   debug $id
 
   t1out="$OUTDIR/$T1DNAME/$id"
   if [ ! -r $t1out/mprage_warpcoef.nii.gz ]; then
