@@ -27,7 +27,7 @@ fieldmap_make_rads_per_sec() {
     local fm_phase="$1"; shift
     local fm_phasedir="$1"; shift
     local fm_magnitude="$1"; shift
-    [ -z "$fm_magnitude" ] && warn "$FUNC_NAME: needs 3 inputs!" && return 0
+    [ -z "$fm_magnitude" ] && warn "$FUNCNAME: needs 3 inputs!" && return 0
     [ -z "$TEdiff" ] && rel "did not correctly source fieldmap config, no TEdiff in $fm_cfg!" c && exit 1
 
     local lockfile="${fm_phasedir}/.rads_per_sec_inprogress"
@@ -108,11 +108,18 @@ pointstonii_or_rm(){
    rel "File $pointto specified in $f does not exist. Removing $f" c
    rel "rm -f \"$f\""
 }
-cp_master_ifneeded() {    
+cp_master_ifneeded() {
+    # might have flag files like .fieldmap_phase and .fieldmap_magnitude
+    # we can find what nifti to use from these
+    # cp_master_ifneeded "$fm_phasedir" "$fm_phasebase" .fieldmap_phase
+    #                     fm/phase       MR*            .fieldmap_phase
+    #                     $dir           $base          $flagfile
+
+    local given_inputs="$@" # for debug printing
     local dir="$1"; shift
     local base="$1";    shift
     local flagfile="$1"  # looks like .fieldmap_phase or .fieldmap_magnitude
-    local masterflag=${dir}/$(basename $flagfile)
+    local masterflag=${dir}/$(basename "$flagfile")
     [ -z "$ext" ] && local ext=".nii.gz" && warn "setting ext to $ext"
 
     # funcdir can be empty, but if it's not, our flagfile is relative to it
@@ -136,7 +143,7 @@ cp_master_ifneeded() {
     local pointto_full="$pointto${ext}"
 
     # try to fix master if broken (pointo not empty, but doesn't point to anything good)
-    echo "pointto_full: $pointto_full"
+    echo "pointto_full: '$pointto_full'"
     if [ ! -f "$pointto_full" -a -n "$pointto" ];  then
       rel_to_master="${dir}/$( basename ${pointto} )${ext}"
       rel "Cannot find file: ${pointto_full}. Attempting to correct pathname." c
@@ -152,8 +159,8 @@ cp_master_ifneeded() {
     if [ -f $masterflag -a -f "$pointto_full"  ]; then 
       rel "cp \"$masterflag\" \"$flagfile\""
     else
-        rel "no '$masterfile' or '$pointto_full'" c
-        return 1
+        rel "WARNING! No flagfile pointing to nii '$masterflag' ($FUNCNAME: $dir) " c
+        return 0
     #   reset_dir and touch lockfile
     fi
     return 0
@@ -164,7 +171,7 @@ prepare_gre_fieldmap_phase() {
        fm_phasedir="$1"; shift
        fm_phasebase="$1"; shift
        funcdir="$1"; shift
-       [ -z "$fm_phasebase" ] && warn "$FUNC_NAME: needs at least 2 inputs" && return 1
+       [ -z "$fm_phasebase" ] && warn "$FUNCNAME: needs at least 2 inputs" && return 1
 
        # if empty funcdir is this directory
        [ -z "$funcdir" ] && funcdir=$(pwd)
@@ -200,7 +207,7 @@ prepare_gre_fieldmap_mag(){
        fm_magnitudedir="$1"; shift
        fm_magnitudebase="$1"; shift
        funcdir="$1"; shift
-       [ -z "$fm_magnitudebase" ] && warn "$FUNC_NAME: needs at least 2 inputs" && return 1
+       [ -z "$fm_magnitudebase" ] && warn "$FUNCNAME: needs at least 2 inputs" && return 1
 	rel "Converting fieldmap magnitude images to NIfTI." c
 	rel "Testing for unique TEs in $fm_magnitudedir." c
 
@@ -379,6 +386,9 @@ fieldmap_arrange_dicoms(){
 # fm_cfg fm_pahse fm_magnitude funcdir
 # TODO: re-add backup/extract from backup
 prepare_gre_fieldmap() {
+    # either have variables set: fm_magnitude and fm_phase
+    # or read from args 
+
     # give mag and phase
     # or will extract from $fm_magnitude and $fm_phase dicom glob pattern
 
