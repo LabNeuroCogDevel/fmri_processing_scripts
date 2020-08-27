@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -eo pipefail
 
 ppdistortion_usage() {
    cat  >&2 <<HEREDOC
@@ -53,6 +54,7 @@ parsenewargs(){
 	esac
 	if [ -z "${!setting}" ]; then
 	    # everything is an array. if only one item e.g. $MAGDIR will get it
+	    # NB. -ag will not work in bash 4. need bash 5
 	    eval "declare -ag $setting=\"$val\"";
 	else
 	    # not sure if there is another way to extend an array with varaible name
@@ -90,8 +92,8 @@ parsenewargs(){
 
     # for debuging, print settings
     for var in  REVERSE NIIDIR PHASEDIR MAGDIR MAG PHASE\
-		REAL COMPLEX FM_CFG MRPATT SAVEDIR; do
-	[ -z ${!var} ] && continue
+		REAL COMPLEX FM_CFG MRPATT SAVEDIR METHOD; do
+	[ -z "${!var}" ] && continue
 	eval 'echo '"$var"': ${'"$var"'[@]}'
     done
 }
@@ -147,12 +149,16 @@ _preprocessDistortion() {
 
 
    ## get files
+   [ -z "$SAVEDIR" ] && echo "ERROR missing SAVEDIR!" && return 1
    [ ! -d $SAVEDIR ] && mkdir $SAVEDIR
-   SAVEDIR="$(readlink -f $SAVEDIR)"
+   SAVEDIR="$(readlink -f "$SAVEDIR")"
 
    # functions create unwarp and cd into it
    case $METHOD in
        gre)
+	   magdir="$MAGDIR"
+	   phasedir="$PHASEDIR"
+	   [ -z "$magdir" -o -z "$phasedir" ] && echo "ERROR: no magdir or phasedir!? $magdir $phasedir" && return 1
 	   rel "cp -r \"$magdir\" \"$SAVEDIR/mag\" "
 	   rel "cp -r \"$phasedir\" \"$SAVEDIR/phase\" "
 	   cd $SAVEDIR
