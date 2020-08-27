@@ -414,7 +414,9 @@ set -o errtrace # inherits trap on ERR in function and subshell
 
 datefmt='+%F+%I:%M'
 #grab command, arguments, script version (date), and start time
-thiscommandinfo="$0 $@ \n# preprocessFunctional v$(perl -ne 'print $1 if /^#Last updated: (.*)/' $0) \n# Run started $(date $datefmt) "
+_datever=$(perl -ne 'print $1 if /^#Last updated: (.*)/' $0)
+_gitver=$(cd $(dirname $0); git log --pretty=oneline|sed 1q|cut -f1 -d' ') 
+thiscommandinfo="$0 $@ \n# preprocessFunctional v$_datever commit $_gitver\n# Run started $(date $datefmt) in $(pwd)"
 dotfile="${funcdir}/.preprocessfunctional"
 
 #exit script if processing complete
@@ -457,7 +459,7 @@ check_requirements
 prefix="_" #tracks file prefix indicating which processing steps have been performed
 
 
-if [[ ! -f .reorient2std_complete && $( imtest "${prefix}${funcFile}" ) -eq 0 ]]; then
+if [[ ! -f .reorient2std_complete || $( imtest "${prefix}${funcFile}" ) -eq 0 ]]; then
     rel "fslreorient2std ${funcFile} ${prefix}${funcFile}" #add underscore to $funcFile to make it easy later to prepend letters corresponding to each processing step
     #rel "fslmaths ${funcFile} ${prefix}${funcFile}" #alternate to skip this step.
     date > .reorient2std_complete
