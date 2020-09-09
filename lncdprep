@@ -33,7 +33,6 @@ default C<MHT1_2mm>.
 
 =item C<--njobs> - number of process to fork. default is 1.
 
-=item C<--docker> - specify docker label to use
 
 =item C<--ppfmri_args|--> append to default settings. will override with specified if redundent
 
@@ -57,7 +56,6 @@ T2ROOT="func"
 PATT="*.nii.gz"
 MAXJOBS=1
 ONLYT1=0
-DOCKERLABEL="" # empty label means don't use
 USE_SES=0 # default to just sub-*/, instead of sub-*/ses-*
 
 usage(){ pod2usage $0; exit 1; }
@@ -79,17 +77,6 @@ env|grep -q ^DRYRUN=. && DRYRUN=echo || DRYRUN=""
 env|grep -q ^DEGUB=. || DEBUG=""
 debug() { [ -n "$DEBUG" ] && echo $@ || :; }
 
-
-maybedocker() {
-  if [ -n "$DOCKERLABEL" ]; then
-     set -x
-     pwd
-     docker run -v /opt/ni_tools/standard:/opt/ni_tools/standard_templates -v $(pwd):/data $DOCKERLABEL $@
-     set +x
-  else
-     $@
-  fi
-}
 
 ## default globals
 :<<=cut
@@ -129,7 +116,6 @@ while [ $# -gt 0 ]; do
    --use_ses) USE_SES=1; shift;;
    --t2*) T2ROOT="$2"; shift 2;;
    --njobs) MAXJOBS="$2"; shift 2;;
-   --docker) DOCKERLABEL="$2"; shift 2;;
    --pattern) PATT="$2"; shift 2;;
    # push unknown args onto preprocessFunctional
    --|--ppfmri_args) shift; ARGS="$ARGS $@"; break;;
@@ -151,7 +137,7 @@ mprage() {
  [ ! -d $t1out ] && mkdir -p $t1out
  cd $t1out
  3dcopy $t1s mprage.nii.gz -overwrite
- maybedocker preprocessMprage -n mprage.nii.gz
+ preprocessMprage -n mprage.nii.gz
 }
 
 # needs ARGS defined
@@ -173,7 +159,7 @@ func() {
  cd $thisout
  [ ! -r func.nii.gz ] && 3dcopy $func func.nii.gz
  [ ! -r func.json ] && cp ${func/.nii.gz/.json} func.json
- maybedocker preprocessFunctional -4d func.nii.gz \
+ preprocessFunctional -4d func.nii.gz \
    -mprage_bet $t1out/mprage_bet.nii.gz -warpcoef $t1out/mprage_warpcoef.nii.gz \
    $ARGS
 }
@@ -200,7 +186,7 @@ for id in $SUBJS; do
   [ $ONLYT1 -ne 0 ] && continue
 
   find -L $BIDSROOT/sub-$id -name "$PATT" -path '*/func/*' | while read func; do
-     thisout=$(echo "$func" | perl -pe "s:/func/sub-:/sub-:g;s/:/_/g;s:^$BIDSROOT:$OUTDIR/$T2ROOT:;s/sub-//;s/.nii.gz//;")
+  thisout=$(echo "$func" | perl -pe "s:/func/sub-:/sub-:g;s/:/_/g;s:^$BIDSROOT:$OUTDIR/$T2ROOT:;s/sub-//;s/.nii(.gz)?$//;")
      if [ $MAXJOBS -eq 1 -o -n "$DRYRUN" ]; then
         $DRYRUN func "$t1out" "$thisout" "$func" 
      else
