@@ -101,27 +101,40 @@ C<SUBJS> is either provided in as arguments or from traversing the BIDS root at 
 =cut
 
 SUBJS=""
-# default arguements for rest
-ARGS=" -wavelet_despike  \
-       -wavelet_threshold 10 \
-       -siemens -slice_acquisition interleaved \
-       -threshold 98_2 \
-       -ica_aroma \
-       -bandpass_filter 0.009 .08  \
-       -rescaling_method 10000_globalmedian \
-       -template_brain MNI_2mm\
-       -func_struc_dof bbr  \
-       -warp_interpolation spline  \
-       -constrain_to_template y  \
-       -motion_censor fd=0.3,dvars=20  \
-       -smoothing_kernel 4\
-       -nuisance_file nuisance_regressors.txt \
-       -nuisance_compute csf,dcsf,wm,dwm \
-       -nuisance_regression 6motion,d6motion,csf,dcsf,wm,dwm"
+
+## default arguements for rest
+DEF_ARGS="\
+   -wavelet_despike  \
+   -wavelet_threshold 10 \
+   -siemens -slice_acquisition interleaved \
+   -threshold 98_2 \
+   -ica_aroma \
+   -rescaling_method 10000_globalmedian \
+   -template_brain MNI_2mm\
+   -func_struc_dof bbr  \
+   -warp_interpolation spline  \
+   -constrain_to_template y  \
+   -smoothing_kernel 4\
+   -nuisance_file nuisance_regressors.txt \
+   -nuisance_compute 6motion,d6motion,csf,dcsf,wm,dwm"
+
+# rest: stricter motion, bandpass, and regression
+REST_ARGS="\
+  -motion_censor fd=0.3,dvars=20  \
+  -bandpass_filter 0.009 .08 \
+  -nuisance_regression 6motion,d6motion,csf,dcsf,wm,dwm"
+
+# task: more permissive motion. high pass filter 111s ~= .009Hz
+TASK_ARGS="\
+   -motion_censor fd=0.8,dvars=20  \
+   -hp_filter 111s"
 
 ## parse arguments
+ARGS=""
 while [ $# -gt 0 ]; do
  case "$1" in
+   --task) ARGS="$DEF_ARGS $TASK_ARGS"; shift 1;;
+   --rest) ARGS="$DEF_ARGS $REST_ARGS"; shift 1;;
    --participant_label) SUBJS="$SUBJS $2"; shift 2;;
    [^-]*) SUBJS="$SUBJS $1"; shift 1;;
    --t1*) T1DNAME="$2"; shift 2;;
@@ -132,12 +145,17 @@ while [ $# -gt 0 ]; do
    --docker) DOCKERLABEL="$2"; shift 2;;
    --pattern) PATT="$2"; shift 2;;
    # push unknown args onto preprocessFunctional
-   --|--ppfmri_args) shift; ARGS="$ARGS $@"; break;;
-   --ppfmri_newargs) shift; ARGS="$@"; break;;
+   --|--ppfmri_args) shift; ARGS="$ARGS $*"; break;;
    *) echo "ERROR: unknown arg '$1'" && usage;;
  esac
- debug "now parsing $@"
+ debug "now parsing $*"
 done
+
+if [ -z "$ARGS" ] && [ "$ONLYT1" -ne 1 ]; then
+   echo "ERROR: specify --task or --rest. Or use your own args like '$0 $* -- ....';" >&2
+   echo "ERROR:    see 'preprocessFunctional -help' for options to fill ...." >&2
+   exit 1
+fi
 
 :<<=cut
 =head2 preprocessMprage
