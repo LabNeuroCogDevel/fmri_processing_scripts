@@ -199,7 +199,7 @@ for id in $SUBJS; do
   if [ ! -r $t1out/mprage_warpcoef.nii.gz ]; then
      t1s=($(find -L $BIDSROOT/sub-$id -name '*T1w*.nii.gz' -path '*/anat/*'))
      [ ${#t1s[@]} -eq 0 ] && echo "ERROR: $id: no T1 in $BIDSROOT/sub-$id!?" && continue
-     [ ${#t1s[@]} -gt 1 ] && echo "ERROR: $id: more than one T1 ${t1s[@]}" && continue
+     [ ${#t1s[@]} -gt 1 ] && echo "ERROR: $id: more than one T1 ${t1s[*]}" && continue
      $DRYRUN mprage $t1out ${t1s[0]}
   fi
 
@@ -211,7 +211,7 @@ for id in $SUBJS; do
         $DRYRUN func "$t1out" "$thisout" "$func" 
      else
         func "$t1out" "$thisout" "$func" &
-        local i=1;
+        i=1
         while [ $(jobs -p|wc -l) -gt $MAXJOBS ]; do
            echo "[$i@$(date +%FT%H:%m)] $id $func; $MAXJOBS jobs. waiting";
            let ++i
