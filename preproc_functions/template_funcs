@@ -24,8 +24,11 @@ old_template_check(){
    #rel "MPRAGE: $mprageBet" c
    if [ -n "$mprageBet" ] && imtestln "$mprageBet" ; then
       local mprage_prefix="$(basename $mprageBet bet.nii.gz)"
-      local warppat="$(dirname $(readlink -f $mprageBet))/${mprage_prefix}nonlinear_warp_MNI*.nii.gz"
-      local warp="$(ls $warppat|sed 1q)" 
+      # try both at the toplevel and in the actual file location
+      local warp="$(find \
+         "$(dirname "$mprageBet")" "$(dirname $(readlink -f "$mprageBet"))" \
+         -name "${mprage_prefix}nonlinear_warp_MNI*.nii.gz"|
+           sed 1q)"
       local sext=114
       if [ -n "$warp" -a -r "$warp" ]; then
          dim=$(3dinfo -adi $warp)

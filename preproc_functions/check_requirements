@@ -122,8 +122,8 @@ function check_requirements {
 	if [ -z $mprageBet ]; then
 	    echo -e "Betted mprage file parameter not provided.\nPass using the -mprage_bet parameter.\nExiting.\n"
 	    exit 1
-	elif [[ ! -f $mprageBet ]] && [[ ! -h ${mprageBet} ]]; then
-	    echo -e "Betted mprage file: $mprageBet does not exist.\nExiting.\n"
+	elif [[ ! -r $mprageBet ]]; then
+          echo -e "Betted mprage file: '$mprageBet' does not exist. from '$(pwd)'. Consider absolute path.\nExiting.\n"
 	    exit 1
 	else
 	    #make mprage into an absolute path and symlink within the current directory

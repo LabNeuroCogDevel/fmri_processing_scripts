@@ -709,7 +709,7 @@ function parse_args {
        echo "## Log of preprocessFunctional commands. started $(date)" >> "${logFile}"
 	echo -e "## Call: $thiscommandinfo" >> "${logFile}"
        # add system info
-	echo -e "## SYSTEM INFO: $(hostname); fsl $(cat $FSLDIR/etc/fslversion); $(afni -ver); $(antsRegistration --version); nipy: $(pip3 show nipy|grep Version)" >> "${logFile}"
+       echo -e "## SYSTEM INFO: $(hostname); fsl $(cat $FSLDIR/etc/fslversion); $(afni -ver); $(antsRegistration --version); py: $(python --version); nipy: $(pip3 show nipy|grep Version)" >> "${logFile}"
     fi
 
     if uname -n | grep -q "comp-hm.*aci.ics.psu.edu"; then
@@ -859,8 +859,8 @@ load_func_bids(){
  local bids_tr=$(jq .RepetitionTime < $bids_json)
  if [ -n "$bids_json" ]; then
     [ -n "$tr" -a "$tr" != "$bids_tr" ] &&
-       rel "Overwriting '-tr $tr' to $bids_tr" c ||
-       rel "setting TR to $bids_tr usig bids sidecar" c
+       rel "Overwriting '-tr $tr' to '$bids_tr'" c ||
+       rel "setting TR to '$bids_tr' usig bids sidecar '$(pwd)/$bids_json':.RepetitionTime" c
     tr="$bids_tr"
  fi
 
