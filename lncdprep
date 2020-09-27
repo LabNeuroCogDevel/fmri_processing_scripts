@@ -41,6 +41,8 @@ default C<MHT1_2mm>.
 
 =item C<--pattern> - only run on pattern for functional images (default '*.nii.gz')
 
+=item C<--help> - detailed help and examples
+
 =back
 
 Within this dir., there will be subdirectoires for each C<*.nii.gz>.
@@ -60,9 +62,9 @@ ONLYT1=0
 DOCKERLABEL="" # empty label means don't use
 USE_SES=0 # default to just sub-*/, instead of sub-*/ses-*
 
-usage(){ pod2usage $0; exit 1; }
+usage(){ pod2usage "$0"; exit 1; }
 
-[[ $# -eq 1 && $1 =~ -?-h* ]] && pod2text $0 && exit 1
+[[ $# -eq 1 && $1 =~ -?-h* ]] && pod2text "$0" && exit 1
 [ $# -lt 2 ] && usage
 BIDSROOT="$1";
 OUTDIR="$2";
@@ -77,7 +79,7 @@ C<DRYRUN> - if set, will echo instead of running
 =cut
 env|grep -q ^DRYRUN=. && DRYRUN=echo || DRYRUN=""
 env|grep -q ^DEGUB=. || DEBUG=""
-debug() { [ -n "$DEBUG" ] && echo $@ || :; }
+debug() { [ -n "$DEBUG" ] && echo "$@" || :; }
 
 
 maybedocker() {
@@ -233,3 +235,30 @@ for id in $SUBJS; do
   done
 done
 
+:<<=cut
+
+=head1 EXAMPLE
+
+lncdprep BIDS/ preproc/ 233/ses-1 --t2dir aus --pattern "*AUS_run*nii.gz" --task -- -smoothing_kernel 6
+
+
+=over 4
+
+=item look in BIDS for input niftis
+
+=item output to preproc/ directory root
+
+=item run only for sub C<233/ses-1>
+
+=item save to C<aus> directory (i.e. preproc/aus)
+
+=item only run on nifti matching glob "*AUS_run*nii.gz" (i.e. BIDS/sub-233/ses-1/func/*AUS_run*nii.gz; BIDS/**/func/*AUS_run*nii.gz if no sub/ses provided)
+
+=item use task settings
+
+=item but change smoothing_krenl to 6 (default is 4)
+
+=back
+
+
+=cut
