@@ -828,8 +828,9 @@ check_dep_list(){
        local module=${cmd#*:} # remove perl: python: or R:
        if [[ $cmd =~ ^python: ]]; then
           python3 -c "import $module;import sys; sys.exit(0)" 2>/dev/null && continue
-          # python3 aroma  (v4) is from rtrhd's fork Bristol University CRIC 
-          [[ $module == "icaaroma" ]] && module='git+https://github.com/rtrhd/ICA-AROMA'
+          # python3 aroma  (v4) is from rtrhd's fork Bristol University CRIC: git+https://github.com/rtrhd/ICA-AROMA
+          # using original ica_aroma: git+https://github.com/WillForan/ICA-AROMA.git@maartenmennes-setup.py
+          [[ $module == "icaaroma" ]] && module='git+https://github.com/WillForan/ICA-AROMA.git@maartenmennes-setup.py'
           echo "missing $cmd; consider 'python3 -m pip install --user $module'"  && let ++missing_deps
        elif [[ $cmd =~ ^perl: ]]; then
           perl -M$module -e "exit(0)" 2>/dev/null && continue

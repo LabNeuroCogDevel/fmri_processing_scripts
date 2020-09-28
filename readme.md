@@ -14,7 +14,9 @@ see [citations](./citations.txt) and `preprocessFunctional -check_dependencies`
  * [ROBEX](https://sites.google.com/site/jeiglesias/ROBEX)
  * [ANTs](http://stnava.github.io/ANTs/)
  * [FSL](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki)
- * [ICA-AROMA](https://github.com/rtrhd/ICA-AROMA)
+ * [ICA-AROMA](https://github.com/maartenmennes/ICA-AROMA)
+   * v4 `aroma`: https://github.com/rtrhd/ICA-AROMA
+   * orig repackages as `ica_aroma`: https://github.com/WillForan/ICA-AROMA/tree/maartenmennes-setup.py
  * [AFNI](https://afni.nimh.nih.gov/)
  * [MNI2009c](http://www.bic.mni.mcgill.ca/ServicesAtlases/ICBM152NLin2009)
  * [Brain Wavelet ToolboX](http://www.brainwavelet.org/downloads/brainwavelet-toolbox/)

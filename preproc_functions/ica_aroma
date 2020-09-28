@@ -10,12 +10,14 @@ function run_regfilt_in_r() {
 function ica_aroma {
     
     #Run ICA-AROMA on data after spatial smoothing is complete
+    aroma_src=git+https://github.com/rtrhd/ICA-AROMA # Bristol University CRIC as 'aroma'
+    aroma_src=git+https://github.com/WillForan/ICA-AROMA.git@maartenmennes-setup.py # original, packaged as ica_aroma
 
     if [ $ica_aroma -eq 1 ]; then
 
        # make sure we have aroma
-       ! command -v aroma &&
-           rel "'aroma' script or module missing! run 'python3 -m pip install git+https://github.com/rtrhd/ICA-AROMA' and ensure e.g. .local/bin is in PATH" c &&
+       ! command -v ica_aroma &&
+           rel "'ica_aroma' script or module missing! run 'python3 -m pip install $aroma_src' and ensure e.g. .local/bin is in PATH" c &&
            exit 1
 
         preAroma="${postSmooth}" #should always fall after this step
@@ -60,8 +62,10 @@ function ica_aroma {
 
            # python2 ica aroma
 	    #rel "python \"${scriptDir}/ica_aroma/ICA_AROMA.py\" -overwrite -tr ${tr} -in \"${funcdir}/${preAroma}${ext}\" -out \"${funcdir}/ica_aroma\" -mc \"${funcdir}/motion.par\" -warp \"$warptoFSL\""
-           # v4 py3+module branch via 'pip install git+https://github.com/rtrhd/ICA-AROMA'
-	    rel "aroma -overwrite --tr ${tr} -i \"${funcdir}/${preAroma}${ext}\" -o \"${funcdir}/ica_aroma\" -p \"${funcdir}/motion.par\" -w \"$warptoFSL\" -a \"$idmat\""
+           # v4 py3+module branch via 'pip install git+https://github.com/rtrhd/ICA-AROMA' ==> 'aroma'
+	    #rel "aroma --tr ${tr} -i \"${funcdir}/${preAroma}${ext}\" -o \"${funcdir}/ica_aroma\" -p \"${funcdir}/motion.par\" -w \"$warptoFSL\" -a \"$idmat\""
+           # 20200927 use repackaged original instead ==> ica_aroma
+	    rel "ica_aroma -overwrite -tr ${tr} -i \"${funcdir}/${preAroma}${ext}\" -o \"${funcdir}/ica_aroma\" -mc \"${funcdir}/motion.par\" -w \"$warptoFSL\" -a \"$idmat\""
 
 	    [ $no_warp -eq 1 ] && rel "imrm func_to_fsl_warpfield"
 
@@ -73,7 +77,9 @@ function ica_aroma {
 	    [ $no_warp -eq 1 ] && local warpsuffix="-w func_to_${templateName}_warpfield"
 	    #rel "python \"${scriptDir}/ica_aroma/ICA_AROMA.py\" -overwrite -tr ${tr} -in \"${funcdir}/${preAroma}${ext}\" -out \"${funcdir}/ica_aroma\" -mc \"${funcdir}/motion.par\" $warpsuffix"
            # v4 py3+module
-	    rel "aroma -overwrite --tr ${tr} -i \"${funcdir}/${preAroma}${ext}\" -o \"${funcdir}/ica_aroma\" -p \"${funcdir}/motion.par\" $warpsuffix"
+	    #rel "aroma -overwrite --tr ${tr} -i \"${funcdir}/${preAroma}${ext}\" -o \"${funcdir}/ica_aroma\" -p \"${funcdir}/motion.par\" $warpsuffix"
+           # 20200927 use repackaged original instead ==> ica_aroma
+	    rel "ica_aroma -overwrite -tr ${tr} -i \"${funcdir}/${preAroma}${ext}\" -o \"${funcdir}/ica_aroma\" -mc \"${funcdir}/motion.par\" $warpsuffix"
 	else
 	    rel "ICA-AROMA support only provided for FSL and Fonov MNI templates at the moment." c
 	    rel "Must use -template_brain <MNI_3mm|MNI_2.3mm|MNI_FSL_3mm|MNI_FSL_2.3mm|MNI_FSL_2mm>" c
