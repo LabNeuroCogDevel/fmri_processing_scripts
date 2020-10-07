@@ -14,9 +14,11 @@ function ica_aroma {
     #  * 'undo_smooth' from preproc_functions/check_requirements; same as 'no_smooth'
     #  * 'funcFile', 'tr' from  preproc_functions/parse_args
     #  * 'templateName', 'stddir'
+    #  * 'prefix', postAroma
+    # SideEffects:
+    #  * update prefix, postAroma
     
     [ $ica_aroma -ne 1 ] && return 0
-    [ -f ".ica_aroma_complete" ] && return 0
     
 
     # ica_aroma is the name of the bash function and possibly the binary to run
@@ -37,6 +39,9 @@ function ica_aroma {
     fi
     prefix="a${prefix}"
     postAroma="${prefix}${funcFile}${smoothing_suffix}"
+
+    # N.B. import this is after prefix is updated!
+    [ -f ".ica_aroma_complete" ] && return 0
 
     #need absolute paths to ICA_AROMA.py script. (should eventually move this to the main script and make global)
     local funcdir=$(pwd) #define working directory for functional processing
