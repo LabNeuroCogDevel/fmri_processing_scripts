@@ -143,7 +143,7 @@ function parse_args {
           fi
           check_dep_list 3dcalc fslmaths python antsRegistrationSyN.sh c3d_affine_tool \
              python:nipy python:nibabel python:future R:oro.nifti R:orthopolynom python:seaborn \
-             python:icaaroma \
+             python:ica_aroma \
              perl:App::AFNI::SiemensPhysio \
 
           exit $?
@@ -709,7 +709,7 @@ function parse_args {
        echo "## Log of preprocessFunctional commands. started $(date)" >> "${logFile}"
 	echo -e "## Call: $thiscommandinfo" >> "${logFile}"
        # add system info
-       echo -e "## SYSTEM INFO: $(hostname); fsl $(cat $FSLDIR/etc/fslversion); $(afni -ver); $(antsRegistration --version); py: $(python --version); nipy: $(pip3 show nipy|grep Version)" >> "${logFile}"
+       echo -e "## SYSTEM INFO: $(hostname); fsl $(cat $FSLDIR/etc/fslversion); $(afni -ver); $(antsRegistration --version); py: $(python3 --version); nipy: $(python3 -m pip show nipy|grep Version)" >> "${logFile}"
     fi
 
     if uname -n | grep -q "comp-hm.*aci.ics.psu.edu"; then
@@ -830,7 +830,7 @@ check_dep_list(){
           python3 -c "import $module;import sys; sys.exit(0)" 2>/dev/null && continue
           # python3 aroma  (v4) is from rtrhd's fork Bristol University CRIC: git+https://github.com/rtrhd/ICA-AROMA
           # using original ica_aroma: git+https://github.com/WillForan/ICA-AROMA.git@maartenmennes-setup.py
-          [[ $module == "icaaroma" ]] && module='git+https://github.com/WillForan/ICA-AROMA.git@maartenmennes-setup.py'
+          [[ $module == "ica_aroma" ]] && module='git+https://github.com/WillForan/ICA-AROMA.git@maartenmennes-setup.py'
           echo "missing $cmd; consider 'python3 -m pip install --user $module'"  && let ++missing_deps
        elif [[ $cmd =~ ^perl: ]]; then
           perl -M$module -e "exit(0)" 2>/dev/null && continue
