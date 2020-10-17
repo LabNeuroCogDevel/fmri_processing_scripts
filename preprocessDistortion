@@ -13,6 +13,7 @@ USAGE:
     -mrpatt     what dicoms look like
     -savedir    where to save outputs
     -reverse    NCANDA reverse (all but site C)
+    -method     gre.nii.gz,gre,NCANDA,BIDSFM
 
 HEREDOC
 exit 1
@@ -30,72 +31,82 @@ sourceall() {
 }
 
 val2ARG(){ local s="$1"; s=${s:1}; s=${s^^}; echo "$s";}
+
+set_method(){
+  [ -n "$METHOD" ] && return 0
+  local sep="xxxxxxxxx"
+  local all_ge=$MAG$sep$COMPLEX$sep$REAL$sep
+  # just mag is okay.  but complex or real without the other 2 is a problem
+  [[ $all_ge =~ $sep$sep ]] && ! [[ $all_ge =~ ^$sep$sep$sep$ ]] &&
+  exiterr "GE needs all -mag -complex and -real"
+
+  ## set METHOD
+  #  20191107: only gre (Siemens, Hallquist) and ge (NCANDA)
+  #            BIDSFM works for siemens ncanda. might work for BIDS too
+  [[ $all_ge =~ ^$sep$sep$sep$ ]]  && METHOD="gre" || METHOD="ge"
+
+  # NIIDIR is setup to be NCANDA raw dir
+  # but might be adapted for BIDS compatible directory
+  if [[ -n "$NIIDIR" ]]; then
+     # if we have a "real" nifti file it's ncanda
+     [ -n "$(find "$NIIDIR" -maxdepth 1 -iname '*real*nii*'\
+                 \( -type f -or -type l \) -print -quit)" ] &&
+         METHOD="NCANDA" ||
+         METHOD="BIDSFM" # TODO: does this work for actual bids spec?
+  fi
+}
+
+say_globals(){
+    # for debuging, print settings
+    for var in  REVERSE NIIDIR PHASEDIR MAGDIR MAG PHASE\
+        REAL COMPLEX FM_CFG MRPATT SAVEDIR METHOD; do
+    [ -z "${!var}" ] && continue
+    eval 'echo '"$var"': ${'"$var"'[@]}'
+    done
+ }
 parsenewargs(){
     local setting=""
     local val=""
     [ $# -lt 1 ] && ppdistortion_usage;
     while [ -n "$1" ]; do
-	case "$1" in
-	    -h|-help) ppdistortion_usage;;
-	    -r|-reverse) REVERSE="1"; shift ;;
-	    -phasedir|-magdir|-phase|-fm_cfg|-mrpatt|-savedir|-niidir)
-		setting="$(val2ARG "$1")"
-		val="$2"
-	        # remove default unless value could be an array arg
-		! [[ $setting =~ MAG|REAL|COMPLEX ]] && unset $setting; 
-		shift 2;;
-	    -*) exiterr "unkown switch '$1'";;
-	    *)
-		# if not -arg, add to the last -arg given
-		[ -z "$setting" ] && exiterr "dont know what to set as '$1'";
-		val="$1"
-		shift
-		;;
-	esac
-	if [ -z "${!setting}" ]; then
-	    # everything is an array. if only one item e.g. $MAGDIR will get it
-	    # NB. -ag will not work in bash 4. need bash 5
-	    eval "declare -ag $setting=\"$val\"";
-	else
-	    # not sure if there is another way to extend an array with varaible name
-	    # using mixed '' and "" like 'literal '"$intereted"' more litteral'
-	    eval "declare -ag $setting"'=(${'"$setting"'[@]}'" $val )"
-	fi
+    case "$1" in
+        -h|-help) ppdistortion_usage;;
+        -r|-reverse) REVERSE="1"; shift ;;
+        # 20201016 added mag back, add method
+        -phasedir|-magdir|-mag|-phase|-fm_cfg|-mrpatt|-savedir|-niidir|-method)
+        setting="$(val2ARG "$1")"
+        val="$2"
+            # remove default unless value could be an array arg
+        ! [[ $setting =~ MAG|REAL|COMPLEX ]] && unset $setting; 
+        shift 2;;
+        -*) exiterr "unkown switch '$1'";;
+        *)
+        # if not -arg, add to the last -arg given
+        [ -z "$setting" ] && exiterr "dont know what to set as '$1'";
+        val="$1"
+        shift
+        ;;
+    esac
+    if [ -z "${!setting}" ]; then
+        # everything is an array. if only one item e.g. $MAGDIR will get it
+        # NB. -ag will not work in bash 4. need bash 5
+        eval "declare -ag $setting=\"$val\"";
+    else
+        # not sure if there is another way to extend an array with varaible name
+        # using mixed '' and "" like 'literal '"$intereted"' more litteral'
+        eval "declare -ag $setting"'=(${'"$setting"'[@]}'" $val )"
+    fi
     done
     # sanity check
     [ -n "$PHASEDIR" -a -n "$PHASE" ] && exiterr "give -phase or -phasedir, not both" 
     [ -n "$MAGDIR" -a -n "$MAG" ] && exiterr "give -mag or -magdir, not both" 
     [ -n "$NIIDIR" -a -n "$MAG" ] && exiterr "-niidir only if no other nifitis to provide" 
     [ -n "$PHASEDIR"  -o -n "$PHASE" ] && [ -n "$COMPLEX" -o -n "$REAL" ] &&
-	exiterr "phase cannot be used with complex/real" 
-    local sep="xxxxxxxxx"
-    local all_ge=$MAG$sep$COMPLEX$sep$REAL$sep
-    # just mag is okay.  but complex or real without the other 2 is a problem
-    [[ $all_ge =~ $sep$sep ]] && ! [[ $all_ge =~ ^$sep$sep$sep$ ]] &&
-	exiterr "GE needs all -mag -complex and -real"
+    exiterr "phase cannot be used with complex/real" 
 
-    ## set METHOD
-    #  20191107: only gre (Siemens, Hallquist) and ge (NCANDA)
-    #            BIDSFM works for siemens ncanda. might work for BIDS too
-    [[ $all_ge =~ ^$sep$sep$sep$ ]]  && METHOD="gre" || METHOD="ge"
-
-    # NIIDIR is setup to be NCANDA raw dir
-    # but might be adapted for BIDS compatible directory
-    if [[ -n "$NIIDIR" ]]; then
-	# if we have a "real" nifti file it's ncanda
-	[ -n "$(find "$NIIDIR" -maxdepth 1 -iname '*real*nii*'\
-                \( -type f -or -type l \) -print -quit)" ] &&
-	    METHOD="NCANDA" ||
-	    METHOD="BIDSFM" # TODO: does this work for actual bids spec?
-    fi
+    set_method
     
-
-    # for debuging, print settings
-    for var in  REVERSE NIIDIR PHASEDIR MAGDIR MAG PHASE\
-		REAL COMPLEX FM_CFG MRPATT SAVEDIR METHOD; do
-	[ -z "${!var}" ] && continue
-	eval 'echo '"$var"': ${'"$var"'[@]}'
-    done
+    say_globals
 }
 
 
@@ -155,38 +166,45 @@ _preprocessDistortion() {
 
    # functions create unwarp and cd into it
    case $METHOD in
-       gre)
-	   magdir="$MAGDIR"
-	   phasedir="$PHASEDIR"
-	   [ -z "$magdir" -o -z "$phasedir" ] && echo "ERROR: no magdir or phasedir!? $magdir $phasedir" && return 1
-	   rel "cp -r \"$magdir\" \"$SAVEDIR/mag\" "
-	   rel "cp -r \"$phasedir\" \"$SAVEDIR/phase\" "
-	   cd $SAVEDIR
+      gre.nii.gz)
+       cd $SAVEDIR
+       prepare_gre_fieldmap "$MAG" "$PHASE"
+      ;;
 
-	   # run
-	   fm_phase="phase/$MRPATT"
-	   fm_magnitude="mag/$MRPATT"
-	   prepare_gre_fieldmap 
-	   ;;
-       NCANDA)
-	   NIIDIR="$(readlink -f $NIIDIR)"
-	   cd $SAVEDIR
-	   prepare_fieldmap_ge_complex "$NIIDIR" $REVERSE
-	   ;;
-       BIDSFM)
-	   NIIDIR="$(readlink -f $NIIDIR)"
-	   cd $SAVEDIR
-	   # TODO: look for json that has "intended for" instead of just using the first
-	   # take the first mag
-	   mag=$(find $NIIDIR -maxdepth 1 \( -type f -or -type l \) -iname '*mag*.nii.gz' -print -quit)
-	   # and first phase
-	   phase=$(find $NIIDIR -maxdepth 1 \( -type f -or -type l \) -iname '*phase*.nii.gz' -print -quit)
-	   [ -z "$mag" -o -z "$phase" ] && exiterr "cant find phase and mag nii.gz in $NIIDIR!"
-	   prepare_gre_fieldmap $mag $phase
-	   ;;
+      gre)
+       magdir="$MAGDIR"
+       phasedir="$PHASEDIR"
+       [ -z "$magdir" -o -z "$phasedir" ] && echo "ERROR: no magdir or phasedir!? $magdir $phasedir" && return 1
+       rel "cp -r \"$magdir\" \"$SAVEDIR/mag\" "
+       rel "cp -r \"$phasedir\" \"$SAVEDIR/phase\" "
+       cd $SAVEDIR
+
+       # run
+       fm_phase="phase/$MRPATT"
+       fm_magnitude="mag/$MRPATT"
+       prepare_gre_fieldmap 
+       ;;
+      NCANDA)
+       NIIDIR="$(readlink -f $NIIDIR)"
+       cd $SAVEDIR
+       prepare_fieldmap_ge_complex "$NIIDIR" $REVERSE
+       ;;
+      BIDSFM)
+       NIIDIR="$(readlink -f $NIIDIR)"
+       cd $SAVEDIR
+       # TODO: look for json that has "intended for" instead of just using the first
+       # take the first mag
+       mag=$(find $NIIDIR -maxdepth 1 \( -type f -or -type l \) -iname '*mag*.nii.gz' -print -quit)
+       # and first phase
+       phase=$(find $NIIDIR -maxdepth 1 \( -type f -or -type l \) -iname '*phase*.nii.gz' -print -quit)
+       [ -z "$mag" -o -z "$phase" ] && exiterr "cant find phase and mag nii.gz in $NIIDIR!"
+       prepare_gre_fieldmap $mag $phase
+       ;;
+      *)
+         exiterr "unknown unwarp method '$METHOD'";
     esac
     # all methods should drop into "unwarp"
-    ! [[ $(basename $(pwd)) == unwarp ]] && exiterr "$METHOD: in $(pwd) not unwarp"
+    ! [[ $(basename $(pwd)) == unwarp ]] && exiterr "w/'$METHOD': in cwd '$(pwd)' is not 'unwarp' directory"
 
     # bet'ed brain needs to be in unwarp directory
     [ ! -r FM_UD_fmap_mag_brain.nii.gz -a -r ../FM_UD_fmap_mag_brain.nii.gz ] &&
