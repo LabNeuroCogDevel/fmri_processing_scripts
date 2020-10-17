@@ -281,8 +281,8 @@ function parse_args {
 	elif [ $1 = -distortion_dir ]; then
 	    DISTORTION_DIR=$(abspath "${2}")
            [ -z "$DISTORTION_DIR" -o ! -d "$DISTORTION_DIR" ] && echo "distortion_dir '$2' ('$DISTORTION_DIR') DNE!" && exit 1
-           # use fm_cfg from distortion directoyr unless we've already specifed a fm_cfg
-           [ -z "$fm_cfg" -a -r "$DISTORTION_DIR/fm.cfg" ] && export fm_cfg="$DISTORTION_DIR/fm.cfg"
+           # use fm_cfg from distortion directory unless we've already specifed a fm_cfg
+           test -z "$fm_cfg" -a -r "$DISTORTION_DIR/fm.cfg"  && export fm_cfg="$_"
 	    shift 2
 	elif [ $1 = -epi_echospacing ]; then
 	    dwelltime="${2}"

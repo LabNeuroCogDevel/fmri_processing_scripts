@@ -237,7 +237,7 @@ for id in $SUBJS; do
      fieldmap $distortion_dir \
         $(find -L $BIDSROOT/sub-$id/fmap/ -name "$FMPATT" -name "*magnitude1.nii.gz"| sed -n '$p') \
         $(find -L $BIDSROOT/sub-$id/fmap/ -name "$FMPATT" -name "*phase.nii.gz"| sed -n '$p')
-     ARGS="$ARGS -distortion_dir $distortion_dir"
+     ARGS="$ARGS -distortion_dir $distortion_dir/unwarp"
   fi
 
   t1out="$OUTDIR/$T1DNAME/$id"
