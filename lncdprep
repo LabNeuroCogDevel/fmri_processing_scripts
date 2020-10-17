@@ -33,6 +33,9 @@ default C<MHT1_2mm>.
 
 =item C<--njobs> - number of process to fork. default is 1.
 
+=item C<--fm_cfg> - fieldmap configuration file. default to know. if set will look for phase and mag files
+
+=item C<--fm_patt> - pattern to use when choosing fieldmap files (default to *.nii.gz, might want eg. "*run-1*")
 
 =item C<--ppfmri_args|--> append to default settings. will override with specified if redundent
 
@@ -56,6 +59,8 @@ see C<preprocessFunctional -help>
 T1DNAME="MHT1_2mm"
 T2ROOT="func"
 PATT="*.nii.gz"
+FMPATT="*.nii.gz"
+FMCFG=""
 MAXJOBS=1
 ONLYT1=0
 USE_SES=0 # default to just sub-*/, instead of sub-*/ses-*
@@ -131,6 +136,8 @@ while [ $# -gt 0 ]; do
    --use_ses) USE_SES=1; shift;;
    --t2*) T2ROOT="$2"; shift 2;;
    --njobs) MAXJOBS="$2"; shift 2;;
+   --fm_patt) FMPATT="$2"; shift 2;;
+   --fm_cfg) FMCFG="$2"; shift 2;;
    --pattern) PATT="$2"; shift 2;;
    # push unknown args onto preprocessFunctional
    --|--ppfmri_args) shift; ARGS="$ARGS $*"; break;;
@@ -158,6 +165,20 @@ mprage() {
  cd $t1out
  3dcopy $t1s mprage.nii.gz -overwrite
  preprocessMprage -n mprage.nii.gz
+}
+
+
+:<<=cut
+=head2 preprocessDistortion
+
+=cut
+fieldmap(){
+   local fmdir="$1"; shift
+   local mag="$1"; shift
+   local phase="$1"; shift
+   [ ! -d "$fmdir" ] && mkdir -p "$fmdir"
+   cd $fmdir
+   preprocessDistortion -phase "$phase" -mag "$mag" -fm_cfg "$FMCFG" -method "gre.nii.gz"
 }
 
 # needs ARGS defined
@@ -209,7 +230,15 @@ if [ -z "$SUBJS" ]; then
 fi
 
 for id in $SUBJS; do
-   debug $id
+  debug $id
+
+  if [ -n "$FMCFG" ]; then
+     distortion_dir=$OUTDIR/FM/$id
+     fieldmap $distortion_dir \
+        $(find -L $BIDSROOT/sub-$id/fmap/ -name "$FMPATT" -name "*magnitude1.nii.gz"| sed -n '$p') \
+        $(find -L $BIDSROOT/sub-$id/fmap/ -name "$FMPATT" -name "*phase.nii.gz"| sed -n '$p')
+     ARGS="$ARGS -distortion_dir $distortion_dir"
+  fi
 
   t1out="$OUTDIR/$T1DNAME/$id"
   if [ ! -r $t1out/mprage_warpcoef.nii.gz ]; then
@@ -254,6 +283,8 @@ for id in $SUBJS; do
      fi
   done
 done
+
+wait
 
 :<<=cut
 
