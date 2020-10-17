@@ -174,14 +174,30 @@ func() {
  local t1out="$1"; shift
  local thisout="$1"; shift
  local func="$1"; shift
+ local args="$ARGS";
 
  [ ! -d "$thisout" ] && mkdir -p "$thisout"
  cd $thisout
+
+
+ # in BIDS sbref should be named nearly the same as func if it exists
+ sbref=${func/_bold.nii.gz/_sbref.nii.gz}
+ if [ -r "$sbref" ]; then
+    ! test -r ref.nii.gz && 3dcopy $sbref $_
+    ! test -r ref.json  && cp ${sbref/.nii.gz/.json} $_
+    debug "using $sbref reference!"
+    args="-func_refimg ref.nii.gz $args"
+ else
+    debug "no sbref for like '$sbref'"
+ fi
+
+ echo "final args: $args" #todo rmme
+
  [ ! -r func.nii.gz ] && 3dcopy $func func.nii.gz
  [ ! -r func.json ] && cp ${func/.nii.gz/.json} func.json
  preprocessFunctional -4d func.nii.gz \
    -mprage_bet $t1out/mprage_bet.nii.gz -warpcoef $t1out/mprage_warpcoef.nii.gz \
-   $ARGS
+   $args
 }
 
 if [ -z "$SUBJS" ]; then
@@ -205,12 +221,30 @@ for id in $SUBJS; do
 
   [ $ONLYT1 -ne 0 ] && continue
 
-  find -L $BIDSROOT/sub-$id -name "$PATT" -path '*/func/*' | while read func; do
-  thisout=$(echo "$func" | perl -pe "s:/func/sub-:/sub-:g;s/:/_/g;s:^$BIDSROOT:$OUTDIR/$T2ROOT:;s/sub-//;s/.nii(.gz)?$//;")
+
+  find -L $BIDSROOT/sub-$id \
+     -path '*/func/*'  \
+     -iname "$PATT" \
+     -name "*nii.gz" \
+     -not -iname '*_sbref.nii.gz' |
+   while read func; do
+
+     test 1 -ge $(AFNI_NIFTI_TYPE_WARN=NO 3dinfo -nt "$func") &&
+        echo "# skipping '$func', too few volumes ($_)" && continue
+
+     thisout=$(perl -pe "
+       s:/func/sub-:/sub-:g;
+       s/:/_/g;s:^$BIDSROOT:$OUTDIR/$T2ROOT:;
+       s/sub-//;s/.nii(.gz)?$//;" <<< $func)
+     # $BIDSROOT/sub-11757/func/sub-11757_task-SOA_bold.nii.gz
+     #  becomes
+     # $OUTPUTDIR/$T2ROOT/11757/sub-11757_task-SOA_bold 
+
+     $DRYRUN func "$t1out" "$thisout" "$func" &
+
      if [ $MAXJOBS -eq 1 -o -n "$DRYRUN" ]; then
-        $DRYRUN func "$t1out" "$thisout" "$func" 
+        sleep .1
      else
-        func "$t1out" "$thisout" "$func" &
         i=1
         while [ $(jobs -p|wc -l) -gt $MAXJOBS ]; do
            echo "[$i@$(date +%FT%H:%m)] $id $func; $MAXJOBS jobs. waiting";
