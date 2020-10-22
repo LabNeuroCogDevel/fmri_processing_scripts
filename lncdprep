@@ -45,6 +45,10 @@ default C<MHT1_2mm>.
 
 =item C<--help> - detailed help and examples
 
+=item C<--tac> - like tac is to cat, reverse order of inputs
+
+=item C<--no_partial> - skip if we have any thing in the directory we would run in
+
 =back
 
 Within this dir., there will be subdirectoires for each C<*.nii.gz>.
@@ -64,14 +68,10 @@ FMCFG=""
 MAXJOBS=1
 ONLYT1=0
 USE_SES=0 # default to just sub-*/, instead of sub-*/ses-*
+PARTIAL=1 # okay to rerun if something is already in the directory
 
 usage(){ pod2usage "$0"; exit 1; }
 
-[[ $# -eq 1 && $1 =~ -?-h* ]] && pod2text "$0" && exit 1
-[ $# -lt 2 ] && usage
-BIDSROOT="$1";
-OUTDIR="$2";
-shift 2;
 
 ## setup dryrun
 :<<=cut
@@ -125,32 +125,43 @@ TASK_ARGS="\
 
 ## parse arguments
 ARGS=""
-while [ $# -gt 0 ]; do
- case "$1" in
-   --task) ARGS="$DEF_ARGS $TASK_ARGS"; shift 1;;
-   --rest) ARGS="$DEF_ARGS $REST_ARGS"; shift 1;;
-   --participant_label) SUBJS="$SUBJS $2"; shift 2;;
-   [^-]*) SUBJS="$SUBJS $1"; shift 1;;
-   --t1*) T1DNAME="$2"; shift 2;;
-   --onlyt1) ONLYT1=1;shift;;
-   --use_ses) USE_SES=1; shift;;
-   --t2*) T2ROOT="$2"; shift 2;;
-   --njobs) MAXJOBS="$2"; shift 2;;
-   --fm_patt) FMPATT="$2"; shift 2;;
-   --fm_cfg) FMCFG="$2"; shift 2;;
-   --pattern) PATT="$2"; shift 2;;
-   # push unknown args onto preprocessFunctional
-   --|--ppfmri_args) shift; ARGS="$ARGS $*"; break;;
-   *) echo "ERROR: unknown arg '$1'" && usage;;
- esac
- debug "now parsing $*"
-done
+CAT="cat" # default to subjects in order, tac reverses
 
-if [ -z "$ARGS" ] && [ "$ONLYT1" -ne 1 ]; then
-   echo "ERROR: specify --task or --rest. Or use your own args like '$0 $* -- ....';" >&2
-   echo "ERROR:    see 'preprocessFunctional -help' for options to fill ...." >&2
-   exit 1
-fi
+parse_args() {
+   [[ $# -eq 1 && $1 =~ -?-h* ]] && pod2text "$0" && exit 1
+   [ $# -lt 2 ] && usage
+   BIDSROOT="$1";
+   OUTDIR="$2";
+   shift 2;
+   while [ $# -gt 0 ]; do
+    case "$1" in
+      --task) ARGS="$DEF_ARGS $TASK_ARGS"; shift 1;;
+      --rest) ARGS="$DEF_ARGS $REST_ARGS"; shift 1;;
+      --participant_label) SUBJS="$SUBJS $2"; shift 2;;
+      [^-]*) SUBJS="$SUBJS $1"; shift 1;;
+      --t1*) T1DNAME="$2"; shift 2;;
+      --onlyt1) ONLYT1=1;shift;;
+      --use_ses) USE_SES=1; shift;;
+      --t2*) T2ROOT="$2"; shift 2;;
+      --njobs) MAXJOBS="$2"; shift 2;;
+      --fm_patt) FMPATT="$2"; shift 2;;
+      --fm_cfg) FMCFG="$2"; shift 2;;
+      --pattern) PATT="$2"; shift 2;;
+      --tac) CAT=tac; shift;;
+      --no_partial) PARTIAL=0; shift;;
+      # push unknown args onto preprocessFunctional
+      --|--ppfmri_args) shift; ARGS="$ARGS $*"; break;;
+      *) echo "ERROR: unknown arg '$1'" && usage;;
+    esac
+    debug "now parsing $*"
+   done
+
+   if [ -z "$ARGS" ] && [ "$ONLYT1" -ne 1 ]; then
+      echo "ERROR: specify --task or --rest. Or use your own args like '$0 $* -- ....';" >&2
+      echo "ERROR:    see 'preprocessFunctional -help' for options to fill ...." >&2
+      exit 1
+   fi
+}
 
 :<<=cut
 =head2 preprocessMprage
@@ -219,19 +230,37 @@ func() {
  preprocessFunctional -4d func.nii.gz \
    -mprage_bet $t1out/mprage_bet.nii.gz -warpcoef $t1out/mprage_warpcoef.nii.gz \
    $args
+
+ wait
 }
 
-if [ -z "$SUBJS" ]; then
-   debug "finding subjects"
-   [ $USE_SES -eq 0 ] &&
-     SUBJS=$(find -L $BIDSROOT -maxdepth 3 -type d -name func | perl -lne 'print $1 if m:sub-([^/]*):') ||
-     SUBJS=$(find -L $BIDSROOT -maxdepth 4 -type d -name func | perl -lne 'print $1 if m:sub-([^/]*/ses-[^/]*):')
-   debug "have $SUBJS"
-fi
+find_func(){
+   find -L $BIDSROOT -maxdepth "$1" -type d -name func |
+      perl -lne 'print $1 if m:sub-([^/]*(/ses-[^/]*)):' |
+      $CAT
+}
 
-for id in $SUBJS; do
-  debug $id
+wait_for_jobs() {
+  i=1
+  while [ $(jobs -p|wc -l) -gt $MAXJOBS ]; do
+     echo "[$i@$(date +%FT%H:%m)] $*; $MAXJOBS jobs. waiting";
+     let ++i
+     sleep 30
+  done
+}
 
+# return false if this is partially completed and we care about that
+partial_ok(){
+   local thisout="$1"
+     [ "$PARTIAL" -eq 0 ] && [ -e "$thisout" ] &&
+        [ $(find -L "$thisout" -maxdepth 1 | wc -l) -gt 1 ] &&
+        echo "# skipping '$thisout'. not empty. remove --no_partial to continue" &&
+        return 1
+     return 0
+}
+
+_lncdprep(){
+  local id="$1"; shift
   if [ -n "$FMCFG" ]; then
      distortion_dir=$OUTDIR/FM/$id
      fieldmap $distortion_dir \
@@ -243,15 +272,14 @@ for id in $SUBJS; do
   t1out="$OUTDIR/$T1DNAME/$id"
   if [ ! -r $t1out/mprage_warpcoef.nii.gz ]; then
      t1s=($(find -L $BIDSROOT/sub-$id -name '*T1w*.nii.gz' -path '*/anat/*'))
-     [ ${#t1s[@]} -eq 0 ] && echo "ERROR: $id: no T1 in $BIDSROOT/sub-$id!?" && continue
-     [ ${#t1s[@]} -gt 1 ] && echo "ERROR: $id: more than one T1 ${t1s[*]}" && continue
+     [ ${#t1s[@]} -eq 0 ] && echo "ERROR: $id: no T1 in $BIDSROOT/sub-$id!?" && return
+     [ ${#t1s[@]} -gt 1 ] && echo "ERROR: $id: more than one T1 ${t1s[*]}" && return
      $DRYRUN mprage $t1out ${t1s[0]}
   fi
 
-  [ $ONLYT1 -ne 0 ] && continue
+  [ $ONLYT1 -ne 0 ] && return
 
-
-  find -L $BIDSROOT/sub-$id \
+  find -L "$BIDSROOT/sub-$id" \
      -path '*/func/*'  \
      -iname "$PATT" \
      -name "*nii.gz" \
@@ -269,22 +297,38 @@ for id in $SUBJS; do
      #  becomes
      # $OUTPUTDIR/$T2ROOT/11757/sub-11757_task-SOA_bold 
 
-     $DRYRUN func "$t1out" "$thisout" "$func" &
+     partial_ok "$thisout" || continue
 
      if [ $MAXJOBS -eq 1 -o -n "$DRYRUN" ]; then
-        sleep .1
+        $DRYRUN func "$t1out" "$thisout" "$func"
      else
-        i=1
-        while [ $(jobs -p|wc -l) -gt $MAXJOBS ]; do
-           echo "[$i@$(date +%FT%H:%m)] $id $func; $MAXJOBS jobs. waiting";
-           let ++i
-           sleep 30
-        done
+        func "$t1out" "$thisout" "$func" &
+        sleep .1
+        wait_for_jobs $id $func
      fi
   done
-done
+}
 
-wait
+prep_all_subjs() {
+   if [ -z "$SUBJS" ]; then
+      debug "finding subjects"
+      [ $USE_SES -eq 0 ] &&
+        SUBJS=$(find_func 3) ||
+        SUBJS=$(find_func 4)
+      debug "have $SUBJS"
+   fi
+
+   for id in $SUBJS; do
+     debug $id
+     _lncdprep "$id"
+   done
+   wait
+}
+
+if [[ $0 =~ lncdprep$ ]]; then
+   parse_args "$@"
+   prep_all_subjs
+fi
 
 :<<=cut
 
