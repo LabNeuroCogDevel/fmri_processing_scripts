@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -euo pipefail
+trap 'e=$?; [ $e -ne 0 ] && echo "$0 exited in error"' EXIT
+
+# 20201102WF - extract from preproc_functions/helper_functions
+qa_image_usage(){
+   cat <<HERE
+   generate grid of nii slices w/optional overlay and title
+
+   $0 [-gif] [-small] underlay.nii.gz overlay.nii.gz slice_grid.png ["title"]
+
+   use "" for overlay for none
+HERE
+  exit 1
+}
+
+qa_image() {
+    local underlay="$1"; shift
+    local overlay="$1"; shift
+    local fname="$1"; shift
+    [ $# -eq 0 ] && title="" || title="$1"
+
+    # set scale of slicer depending on size of images (since pngs from larger 3d images are larger in pixel size)
+    local scale=3
+    local fsize=26
+
+    # if the underlay is big, reduce the scale
+    local xsize=$(fslval "$underlay" dim1)
+    if [ $xsize -gt 100 ]; then
+        scale=2
+        fsize=36
+    fi
+    
+    # default to current directory if not specified
+    local qa_imgdir=""
+    ! env|grep -q ^qa_imgdir=. && qa_imgdir="$(pwd)"
+    [[ "$fname" =~ ^/ ]] && qa_imgdir=""
+    output="${qa_imgdir}/$fname"
+
+    # make overlay optional. only quote if it's not zero
+    [ -n "$overlay" ] && overlay=$(printf %q "$overlay")
+
+    slicer "$underlay" $overlay -s $scale \
+       -x 0.35 sla.png -x 0.45 slb.png -x 0.55 slc.png -x 0.65 sld.png \
+       -y 0.35 sle.png -y 0.45 slf.png -y 0.55 slg.png -y 0.65 slh.png \
+       -z 0.35 sli.png -z 0.45 slj.png -z 0.55 slk.png -z 0.65 sll.png
+
+    pngappend sla.png + slb.png + slc.png + sld.png - \
+              sle.png + slf.png + slg.png + slh.png - \
+              sli.png + slj.png + slk.png + sll.png "$output"
+
+    local label="${title}\nunderlay:$(basename "$underlay")\noverlay:$(basename "$overlay")"
+    [ -n "$title" ] && qa_title "$label" "$output" "$fsize"
+    rm -f sl?.png #cleanup
+    echo "$output"
+    return 0
+}
+qa_title(){
+   local label="$1"; shift
+   local output="$1"; shift
+   local fsize=50
+   [ $# -ne 0 ] &&  fsize="$1";
+   montage -label "$label" "$output" -pointsize $fsize -geometry +0+0 "$output"
+}
+
+crossfade(){
+ local frmt="format=rgba,fade=d=1:t=in:alpha=1,setpts=PTS-STARTPTS"
+ ffmpeg -y   \
+    -framerate 10 -loop 1 -t 1 -i "$1" \
+    -framerate 10 -loop 1 -t 2 -i "$2" \
+    -framerate 10 -loop 1 -t 1 -i "$1" \
+    -filter_complex   \
+     "[1]$frmt+1/TB[f0]; \
+      [2]$frmt+3/TB[f1]; \
+      [0][f0]overlay[bg1];[bg1][f1]overlay,split[v0][v1]; \
+      [v0]palettegen[p];[v1][p]paletteuse[v]" \
+     -map "[v]" \
+     "$3"
+}
+
+_qa_image_main(){
+   local mksmall=0
+   local mkgif=0
+   while [[ $1 =~ ^- ]]; do
+      case "$1" in
+         -gif) mkgif=1; shift;;
+         -small) mksmall=1; shift;;
+         -verbose) set -x; shift;;
+         *) echo "unknown option '$1'"; qa_image_usage;;
+      esac
+   done
+
+   [ $# -ne 3 -a $# -ne 4 ] && qa_image_usage
+   [ ! -r "$1" ] && echo "ERROR: cannot read underlay '$1'" && exit 1
+   [ "x$2" != "x" -a ! -r "$2" ] && echo "ERROR: cannot read overlay '$2'" && exit 1
+
+   
+   if [ $mkgif -eq 1 ]; then
+      qa_image "$1" "" tmp_underlay.png >/dev/null
+      qa_image "$2" "" tmp_overlay.png >/dev/null
+
+      qa_title "$(basename "$1" .nii.gz)" "tmp_underlay.png"
+      qa_title "$(basename "$2" .nii.gz)" "tmp_overlay.png"  
+
+      out="$(echo "$3" | sed 's/.gif$\|.png$//').gif"
+      crossfade tmp_{underlay,overlay}.png "$out"
+      rm tmp_{underlay,overlay}.png 
+   else
+      out="$(qa_image "$@")"
+   fi
+
+   if [ $mksmall -eq 1 ]; then
+      local width=500
+      [ $mkgif -eq 1 ] &&
+       convert "$out" -coalesce -resize ${width}x -deconstruct "$out" ||
+       convert "$out" -resize ${width}x "$out"
+   fi
+
+   return 0
+}
+
+[[ "$(caller)" != "0 "* ]] || _qa_image_main "$@"
