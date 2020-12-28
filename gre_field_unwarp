@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+
+#
+#  quickly test out gre fieldmap configurations
+#  for older siemens protocols.
+#  newer (2021+) should probably be using spin echo for distortion correction
+#  20201228WF  init
+
+scriptDir="$(dirname $0)"
+export logFile="" # no logging
+source "${scriptDir}/preproc_functions/helper_functions"
+source "${scriptDir}/preproc_functions/prepare_fieldmap"
+source "${scriptDir}/preproc_functions/prepare_gre_fieldmap"
+set -eo pipefail
+trap 'e=$?; [ $e -ne 0 ] && echo "$0 exited in error"' EXIT
+
+# FM_ - fieldmap space
+# EF_ - epi space 
+# MP_ - t1 mprage space
+#
+# _D   - distorted (origianl)
+# _UD  - undistored (corrected)
+
+fm_cfg=; epi=; mag=; phase=;
+# initialize vars allowed to be none
+func_to_struct=""
+mprage_bet=""
+savedir=""
+
+while [ $# -gt 0 ]; do
+   case "$1" in
+      -cfg) fm_cfg="$2"; shift 2;;
+      -epi) epi="$2"; shift 2;;
+      -mag) mag="$2"; shift 2;;
+      -phase) phase="$2"; shift 2;;
+      # optional
+      -mprage_bet) mprage_bet="$2"; shift 2;;
+      -func_to_struct) func_to_struct="$2"; shift 2;;
+      -savedir) savedir="$2"; shift 2;;
+      *) echo "unknown option '$1'!"; exit 1;;
+   esac
+done
+
+[ -z "$fm_cfg" ] && echo "must have -cfg" && exit 1
+[ -z "$savedir" ] && savedir=fmcfg-$(basename $fm_cfg)
+
+# check paths and make absolute
+for var in epi mag phase mprage_bet func_to_struct fm_cfg; do
+   [ -z "${!var}" ] && continue
+   [ ! -s "${!var}" ] && echo "$var '${!var}' does not exist or is zero size!" && exit 1
+   printf -v "$var" "$(realpath ${!var})"
+done
+
+source $fm_cfg
+[ -z "$dwelltime" ] && echo "'$fm_cfg' is missing 'dwelltime'" && exit 1
+[ ! -d $savedir ] && mkdir $savedir
+
+# Note from 2014-04: X direction bug!
+case $unwarpdir in
+   x-) fugue_unwarpdir=x;;
+   x) fugue_unwarpdir=x-;;
+   *) fugue_unwarpdir=$unwarpdir;;
+esac
+
+cd $savedir
+savedir=$(pwd)
+3dcopy $phase phase.nii.gz -overwrite
+3dcopy $mag   mag.nii.gz -overwrite
+3dcopy "$epi" EF_D_mc_target.nii.gz -overwrite
+
+
+
+## deal with fieldmap files
+# create FM* files: FM_UD_fmap FM_UD_fmap_mag
+#fm_phasedir=$(pwd)
+prepare_gre_fieldmap mag.nii.gz phase.nii.gz
+cd $savedir
+
+# create sigloss, mask, and warps
+export FIELDMAP_TRANSFORMS_DIR="./"
+qa_imgdir="$savedir"
+qa_imglog="$savedir/img.log"
+fmap_struct_dof=12 # not bbr
+fm_phasedir=phase.nii.gz
+mprageBet="$mprage_bet"
+preproc_fieldmap
+
+# needs TEdiff 
+# saves --savefmap=${fm_phasedir}/FM_UD_fmap
+# fieldmap_make_rads_per_sec $fm_phase $fm_phasedir $fm_magnitude
+echo -e "# see\n\t afni  EF_{U,}D_mc_target"
+cd $savedir
+## warp to structural
+[ -z "$mprage_bet" ] && exit 0
+if [ -z "$func_to_struct" ]; then
+   func_to_struct=func_to_struct.mat
+   flirt -in EF_D_mc_target -ref $mprage_bet -out func_to_struct_init -omat $func_to_struct -dof 6 -interp spline
+fi
+
+convertwarp --ref=$mprage_bet --warp1=EF_UD_warp --postmat=$func_to_struct --relout --out=func_to_t1
+applywarp --ref=$mprage_bet --in=EF_D_mc_target --out=MP_UD_mc_target  --warp=func_to_t1
+echo -e "# compare other pipes against $(pwd)/MP_UD_mc_target"
