@@ -637,17 +637,13 @@ warpdir_for_fugue(){
 
 #preprocess fieldmap by creating masks, warping to structural, etc.
 #largely based on FSL epi_reg script
-# 20201228 FIELDMAP_TRANSFORMS_DIR used to avoid external folders
 function preproc_fieldmap {
     
    fugue_unwarpdir=$(warpdir_for_fugue $unwarpdir)
    [ "$fugue_unwarpdir" != "$unwarpdir" ] &&
       rel "Reversing phase encode direction for use in FUGUE. convertwarp and flirt -pedir will use $unwarpdir, whereas FUGUE will use $fugue_unwarpdir" c
 
-    # 20201228 - env escape hatch. when directory structure is flat (gre_field_unwarp)
-    # need FIELDMAP_TRANSFORMS_DIR and EF_D_mc_target to exist
     local transform_dir="$funcdir/transforms/"
-    env | grep -q ^FIELDMAP_TRANSFORMS_DIR=. && transform_dir="$FIELDMAP_TRANSFORMS_DIR"
     #assume that we have a) copied FM_UD_fmap_mag and FM_UD_fmap into unwarp directory and b) have cd'd into that directory
     #skull strip magnitude image for registration
     [ -n "$funcRefimg" ] && 
@@ -935,6 +931,12 @@ function preproc_fieldmap {
     ## Skipping EF_D_mc_target.gif EF_UD_mc_target.gif EF_UD_fmap_mag_brain.gif
     ## for files in ^; do slicer &&  pngappend; done;  whirlgif
 
+    if [ -z "$mprageBet" ]; then
+       rel "WARNING: no mprageBet variable defined. This should only happen in 'gre_field_unwarp'" c
+       cd $funcdir
+       return 0
+    fi
+
     #STEP 11. Coregister the fieldmap to the structural image for use in func2struct alignment with BBR cost function and -fieldmap
     #adapted from epi_reg
     rel "Coregister the fieldmap to the structural image for use in func2struct alignment with BBR cost function." c
@@ -946,7 +948,7 @@ function preproc_fieldmap {
 	rel "c3d_affine_tool -ref ${mprageBet} -src FM_UD_fmap_mag_brain${ext} -itk fmap_to_struct0GenericAffine.mat -ras2fsl -o $transform_dir/fmap_to_struct.mat"
 	rel "immv fmap_to_structWarped fmap_to_struct"
 	rel "imrm fmap_to_structInverseWarped" #not useful
-	rel "mv fmap_to_struct0GenericAffine.mat ${funcdir}/transforms/fmap_to_struct.itk"
+	rel "mv fmap_to_struct0GenericAffine.mat $transform_dir/fmap_to_struct.itk"
     else
 	rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -dof 6 -omat $transform_dir/fmap_to_struct.mat -out fmap_to_struct -interp spline" #skull-stripped magnitude to structural
 	local predictable_suffix=$( echo "$mprageBet" | grep -E -q "(_brain|_bet)${ext}\$" )
