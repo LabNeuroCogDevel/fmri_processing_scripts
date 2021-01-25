@@ -278,6 +278,7 @@ _lncdprep(){
   local id="$1"; shift
   if [ -n "$FMCFG" ]; then
      distortion_dir=$OUTDIR/FM/$id
+     partial_ok "$distortion_dir" || return 0
      $DRYRUN fieldmap $distortion_dir $(find_fm $id mag) $(find_fm $id phase)
      ARGS="$ARGS -distortion_dir $distortion_dir/unwarp"
   fi
@@ -287,6 +288,8 @@ _lncdprep(){
      t1s=($(find -L $BIDSROOT/sub-$id -name '*T1w*.nii.gz' -path '*/anat/*'))
      [ ${#t1s[@]} -eq 0 ] && echo "ERROR: $id: no T1 in $BIDSROOT/sub-$id!?" && return
      [ ${#t1s[@]} -gt 1 ] && echo "ERROR: $id: more than one T1 ${t1s[*]}" && return
+     #test -r $t1out/.preprocessmprage_incomplete && echo "# rm $_ to restart" && return
+     partial_ok $t1out || return 0
      $DRYRUN mprage $t1out ${t1s[0]}
   fi
 
@@ -340,6 +343,7 @@ prep_all_subjs() {
 
 if [[ $0 =~ lncdprep$ ]]; then
    parse_args "$@"
+   echo "# $(date): Running with $MAXJOBS. Can resume partial? $PARTIAL"
    prep_all_subjs
 fi
 
