@@ -179,6 +179,13 @@ Command line options:
         because head movement often produces artifacts that are spread in time (spin history).
   -wavelet_threshold: This is the coefficient threshold value used during maxima and minima coefficient definition. Default: 10. See BWT_Documentation.pdf for details.
 
+ENVIRONMENT
+  to control e.g. python:numpy (sliceMotion4d) set environment. defaults to 1
+
+  export OPENBLAS_NUM_THREADS=5
+  # or
+  export MKL_NUM_THREADS=5
+
 The major steps in the processing pipeline are, in order:
   0)    fslorient (_) and optionally truncate (0)
   1)    Physio/retroicor (optional) - p
@@ -224,6 +231,10 @@ EndOfHelp
 #
 #Changelog:
 #
+#01/25/2021 (WF)
+#  - if not set, use OPENBLAS_NUM_THREADS=1 / MKL_NUM_THREADS=1
+#    set in correct_slice_motion_4d
+#    export before running preprocessFunctional to use different settings
 #09/16/2019 (WF) 
 #  - added -no_mc toption for running ontop of another pipeline
 #07/29/2019 (WF) 
