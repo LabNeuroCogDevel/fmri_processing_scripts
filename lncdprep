@@ -272,10 +272,12 @@ partial_ok(){
 _lncdprep(){
   local id="$1"; shift
   if [ -n "$FMCFG" ]; then
+     local fm_indir="$BIDSROOT/sub-$id/fmap/"
      distortion_dir=$OUTDIR/FM/$id
-     fieldmap $distortion_dir \
-        $(find -L $BIDSROOT/sub-$id/fmap/ -name "$FMPATT" -name "*magnitude1.nii.gz"| sed -n '$p') \
-        $(find -L $BIDSROOT/sub-$id/fmap/ -name "$FMPATT" -name "*phase.nii.gz"| sed -n '$p')
+     local mag=$(find -L "$fm_indir" -name "$FMPATT" -name "*magnitude1.nii.gz"| sed -n '$p') 
+     local phase=$(find -L "$fm_indir" -name "$FMPATT" -name "*phase.nii.gz"| sed -n '$p')
+     [ -z "$mag" -o -z "$phase" ] && echo "MISSING: mag+phase in '$fm_indir' ('$mag', '$phase')" && return 1
+     fieldmap "$distortion_dir" "$mag" "$phase"
      ARGS="$ARGS -distortion_dir $distortion_dir/unwarp"
   fi
 
