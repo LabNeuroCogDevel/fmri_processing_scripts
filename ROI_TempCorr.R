@@ -61,7 +61,7 @@ printHelp <- function() {
       "  Example: -corr_method pearson,cor.shrink -pcor_method pcor.shrink,adalasso.net",
       "",
       "The script depends on the following R libraries: foreach, doParallel, MASS, oro.nifti, parcor, ppcor, pracma, and robust. These can be installed using:",
-      "  install.packages(c(\"foreach\", \"doParallel\", \"MASS\", \"oro.nifti\", \"parcor\", \"ppcor\", \"pracma\", \"ppcor\", \"robust\", \"forecast\", \"lmtest\"))",
+      "  install.packages(c(\"foreach\", \"doParallel\", \"MASS\", \"oro.nifti\", \"parcor\", \"ppcor\", \"pracma\", \"ppcor\", \"robust\", \"tictoc\", \"forecast\", \"lmtest\"))",
       sep="\n")
 }
 
@@ -255,12 +255,23 @@ if (ts_only && nchar(ts_out_file) == 0L) {
 }
 
 # handle package dependencies
-for (pkg in c("methods", "foreach", "doParallel", "oro.nifti", "MASS", "corpcor", "parcor", "tictoc", "pracma", "forecast", "lmtest")) {
+for (pkg in c("methods", "foreach", "doParallel", "oro.nifti", "MASS", "corpcor", "tictoc", "pracma", "forecast", "lmtest")) {
   if (!suppressMessages(require(pkg, character.only=TRUE))) {
     message("Installing missing package dependency: ", pkg)
     install.packages(pkg)
     suppressMessages(require(pkg, character.only=TRUE))
   }
+}
+
+# 20210128WF - parcor is not in CRAN for R4.0 b/c dependency 'ppls' has been orphaned
+#              both by Kraemer and origiginally packaged 2014-09-04 
+#              X-CRAN-Comment: Orphaned and corrected on 2018-07-20 as check problems
+#                      were not corrected despite reminders.
+# https://cran-archive.r-project.org/web/checks/2018/2018-07-20_check_results_ppls.html
+if (!suppressMessages(require(parcor))) {
+  if (! "remotes" %in% installed.packages()[,1]) install.packages('remotes')
+  remotes::install_github("cran/ppls")   # Penalized Partial Least Squares 
+  remotes::install_github("cran/parcor") # Regularized estimation of partial correlation matrices
 }
 
 if (!is.null(fname_censor1D)) {
