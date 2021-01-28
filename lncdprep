@@ -211,6 +211,12 @@ func() {
  local func="$1"; shift
  local args="$ARGS";
 
+ if [ -n "$DRYRUN" ]; then
+    echo "# DRYRUN: fork func '$thisout'"
+    sleep 1
+    return 0
+ fi
+
  [ ! -d "$thisout" ] && mkdir -p "$thisout"
  cd $thisout
 
@@ -245,10 +251,11 @@ find_func(){
 
 wait_for_jobs() {
   i=1
-  while [ $(jobs -p|wc -l) -gt $MAXJOBS ]; do
-     echo "[$i@$(date +%FT%H:%m)] $*; $MAXJOBS jobs. waiting";
+  SLEEPTIME=30
+  while [ $(jobs -p|wc -l) -ge $MAXJOBS ]; do
+     echo "[$i@$(date +%FT%H:%m)] $*; $MAXJOBS jobs. waiting $SLEEPTIME";
      let ++i
-     sleep 30
+     sleep $SLEEPTIME 
   done
 }
 
@@ -301,14 +308,7 @@ _lncdprep(){
      # $OUTPUTDIR/$T2ROOT/11757/sub-11757_task-SOA_bold 
 
      partial_ok "$thisout" || continue
-
-     if [ $MAXJOBS -eq 1 -o -n "$DRYRUN" ]; then
-        $DRYRUN func "$t1out" "$thisout" "$func"
-     else
-        func "$t1out" "$thisout" "$func" &
-        sleep .1
-        wait_for_jobs $id $func
-     fi
+     func "$t1out" "$thisout" "$func"
   done
 }
 
@@ -316,14 +316,24 @@ prep_all_subjs() {
    if [ -z "$SUBJS" ]; then
       debug "finding subjects"
       [ $USE_SES -eq 0 ] &&
-        SUBJS=$(find_func 3) ||
-        SUBJS=$(find_func 4)
-      debug "have $SUBJS"
+         SUBJS=($(find_func 3)) ||
+         SUBJS=($(find_func 4))
+      debug "have ${#SUBJS[@]} subjs: $SUBJS"
+   else
+      SUBJS=($SUBJS)
    fi
 
-   for id in $SUBJS; do
+   total_subjs=${#SUBJS[@]}
+   for sidx in $(seq 0 $((($total_subjs-1)))); do
+     id=${SUBJS[$sidx]}
      debug $id
-     _lncdprep "$id"
+     if [ $MAXJOBS -eq 1 ]; then
+        _lncdprep "$id"
+     else
+        _lncdprep "$id" &
+        sleep .1
+        wait_for_jobs "last sent: $id ($((($sidx+1)))/$total_subjs)"
+     fi
    done
    wait
 }
