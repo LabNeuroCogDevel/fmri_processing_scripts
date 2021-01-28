@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'e=$?; [ $e -ne 0 ] && echo "$0 exited in error; wait for cleanup"; wait' EXIT
+
 #
 # BIDS app
 #
@@ -114,13 +116,13 @@ DEF_ARGS="\
 
 # rest: stricter motion, bandpass, and regression
 REST_ARGS="\
-  -motion_censor fd=0.3,dvars=20  \
+  -motion_censor fd=0.3 \
   -bandpass_filter 0.009 .08 \
   -nuisance_regression 6motion,d6motion,csf,dcsf,wm,dwm"
 
 # task: more permissive motion. high pass filter 111s ~= .009Hz
 TASK_ARGS="\
-   -motion_censor fd=0.8,dvars=20  \
+   -motion_censor fd=0.8 \
    -hp_filter 111s"
 
 ## parse arguments
@@ -184,6 +186,7 @@ mprage() {
 
 =cut
 fieldmap(){
+   [ $# -ne 3 ] && echo "$FUNCNAME: want fmdir, mag, phase. given '$@'." && return 1
    local fmdir="$1"; shift
    local mag="$1"; shift
    local phase="$1"; shift
