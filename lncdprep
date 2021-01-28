@@ -83,7 +83,7 @@ C<DRYRUN> - if set, will echo instead of running
 
 =cut
 env|grep -q ^DRYRUN=. && DRYRUN=echo || DRYRUN=""
-env|grep -q ^DEGUB=. || DEBUG=""
+env|grep -q ^DEBUG=. || DEBUG=""
 debug() { [ -n "$DEBUG" ] && echo "$@" || :; }
 
 
@@ -244,8 +244,9 @@ func() {
 }
 
 find_func(){
+   debug "# searching $BIDSROOT at depth $1 for dir 'func'" >&2
    find -L $BIDSROOT -maxdepth "$1" -type d -name func |
-      perl -lne 'print $1 if m:sub-([^/]*(/ses-[^/]*)):' |
+      perl -lne 'print $1 if m:sub-([^/]*(/ses-[^/]*)?):' |
       $CAT
 }
 
@@ -268,16 +269,32 @@ partial_ok(){
         return 1
      return 0
 }
+find_fm() {
+  # find fieldmap files (mag or phase)
+  local id="$1"; shift
+  local mag_or_phase="$1"; shift;
+  case "$mag_or_phase" in 
+   mag) mag_or_phase=".*magnitude1?.nii.gz";;
+   phase) mag_or_phase=".*phase.nii.gz";;
+  esac
+  local file="$(find -L "$BIDSROOT/sub-$id/fmap/" -name "$FMPATT" -regex "$mag_or_phase"| sed -n '$p')"
+  [ -z "$file" ] &&
+	  echo "MISSING FMAP: '$BIDSROOT/sub-$id/fmap/$mag_or_phase' (using FMPATT '$FMPATT')" >&2 &&
+	  return 1
+  echo $file
+}
 
 _lncdprep(){
   local id="$1"; shift
   if [ -n "$FMCFG" ]; then
      local fm_indir="$BIDSROOT/sub-$id/fmap/"
      distortion_dir=$OUTDIR/FM/$id
-     local mag=$(find -L "$fm_indir" -name "$FMPATT" -name "*magnitude1.nii.gz"| sed -n '$p') 
-     local phase=$(find -L "$fm_indir" -name "$FMPATT" -name "*phase.nii.gz"| sed -n '$p')
+     partial_ok "$distortion_dir" || return 0
+
+     local mag=$(find_fm $id mag) 
+     local phase=$(find_fm $id phase)
      [ -z "$mag" -o -z "$phase" ] && echo "MISSING: mag+phase in '$fm_indir' ('$mag', '$phase')" && return 1
-     fieldmap "$distortion_dir" "$mag" "$phase"
+     $DRYRUN fieldmap "$distortion_dir" "$mag" "$phase"
      ARGS="$ARGS -distortion_dir $distortion_dir/unwarp"
   fi
 
@@ -286,6 +303,8 @@ _lncdprep(){
      t1s=($(find -L $BIDSROOT/sub-$id -name '*T1w*.nii.gz' -path '*/anat/*'))
      [ ${#t1s[@]} -eq 0 ] && echo "ERROR: $id: no T1 in $BIDSROOT/sub-$id!?" && return
      [ ${#t1s[@]} -gt 1 ] && echo "ERROR: $id: more than one T1 ${t1s[*]}" && return
+     #test -r $t1out/.preprocessmprage_incomplete && echo "# rm $_ to restart" && return
+     partial_ok $t1out || return 0
      $DRYRUN mprage $t1out ${t1s[0]}
   fi
 
@@ -342,6 +361,7 @@ prep_all_subjs() {
 
 if [[ $0 =~ lncdprep$ ]]; then
    parse_args "$@"
+   echo "# $(date): Running with $MAXJOBS. Can resume partial? $PARTIAL"
    prep_all_subjs
 fi
 
