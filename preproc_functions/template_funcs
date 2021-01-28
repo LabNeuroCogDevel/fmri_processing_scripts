@@ -47,10 +47,10 @@ old_template_check(){
       esac
 
       if [[ ! $sext =~ ^$want && -z "$USE_OLD_TEMPLATE" ]]; then
-         echo "ERROR need -use_old_mni: sext of $warp ($sext != $want) suggests old template!"
+         echo "ERROR: need -use_old_mni: sext of $warp ($sext !~ ^$want) suggests old template!"
          exit 1
       elif [[ $sext =~ ^$want && -n "$USE_OLD_TEMPLATE" ]]; then
-         echo "ERROR trying -use_old_mni but sext of $warp ($sext == $want) suggests new template!"
+         echo "ERROR: trying -use_old_mni but sext of $warp ($sext =~ ^$want) suggests new template!"
          exit 1
 
       fi

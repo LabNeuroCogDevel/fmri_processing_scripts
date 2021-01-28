@@ -33,6 +33,7 @@ function correct_slice_motion_4d {
     if ! sliceMotion4d -h >/dev/null; then
        rel "'sliceMotion4d' failed to start! considider 'python3 -m pip install numpy==1.16.4'" c
        rel "20201016: stil a known issue. https://github.com/nipy/nipy/issues/456" c
+       exit 1
     fi
     rel "sliceMotion4d --inputs \"${preMC}\" --tr $tr --slice_times $slcorder --prefix ${slcmotprefix} ${siemensInterleaved} --mats"
 
