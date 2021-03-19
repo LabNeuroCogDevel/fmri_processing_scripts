@@ -237,6 +237,11 @@ case "$reference" in
 	unbettedRefBrain=${stddir}/spm8_mni/T1;
 	refMask=${stddir}/spm8_mni/brainmask_0.5thresh;
 	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
+    # 20210317WF for LC 
+    1YO_2mm)  bettedRefBrain=${stddir}/UNCInfant/2mm/infant-1yr-brain
+	unbettedRefBrain=${stddir}/UNCInfant/2mm/infant-1yr-withSkull
+	refMask=${stddir}/UNCInfant/2mm/infant-1yr-brainmask;
+	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
     *) echo -e "Reference brain not recognized. Options are MNI_2mm, MNI_FSL_2mm, SPM_2mm, and Tal_2mm."; exit 1 ;;
 esac
 
