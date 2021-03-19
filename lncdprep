@@ -31,6 +31,8 @@ default C<MHT1_2mm>.
 
 =item C<--onlyt1> - just run preprocessMprage
 
+=item C<--onlyt2> - do not run preprocessMprage. use with '-- -no_warp'
+
 =item C<--use_ses> - when finding subjects, look for ses- dir. TODO: autodetect
 
 =item C<--njobs> - number of process to fork. default is 1.
@@ -39,9 +41,9 @@ default C<MHT1_2mm>.
 
 =item C<--fm_patt> - pattern to use when choosing fieldmap files (default to *.nii.gz, might want eg. "*run-1*")
 
-=item C<--ppfmri_args|--> append to default settings. will override with specified if redundent
+=item C<--ppfmri_args|--> append to default settings. must be given last
 
-=item C<--ppfmri_newargs> replace all defaults with what is provided aver
+=item C<--ppmprage_args> args to send to preprocessMprage (e.g. '-r 1YO_1mm' )
 
 =item C<--pattern> - only run on pattern for functional images (default '*.nii.gz')
 
@@ -67,8 +69,10 @@ T2ROOT="func"
 PATT="*.nii.gz"
 FMPATT="*.nii.gz"
 FMCFG=""
+MPRAGEARGS=""
 MAXJOBS=1
 ONLYT1=0
+ONLYT2=0
 USE_SES=0 # default to just sub-*/, instead of sub-*/ses-*
 PARTIAL=1 # okay to rerun if something is already in the directory
 
@@ -129,11 +133,18 @@ TASK_ARGS="\
 ARGS=""
 CAT="cat" # default to subjects in order, tac reverses
 
+mkabs() {
+   local path="$1";
+   [[ "$path" =~ ^/ ]] && echo "$path" && return 0
+   local bname="$(dirname "$path")"
+   [ ! -d "$bname" ] && echo "path does not exist: '$bname'" && return 1
+   echo $(cd "$bname"; pwd)/$(basename "$path")
+}
 parse_args() {
    [[ $# -eq 1 && $1 =~ -?-h* ]] && pod2text "$0" && exit 1
    [ $# -lt 2 ] && usage
-   BIDSROOT="$1";
-   OUTDIR="$2";
+   BIDSROOT="$(mkabs "$1")";
+   OUTDIR="$(mkabs "$2")";
    shift 2;
    while [ $# -gt 0 ]; do
     case "$1" in
@@ -143,6 +154,7 @@ parse_args() {
       [^-]*) SUBJS="$SUBJS $1"; shift 1;;
       --t1*) T1DNAME="$2"; shift 2;;
       --onlyt1) ONLYT1=1;shift;;
+      --onlyt2) ONLYT2=1;shift;;
       --use_ses) USE_SES=1; shift;;
       --t2*) T2ROOT="$2"; shift 2;;
       --njobs) MAXJOBS="$2"; shift 2;;
@@ -153,6 +165,7 @@ parse_args() {
       --no_partial) PARTIAL=0; shift;;
       # push unknown args onto preprocessFunctional
       --|--ppfmri_args) shift; ARGS="$ARGS $*"; break;;
+      --ppmprage_args) MPRAGEARGS="$2"; shift 2;;
       *) echo "ERROR: unknown arg '$1'" && usage;;
     esac
     debug "now parsing $*"
@@ -163,6 +176,11 @@ parse_args() {
       echo "ERROR:    see 'preprocessFunctional -help' for options to fill ...." >&2
       exit 1
    fi
+   if [[ ! "$ARGS" =~ "-no_warp" && "$ONLYT2" -eq 1 ]]; then
+      echo "ERROR: have --onlyt2 but ppfrmri args do not include '-no_warp'" >&2
+      echo "ERROR:    add '.... -- -no_warp' or remove '--onlyt2'" >&2
+      exit 1
+   fi
 }
 
 :<<=cut
@@ -170,14 +188,16 @@ parse_args() {
 
 We copy the sole T1w nifti to this subjects directory (C</output/t1prefix/>)
 and run preprocessMprage with the default settings
+
 =cut
 mprage() {
+ # uses global MPRAGEARGS. defaults to empty (preprocessMprage defaults)
  local t1out="$1"; shift
  local t1s="$1"
  [ ! -d $t1out ] && mkdir -p $t1out
  cd $t1out
  3dcopy $t1s mprage.nii.gz -overwrite
- preprocessMprage -n mprage.nii.gz
+ preprocessMprage -n mprage.nii.gz $MPRAGEARGS
 }
 
 
@@ -299,13 +319,19 @@ _lncdprep(){
   fi
 
   t1out="$OUTDIR/$T1DNAME/$id"
-  if [ ! -r $t1out/mprage_warpcoef.nii.gz ]; then
+  if [ ! -r $t1out/mprage_warpcoef.nii.gz -a "$ONLYT2" -eq 0 ]; then
      t1s=($(find -L $BIDSROOT/sub-$id -name '*T1w*.nii.gz' -path '*/anat/*'))
      [ ${#t1s[@]} -eq 0 ] && echo "ERROR: $id: no T1 in $BIDSROOT/sub-$id!?" && return
      [ ${#t1s[@]} -gt 1 ] && echo "ERROR: $id: more than one T1 ${t1s[*]}" && return
      #test -r $t1out/.preprocessmprage_incomplete && echo "# rm $_ to restart" && return
      partial_ok $t1out || return 0
      $DRYRUN mprage $t1out ${t1s[0]}
+  fi
+
+  # check T1 worked for useful-ish error message
+  if test "$ONLYT2" -eq 0 -a ! -r $t1out/mprage_warpcoef.nii.gz; then 
+     echo "ERR: T1 failed; missing $_"
+     return 1
   fi
 
   [ $ONLYT1 -ne 0 ] && return
@@ -345,6 +371,7 @@ prep_all_subjs() {
    fi
 
    total_subjs=${#SUBJS[@]}
+   echo "# $total_subjs visits"
    for sidx in $(seq 0 $((($total_subjs-1)))); do
      id=${SUBJS[$sidx]}
      debug $id
@@ -361,7 +388,7 @@ prep_all_subjs() {
 
 if [[ $0 =~ lncdprep$ ]]; then
    parse_args "$@"
-   echo "# $(date): Running with $MAXJOBS. Can resume partial? $PARTIAL"
+   echo "# $(date): Running with $MAXJOBS jobs. Can resume partial? $PARTIAL"
    prep_all_subjs
 fi
 
