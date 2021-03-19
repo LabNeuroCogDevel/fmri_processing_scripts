@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+set -eou pipefail
+env|grep -q ^DRYRUN=.&&DRYRUN=echo||DRYRUN=
+
+# use fmriprep to make output that looks like preprocessMprage
+# namely mprage_bet.nii.gz and mprage_warpcoef.nii.gz
+usage_brief(){ cat <<H
+USAGE:
+   $0 -n mprage.nii.gz [-r MNI_2mm] [-o output_directory] [-h] [-D] [-d]
+H
+}
+usage(){
+   # show error message and usage
+   # or full usage
+   retcode=0
+   [ $# -ne 0 ] && echo -e "***\nERROR: $*\n***" && retcode=1
+   usage_brief 
+   [ $retcode -ne 0 ] && exit $retcode
+  [ $# -gt 1 ] && return
+  cat <<H
+
+TODO: more info
+
+Run fmriprep --anat-only on a fake bids directory for a single structural
+rewrite files to look like the output of preprocessMprage (mprage_bet.nii.gz and mprage_warpcoef.nii.gz)
+used as input for preprocessFunctional
+H
+   exit
+}
+
+# arg parse could re-use parse_args. but intentially want to limit inputs
+INPUT=""
+REF="MNI_2mm"
+OUTDIR="$(pwd)"
+DOCKER=0
+
+parse_args(){
+ [ $# -eq 0 ] && usage "need -n INPUT"
+ while [ $# -gt 0 ]; do
+    case "$1" in
+       -n) INPUT="$2"; shift 2;;
+       -r) REF="$2"; shift 2;;
+       -o) OUTDIR="$2"; shift 2;;
+       -D) DOCKER=0; shift 1;;
+       -d) DOCKER=1; shfit 1;;
+       -h) usage;;
+    esac
+ done
+ 
+ [ -z "$INPUT" ] && usage "missing -n INPUT"
+ [ ! -r "$INPUT" ] && usage "cannot read $INPUT"
+ [ ! -d "$OUTDIR" ] && usage "output dir '$OUTDIR' does not exist"
+ return 0
+}
+
+fs_lic(){
+   env|grep -q ^FS_LICENSE=. ||
+      export FS_LICENSE=/opt/ni_tools/freesurfer/license.txt
+
+   [ ! -r "$FS_LICENSE" ] && usage "cannot find '$FS_LICENSE'. fix with 'export FS_LICENSE=....'"
+}
+
+fake_bids(){
+   local input="$1"
+   local subjid=sub-1
+   local path=bids/$subjid/anat/
+   test ! -d $path  && mkdir -p $path
+   out=$path/${subjid}_T1w.nii.gz
+   test -r $out && return 0
+   [[ ! "$input" =~ .nii.gz ]] && cmd=3dcopy || cmd="ln -s"
+   $cmd  $input $out
+   return 0
+}
+mkabs(){
+   # get absolute path for a file
+   # like 'readlink -f' but works even if it doesn't exist
+   # will make dirname if the dir up from that exists
+   # does not check file exists (arg to mkabs might be a file to create later)
+   d="$(dirname "$1")"
+   b="$(basename "$1")"
+   [ ! -d "$d" -a -d "$(dirname "$d")" ] && mkdir "$d"
+   [ ! -d "$d" ] && echo "ERROR: '$d' does not exist!" && return 1
+   echo $(cd "$d"; pwd)/$b
+}
+
+get_ref(){
+   local ref="$1"
+   case $ref in
+      MNI*) ref="MNI152NLin2009cAsym";;
+      1YO*) ref="UNCInfant:cohort-2";;
+      *);;
+   esac
+   echo "$ref"
+}
+
+main(){
+   parse_args "$@"
+   fs_lic
+   local input="$(mkabs $INPUT)"
+   local cmd="fmriprep"
+   [ $DOCKER -eq 1 ] &&
+      cmd="docker run  -v "$(pwd):$(pwd)" -v $FS_LICENSE:/opt/freesurfer/license.txt -it nipreps/fmriprep"
+      # --user '$(id -u):$(id -g)'
+
+   $DRYRUN cd $OUTDIR
+   $DRYRUN fake_bids "$input"
+   $DRYRUN $cmd  \
+      --anat-only --skip_bids_validation --fs-no-reconall \
+      --output-spaces $(get_ref $REF) \
+      --participant-label sub-1 -- \
+      $(pwd)/bids/ $(pwd)/out/ participant
+   
+   cat <<HERE
+   # TODO
+   # make files look like mprage_bet and mprage_warpcoef
+   # remove fmriprep outputs?
+HERE
+
+}
+
+[[ "$(caller)" != "0 "* ]] && set +u || main "$@"
