@@ -43,7 +43,7 @@ default C<MHT1_2mm>.
 
 =item C<--ppfmri_args|--> append to default settings. must be given last
 
-=item C<--ppmprage_args> args to send to preprocessMprage (e.g. '-r 1YO_1mm' )
+=item C<--ppmprage_args> args to send to preprocessMprage (e.g. '-r 1YO_1mm' N.B. all args within quotes)
 
 =item C<--pattern> - only run on pattern for functional images (default '*.nii.gz')
 
