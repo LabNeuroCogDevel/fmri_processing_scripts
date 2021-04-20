@@ -306,16 +306,22 @@ find_fm() {
 
 _lncdprep(){
   local id="$1"; shift
+  debug "_lncdprep: $id"
   if [ -n "$FMCFG" ]; then
-     local fm_indir="$BIDSROOT/sub-$id/fmap/"
      distortion_dir=$OUTDIR/FM/$id
-     partial_ok "$distortion_dir" || return 0
 
-     local mag=$(find_fm $id mag) 
-     local phase=$(find_fm $id phase)
-     [ -z "$mag" -o -z "$phase" ] && echo "MISSING: mag+phase in '$fm_indir' ('$mag', '$phase')" && return 1
-     $DRYRUN fieldmap "$distortion_dir" "$mag" "$phase"
      ARGS="$ARGS -distortion_dir $distortion_dir/unwarp"
+     # dont need to do anything if we already have unwarps
+     if [ ! -r $distortion_dir/unwarp/FM_UD_fmap_mag.nii.gz -o \
+       ! -r $distortion_dir/unwarp/FM_UD_fmap.nii.gz  ]; then 
+	     partial_ok "$distortion_dir" || return 0
+
+	     local mag=$(find_fm $id mag) 
+	     local phase=$(find_fm $id phase)
+	     local fm_indir="$BIDSROOT/sub-$id/fmap/"
+	     [ -z "$mag" -o -z "$phase" ] && echo "MISSING: mag+phase in '$fm_indir' ('$mag', '$phase')" && return 1
+	     $DRYRUN fieldmap "$distortion_dir" "$mag" "$phase"
+     fi
   fi
 
   t1out="$OUTDIR/$T1DNAME/$id"
@@ -336,6 +342,7 @@ _lncdprep(){
 
   [ $ONLYT1 -ne 0 ] && return
 
+  debug "searching '$BIDSROOT/sub-$id' for '$PATT'"
   find -L "$BIDSROOT/sub-$id" \
      -path '*/func/*'  \
      -iname "$PATT" \
@@ -354,6 +361,7 @@ _lncdprep(){
      #  becomes
      # $OUTPUTDIR/$T2ROOT/11757/sub-11757_task-SOA_bold 
 
+     debug "func: $func matches '$PATT'"
      partial_ok "$thisout" || continue
      func "$t1out" "$thisout" "$func"
   done
@@ -365,7 +373,7 @@ prep_all_subjs() {
       [ $USE_SES -eq 0 ] &&
          SUBJS=($(find_func 3)) ||
          SUBJS=($(find_func 4))
-      debug "have ${#SUBJS[@]} subjs: $SUBJS"
+      debug "have ${#SUBJS[@]} subjs: ${SUBJS[@]}"
    else
       SUBJS=($SUBJS)
    fi
