@@ -441,6 +441,7 @@ parse_args "$@"
 
 # legacy check for old (bad, pre 201810) mni template
 old_template_check
+warp_template_check || exit 1
 
 #handle cleanup only scenario
 #TODO: tends to leave behind some mask files since logic for which mask is subject mask is below.
