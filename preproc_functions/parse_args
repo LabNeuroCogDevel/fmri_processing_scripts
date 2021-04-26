@@ -491,7 +491,14 @@ function parse_args {
 		MNI_2.3mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2.3mm" ;;
 		SPM_2mm) templateBrain="${stddir}/spm8_mni/T1_brain" ;;
 		MNI_2mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm" ;;
-		*) echo -e "Reference brain -template_brain ${2} not recognized. Options are MNI_3mm, MNI_FSL_3mm, SPM_2mm, and Tal_3mm."; exit 1 ;;
+		MNI_2mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm" ;;
+
+              # 20210426. added to preprocessMprage ealier
+              1YO_2mm)  templateBrain="${stddir}/UNCInfant/2mm/infant-1yr-brain";;
+              1YO_3mm)  templateBrain="${stddir}/UNCInfant/2mm/infant-1yr-brain-3mm";;
+              neo_2mm)  templateBrain="${stddir}/UNCInfant/2mm_neo/infant-neo-brain";;
+              neo_3mm)  templateBrain="${stddir}/UNCInfant/2mm_neo/infant-neo-brain-3mm";;
+		*) echo -e "Reference brain -template_brain ${2} not recognized. Options are MNI_3mm, MNI_FSL_3mm, SPM_2mm, Tal_3mm, 1YO_3mm, neo_3mm."; exit 1 ;;
 	    esac
 	    shift 2
 	elif [ $1 = -threshold ]; then

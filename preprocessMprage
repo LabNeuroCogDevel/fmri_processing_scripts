@@ -57,7 +57,8 @@ Command line options:
   -o -output: output file name. The filename for the final warped mprage image.
         Defaults to mprage_nonlinear_warp_<referenceName>.nii.gz
   -p -dicom: file pattern for dicom MR files. Defaults to "MR*". Please enclose the pattern in quotes or it may not function properly
-  -r -template_brain: reference brain. Currently supports "MNI_2mm", "MNI_FSL_2mm", "SPM_2mm", and "Tal_2mm". Default is "MNI_2mm".
+  -r -template_brain: reference brain. Currently supports "MNI_2mm", "MNI_FSL_2mm", "SPM_2mm", "Tal_2mm", 1YO_2mm, neo_2mm.
+        Default is "MNI_2mm".
   -ss_method: skull-stripping method used to create final brain-extracted data. Default is fnirt-inv. Options:
         fnirt-inv: uses the template brain mask warped onto the subject's brain to define brain mask
         bet: uses the bet program (FSL) to skull strip (also respects -bet_opts).
@@ -242,7 +243,12 @@ case "$reference" in
 	unbettedRefBrain=${stddir}/UNCInfant/2mm/infant-1yr-withSkull
 	refMask=${stddir}/UNCInfant/2mm/infant-1yr-brainmask;
 	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
-    *) echo -e "Reference brain '$reference' not recognized. Options are MNI_2mm, MNI_FSL_2mm, SPM_2mm, Tal_2mm, and 1YO_2mm."; exit 1 ;;
+    # 20210416WF
+    neo_2mm)  bettedRefBrain=${stddir}/UNCInfant/2mm_neo/infant-neo-brain
+	unbettedRefBrain=${stddir}/UNCInfant/2mm_neo/infant-neo-withSkull
+	refMask=${stddir}/UNCInfant/2mm_neo/infant-neo-brainmask;
+	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
+    *) echo -e "Reference brain '$reference' not recognized. Options are MNI_2mm, MNI_FSL_2mm, SPM_2mm, Tal_2mm, 1YO_2mm, neo_2mm."; exit 1 ;;
 esac
 
 #define warped brain mask without dilation (used for creating a final betted image)
