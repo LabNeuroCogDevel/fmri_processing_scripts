@@ -59,6 +59,7 @@ Command line options:
   -p -dicom: file pattern for dicom MR files. Defaults to "MR*". Please enclose the pattern in quotes or it may not function properly
   -r -template_brain: reference brain. Currently supports "MNI_2mm", "MNI_FSL_2mm", "SPM_2mm", "Tal_2mm", 1YO_2mm, neo_2mm.
         Default is "MNI_2mm".
+  -startover: ignore .preprocessmprage_complete. useful if changing/adding arguments like "-ss_method bet -b '-f .6 -R'"
   -ss_method: skull-stripping method used to create final brain-extracted data. Default is fnirt-inv. Options:
         fnirt-inv: uses the template brain mask warped onto the subject's brain to define brain mask
         bet: uses the bet program (FSL) to skull strip (also respects -bet_opts).
@@ -66,6 +67,8 @@ Command line options:
         noisy: use @NoisySkullStrip
         ROBEX: uses the ROBEX program (which doesn't accept any parameters).
   -strong_bias: used for images with very strong bias fields
+  -unifize:  run afni's 3dUnifize on input mprage
+  -use_old_mni: support legacy preprocessing
   -w -warpres: resolution of warp basis (nonlinear neighborhood size) in mm. Default is 8 mm.
   -weak_bias: used for images with little and/or smooth bias fields (cf. fsl_anat). This is the default.
 
@@ -77,9 +80,12 @@ EndOfHelp
 
 #Author: Michael Hallquist
 #Written: 5/2/2010
-#Last updated: 7/21/2017
+#Last defaults updated: 7/21/2017
 #
 #Changelog:
+#22/04/2021 (WF) 
+# - '-unifize' switch runs 3dUnifize (remove shading artificat)
+# - save mprage nifti notes to 'mprage_history.txt' (e.g. lncdtools/mknii)
 #11/0l/2018 (WF) 
 # - can use octave, add old_template_check (-use_old_mni)
 #10/29/2018 (WF) 
@@ -169,6 +175,7 @@ ssmethod=fnirt-inv
 gcoeffs= #no gradient nonlinearity correction by default
 
 dotfile=.preprocessmprage
+unifize=0
 
 #exit script if processing complete
 if [[ -f "${dotfile}_complete" && "$@" != *-startover* && "$@" != *-cleanup_only* && "$@" != *-help* ]]; then
@@ -192,7 +199,6 @@ echo -e "$thiscommandinfo " > ${dotfile}_incomplete
 
 #now in preproc_functions/parse_args
 parse_mprage_args "$@" #parse command line inputs
-
 
 # make sure we are using the correct template
 old_template_check
@@ -250,6 +256,20 @@ case "$reference" in
 	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
     *) echo -e "Reference brain '$reference' not recognized. Options are MNI_2mm, MNI_FSL_2mm, SPM_2mm, Tal_2mm, 1YO_2mm, neo_2mm."; exit 1 ;;
 esac
+
+echo "settings:
+  preproc_override?  '$override_string'
+  reference    = '$reference'
+  ssmethod     = '$ssmethod'
+  betOpts      = '$betOpts'
+  strongBias   = '$strongBias'
+  cleanup      = '$cleanup'
+  bright_skull = '$bright_skull'
+  unifize      = '$unifize'
+  brainmask    = '$brainmask'"
+
+[ -n "$DRYRUN" ] && exit 1
+
 
 #define warped brain mask without dilation (used for creating a final betted image)
 nodil=$( echo $refMask | perl -pe 's/(_dil[0-9]*)*(\.nii)*(\.gz)*$//' ) #remove any dil, as well as file extension
@@ -412,7 +432,19 @@ if [ $cleanup_only -eq 1 ]; then
 fi
 
 #reorient structural to RPI/LPI to match template
+# this removes any history from mprage. so save to text file
+[ -n "$(3dNotes "$nifti"  2>/dev/null)" ] && rel "3dNotes '$nifti' > ${T1}_history.txt"
 rel "fslreorient2std $nifti $nifti"
+
+if [ $unifize -eq 1 ]; then
+   # 20210422 "remove shading artifacts." implemented for baby data  
+   # > The output dataset has the white matter (WM) intensity approximately
+   # > uniformized across space, and scaled to peak at about 1000.
+   pre_unifize=${T1}_preunifize.nii.gz
+   [ ! -r  $pre_unifize ] && cp $nifti $pre_unifize || rel "using existing $(ls -l $pre_unifize)" c
+   rel "3dUnifize -prefix $nifti -overwrite -input $pre_unifize"
+fi
+
 [ -n "$brainmask" ] && rel "fslreorient2std $brainmask $brainmask"
 
 if [ $robustfov -eq 1 ]; then

@@ -731,6 +731,7 @@ function parse_args {
 function parse_mprage_args() {
 
     USE_OLD_TEMPLATE=
+    unifize=0
 
     while [ _$1 != _ ] ; do
 	if [[ $1 = -b || $1 = -bet_opts ]] ; then
@@ -797,11 +798,22 @@ function parse_mprage_args() {
 	elif [[ $1 = -ss_method ]]; then
 	    ssmethod="${2}"
 	    shift 2
+	elif [[ $1 = -startover ]]; then
+           # explicity used in flag file (.preprocessmprage_complete) check
+           # needed here only to shift out
+	    shift 1
 	elif [[ $1 = -strongbias || $1 = -strong_bias ]]; then
 	    strongBias=1
 	    shift 1
        elif [[ $1 = -use_old_mni  ]]; then
           USE_OLD_TEMPLATE=yes
+          shift 1
+       elif [[ $1 = -unifize  ]]; then
+          # 20210422 use 3dUnifize (implemented for baby data)
+          #  remove shading artifacts.
+          # The output dataset has the white matter (WM) intensity approximately
+          # uniformized across space, and scaled to peak at about 1000.
+          unifize=1
           shift 1
 	elif [[ $1 = -warpres || $1 = -w ]]; then
 	    wr="${2}"
