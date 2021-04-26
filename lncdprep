@@ -244,18 +244,23 @@ func() {
  # in BIDS sbref should be named nearly the same as func if it exists
  sbref=${func/_bold.nii.gz/_sbref.nii.gz}
  if [ -r "$sbref" ]; then
+    local sbref_json=${sbref/.nii.gz/.json}
+    test -r $sbref_json -a ! -r ref.json  && cp $sbref_json  $_
+
     ! test -r ref.nii.gz && 3dcopy $sbref $_
-    ! test -r ref.json  && cp ${sbref/.nii.gz/.json} $_
     debug "using $sbref reference!"
     args="-func_refimg ref.nii.gz $args"
  else
-    debug "no sbref for like '$sbref'"
+    debug "no sbref like '$sbref' (in $(pwd))"
  fi
 
  echo "final args: $args" #todo rmme
 
+ local func_json=${func/.nii.gz/.json}
+ test -r $func_json -a ! -r func.json  && cp $func_json  $_
+
  [ ! -r func.nii.gz ] && 3dcopy $func func.nii.gz
- [ ! -r func.json ] && cp ${func/.nii.gz/.json} func.json
+
  preprocessFunctional -4d func.nii.gz \
    -mprage_bet $t1out/mprage_bet.nii.gz -warpcoef $t1out/mprage_warpcoef.nii.gz \
    $args
