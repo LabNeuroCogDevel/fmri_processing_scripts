@@ -147,6 +147,10 @@ fixto1809c() {
 # 20210426 - functional shouldn't need to specify but we do so check instead of select
 warp_template_check() {
    #global $mprageBet $templateBrain $reference
+   local func_template="$templateBrain"
+   [ ! -r $func_template ] && func_template=$func_template.nii
+   [ ! -r $func_template ] && func_template=$func_template.gz
+   [ ! -r $func_template ] && echo "ERROR: $templateBrain (.nii and .nii.gz '$func_template') DNE!" && return 1
    local template=$(find_mprage_warp "$mprageBet" "template_brain.nii*")
    # cannot do anything if it doesn't ready exist
    [ -z "$template" -o ! -r "$template" ] && 
@@ -154,8 +158,8 @@ warp_template_check() {
 
    # diff exist status is true when there is no difference
    # ! diff -q <(echo a) <(echo b) && echo diff # 'diff'
-   if ! diff -q "$templateBrain" "$template" ; then
-      echo "# ERROR: '$templateBrain' ('$reference') does not match '$template' of '$mprageBet'"
+   if ! diff -q "$func_template" "$template" ; then
+      echo "# ERROR: '$templateBrain' ('$reference', '$func_template') does not match '$template' of '$mprageBet'"
       return 1
    else
       rel "# template check success: '$templateBrain' ($reference) matches $template (paired with '$mprageBet')" c
