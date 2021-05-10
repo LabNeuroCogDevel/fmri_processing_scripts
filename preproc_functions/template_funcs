@@ -146,7 +146,8 @@ fixto1809c() {
 
 # 20210426 - functional shouldn't need to specify but we do so check instead of select
 warp_template_check() {
-   #global $mprageBet $templateBrain $reference
+   #global $mprageBet $templateBrain $templateName
+   local funcTemplate="$templateBrain"
    local template=$(find_mprage_warp "$mprageBet" "template_brain.nii*")
    # cannot do anything if it doesn't ready exist
    [ -z "$template" -o ! -r "$template" ] && 
@@ -154,11 +155,13 @@ warp_template_check() {
 
    # diff exist status is true when there is no difference
    # ! diff -q <(echo a) <(echo b) && echo diff # 'diff'
-   if ! diff -q "$templateBrain" "$template" ; then
-      echo "# ERROR: '$templateBrain' ('$reference') does not match '$template' of '$mprageBet'"
+   [ ! -r $funcTemplate ] && funcTemplate="$(ls "$funcTemplate".nii*|sed 1q)"
+   [ -z "$funcTemplate" ] && echo "#WARNING: cannot find actual file for '$templateBrain'" && return
+   if ! diff -q "$funcTemplate" "$template" ; then
+      echo "# ERROR: '$templateBrain' (ref: '$templateName') does not match '$template' of '$mprageBet'"
       return 1
    else
-      rel "# template check success: '$templateBrain' ($reference) matches $template (paired with '$mprageBet')" c
+      rel "# template check success: '$templateBrain' (ref: '$templateName') matches $template (paired with '$mprageBet')" c
    fi
 
    return 0 
