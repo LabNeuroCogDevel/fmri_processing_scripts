@@ -761,8 +761,11 @@ function process_func_refimg() {
 		rel "fslmaths \"$funcRefimg\" epiref"
 	    fi
 
+
 	    rel "fslreorient2std epiref epiref" #reorient epiref to LPI/RPI. Crucial to getting fieldmap orientation and behavior consistent
 	    
+	    # 20210513WF - sarap oddball resting state refs are difficult. unifizing helps
+	    [ $unifize_funcref -eq 1 ] && rel "3dUnifize -prefix epiref${ext} -input epiref${ext} -overwrite"
 	    #skull strip reference image to improve coregistration
 	    #rel "bet epiref epiref_brain -f 0.3 -n -R" #include bias field correction given heavy bias for 32-channel data
 	    rel "3dSkullStrip -overwrite -input epiref${ext} -prefix epiref_brain${ext} -orig_vol"

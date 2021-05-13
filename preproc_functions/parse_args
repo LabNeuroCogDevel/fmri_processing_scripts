@@ -86,6 +86,7 @@ function parse_args {
     KEEP_MOTION_FILES=
     n_rm_firstvols=0
     USE_OLD_TEMPLATE=
+    unifize_funcref=0
 
     #figure out file extension for FSL programs
     if [ -z $FSLOUTPUTTYPE ]; then
@@ -523,6 +524,9 @@ function parse_args {
        # LNCD mMR/PET uses old template 
        elif [[ $1 = -use_old_mni  ]]; then
           USE_OLD_TEMPLATE=yes
+          shift 1
+       elif [[ $1 = -unifize_funcref ]]; then # added 20210513
+	   unifize_funcref=1
           shift 1
 	elif [ $1 = -verbose ]; then
 	    verbose=1
