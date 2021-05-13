@@ -908,4 +908,33 @@ all_must_exist(){
     done
 }
 
+grid_matches(){
+  # NB. includes  -same_obl which is probably useful
+  [ "$(AFNI_NO_OBLIQUE_WARNING=YES 3dinfo -same_grid "$@" | sort -u)" == "1" ]
+}
+resample_or_keep() {
+   # if first matches second return name of second
+   # otherwise resample second as ${second}_resampled.nii.gz and return it
+   [ $# -ne 2 ] && echo "# $FUNCNAME ERROR: want 'ref' 'inset', got $# inputs instead" && return 1
+   local ref="$1"; shift
+   local inset="$1"; shift
+   [ ! -r "$ref" ] && echo "# $FUNCNAME ERROR: cannot read ref '$ref' from $(pwd)!" && return 1
+   [ ! -r "$inset" ] && echo "# $FUNCNAME ERROR: cannot read inset '$inset' from $(pwd)!" && return 1
+   if ! grid_matches $ref $inset; then
+      local new="$(basename "$inset"|sed 's/.nii\(.gz\)\?$//')_resampled.nii.gz"
+      echo "WARNING: grid mismatch: ref '$ref' != inset '$inset'" >&2
+      AFNI_NO_OBLIQUE_WARNING=YES 3dresample -rmode NN -master "$ref" -inset "$inset" -overwrite -prefix $new >&2
+      inset="$new"
+   fi
+   ! grid_matches "$ref" "$inset" && echo "# $FUNCNAME ERROR! '$inset' != '$ref'. probably b/c oblique. see 3dinfo -same_obl $ref $new" && return 1
+   echo $inset
+}
+
+preproc_git_ver(){
+   test -d $(dirname $0) && cd $_
+   rev=$(git rev-parse --short HEAD 2>/dev/null || echo -n '')
+   [ -z "$rev" ] && echo "no_vcs_info" && return
+   echo "$rev $(git diff --quiet && echo 'clean' || echo 'dirty')"
+}
+
 # vim: set tabstop=7:
