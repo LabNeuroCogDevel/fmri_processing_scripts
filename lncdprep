@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
-trap 'e=$?; [ $e -ne 0 ] && echo "$0 exited in error; wait for cleanup"; wait' EXIT
 
 #
 # BIDS app
@@ -23,11 +21,6 @@ lncdprep bidsroot outputdir [--participant_label participant1 [participant2 ...]
 =head2 Options
 
 =over 4
-
-=item C<--t1> - Folder name within outputdir for preprocessMprage.
-default C<MHT1_2mm>.
-
-=item C<--t2> - Folder name within outputdir for preprocessFunctional.
 
 =item C<--onlyt1> - just run preprocessMprage
 
@@ -53,6 +46,11 @@ default C<MHT1_2mm>.
 
 =item C<--no_partial> - skip if we have any thing in the directory we would run in
 
+=item C<--t1> - DEPRICATED 20210519. Folder name within outputdir for preprocessMprage.
+default C<MHT1_2mm>.
+
+=item C<--t2> - DEPRICATED 20210519. Folder name within outputdir for preprocessFunctional.
+
 =back
 
 Within this dir., there will be subdirectoires for each C<*.nii.gz>.
@@ -64,8 +62,6 @@ see C<preprocessFunctional -help>
 =cut
 
 # where data will be saved
-T1DNAME="MHT1_2mm"
-T2ROOT="func"
 PATT="*.nii.gz"
 FMPATT="*.nii.gz"
 FMCFG=""
@@ -75,6 +71,12 @@ ONLYT1=0
 ONLYT2=0
 USE_SES=0 # default to just sub-*/, instead of sub-*/ses-*
 PARTIAL=1 # okay to rerun if something is already in the directory
+
+# pre 20210519. separate roots for T1, T2, and FM
+# now stored by protocol name in same sub/ses dir
+OLDDERIVFORMAT=0
+    T1DNAME="MHT1_2mm"
+    T2ROOT="func"
 
 usage(){ pod2usage "$0"; exit 1; }
 
@@ -140,6 +142,52 @@ mkabs() {
    [ ! -d "$bname" ] && echo "path does not exist: '$bname'" && return 1
    echo $(cd "$bname"; pwd)/$(basename "$path")
 }
+
+bids_to_old_deriv(){
+  # before 20210519 seperate folders for everything
+  # bold: $OUTPUTDIR/$T2ROOT/11757/sub-11757_task-SOA_bold 
+  # t1w : t1out="$OUTDIR/$T1DNAME/$id" #pre-20210519
+  # fm  : distortion_dir=$OUTDIR/FM/$id
+  local input="$1"; shift
+  case $input in
+  *bold.nii*)
+    perl -pe "
+       s:/func/sub-:/sub-:g;
+       s/:/_/g;s:^$BIDSROOT:$OUTDIR/$T2ROOT:;
+       s/sub-//;s/.nii(.gz)?$//;" <<< $input;;
+  *T1w*)
+    local id=$(perl -lne 'print $1 if m:sub-([^/_-]+(/ses-[^/_-]+)?)/:'<<< $input)
+    echo "$OUTDIR/$T1DNAME/$id";;
+  *)
+   echo "$FUNCNAME: unkonwn input not bold or T1w: '$input'" >&2
+   return 1;;
+ esac
+}
+
+bids_to_deriv_dir(){
+ # replace BIDSROOT with our own output directory
+ # $BIDSROOT/sub-11757/func/sub-11757_task-SOA_bold.nii.gz
+ #  becomes
+ # $OUTPUTDIR/sub-11757/task-SOA_bold 
+
+ # still support old format
+ # using if-then so bids_to_old_deriv_dir's return 1 is respected
+ if [ $OLDDERIVFORMAT -eq 1 ]; then
+     bids_to_old_deriv_dir "$1"
+     return 0
+ fi
+
+ local input="$1"; shift
+ local root="$1"; shift
+ perl -pe "
+   s/:/_/g;
+   s:/func/sub-:/sub-:g;
+   s:/anat/sub-:/sub-:g;
+   s:^$BIDSROOT:$root:;
+   # s/sub-//;         # 20210519 keep subject id in deriv folder
+   s:sub-[^/_-]+(_ses-[^/_-]+)?_::g; # final folder is just protocol info
+   s/.nii(.gz)?$//;" <<< "$input"
+}
 parse_args() {
    [[ $# -eq 1 && $1 =~ -?-h* ]] && pod2text "$0" && exit 1
    [ $# -lt 2 ] && usage
@@ -152,11 +200,9 @@ parse_args() {
       --rest) ARGS="$DEF_ARGS $REST_ARGS"; shift 1;;
       --participant_label) SUBJS="$SUBJS $2"; shift 2;;
       [^-]*) SUBJS="$SUBJS $1"; shift 1;;
-      --t1*) T1DNAME="$2"; shift 2;;
       --onlyt1) ONLYT1=1;shift;;
       --onlyt2) ONLYT2=1;shift;;
       --use_ses) USE_SES=1; shift;;
-      --t2*) T2ROOT="$2"; shift 2;;
       --njobs) MAXJOBS="$2"; shift 2;;
       --fm_patt) FMPATT="$2"; shift 2;;
       --fm_cfg) FMCFG="$2"; shift 2;;
@@ -166,6 +212,8 @@ parse_args() {
       # push unknown args onto preprocessFunctional
       --|--ppfmri_args) shift; ARGS="$ARGS $*"; break;;
       --ppmprage_args) MPRAGEARGS="$2"; shift 2;;
+      --t1*) OLDDERIVFORMAT=1; T1DNAME="$2"; shift 2;;
+      --t2*) OLDDERIVFORMAT=1; T2ROOT="$2"; shift 2;;
       *) echo "ERROR: unknown arg '$1'" && usage;;
     esac
     debug "now parsing $*"
@@ -269,6 +317,7 @@ func() {
 }
 
 find_func(){
+   # returns list of ids either sub-XXX or sub-XXX/ses-YYYY depending on depth ($1)
    debug "# searching $BIDSROOT at depth $1 for dir 'func'" >&2
    find -L $BIDSROOT -maxdepth "$1" -type d -name func |
       perl -lne 'print $1 if m:sub-([^/]*(/ses-[^/]*)?):' |
@@ -313,7 +362,9 @@ _lncdprep(){
   local id="$1"; shift
   debug "_lncdprep: $id"
   if [ -n "$FMCFG" ]; then
-     distortion_dir=$OUTDIR/FM/$id
+
+     [ $OLDDERIVFORMAT -eq 0 ] && distortion_dir=$OUTDIR/sub-$id/FM/  ||
+	     distortion_dir=$OUTDIR/FM/$id || # pre 20210519
 
      ARGS="$ARGS -distortion_dir $distortion_dir/unwarp"
      # dont need to do anything if we already have unwarps
@@ -329,14 +380,19 @@ _lncdprep(){
      fi
   fi
 
-  t1out="$OUTDIR/$T1DNAME/$id"
-  if [ ! -r $t1out/mprage_warpcoef.nii.gz -a "$ONLYT2" -eq 0 ]; then
+  t1out="$id/NO_T1w_FOUND"
+  if [ "$ONLYT2" -eq 0 ]; then
      t1s=($(find -L $BIDSROOT/sub-$id -name '*T1w*.nii.gz' -path '*/anat/*'))
      [ ${#t1s[@]} -eq 0 ] && echo "ERROR: $id: no T1 in $BIDSROOT/sub-$id!?" && return
      [ ${#t1s[@]} -gt 1 ] && echo "ERROR: $id: more than one T1 ${t1s[*]}" && return
-     #test -r $t1out/.preprocessmprage_incomplete && echo "# rm $_ to restart" && return
-     partial_ok $t1out || return 0
-     $DRYRUN mprage $t1out ${t1s[0]}
+
+     t1out=$(bids_to_deriv_dir "${t1s[0]}" "$OUTDIR")
+     # previously: t1out="$OUTDIR/$T1DNAME/$id" #pre-20210519
+     if [ ! -r $t1out/mprage_warpcoef.nii.gz ]; then
+	#test -r $t1out/.preprocessmprage_incomplete && echo "# rm $_ to restart" && return
+	partial_ok $t1out || return 0
+	$DRYRUN mprage $t1out ${t1s[0]}
+     fi
   fi
 
   # check T1 worked for useful-ish error message
@@ -358,13 +414,10 @@ _lncdprep(){
      test 1 -ge $(AFNI_NIFTI_TYPE_WARN=NO 3dinfo -nt "$func") &&
         echo "# skipping '$func', too few volumes ($_)" && continue
 
-     thisout=$(perl -pe "
-       s:/func/sub-:/sub-:g;
-       s/:/_/g;s:^$BIDSROOT:$OUTDIR/$T2ROOT:;
-       s/sub-//;s/.nii(.gz)?$//;" <<< $func)
+     thisout=$(bids_to_deriv_dir "$func" "$OUTDIR")
      # $BIDSROOT/sub-11757/func/sub-11757_task-SOA_bold.nii.gz
      #  becomes
-     # $OUTPUTDIR/$T2ROOT/11757/sub-11757_task-SOA_bold 
+     # $OUTPUTDIR/sub-11757/task-SOA_bold 
 
      debug "func: $func matches '$PATT'"
      partial_ok "$thisout" || continue
@@ -386,7 +439,7 @@ prep_all_subjs() {
    total_subjs=${#SUBJS[@]}
    echo "# $total_subjs visits"
    for sidx in $(seq 0 $((($total_subjs-1)))); do
-     id=${SUBJS[$sidx]}
+     id=$(echo ${SUBJS[$sidx]}| sed s/sub-//)
      debug $id
      if [ $MAXJOBS -eq 1 ]; then
         _lncdprep "$id"
@@ -400,6 +453,8 @@ prep_all_subjs() {
 }
 
 if [[ $0 =~ lncdprep$ ]]; then
+   set -euo pipefail
+   trap 'e=$?; [ $e -ne 0 ] && echo "$0 exited in error; wait for cleanup"; wait' EXIT
    parse_args "$@"
    echo "# $(date): Running with $MAXJOBS jobs. Can resume partial? $PARTIAL"
    prep_all_subjs

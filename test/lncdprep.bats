@@ -64,3 +64,45 @@ teardown() {
  echo "subjid: '$out'"
  [ "$out" == 1/ses-2 ]
 }
+
+@test "bids in to deriv func" {
+  BIDSROOT="a/b/c"
+  output=$(bids_to_deriv_dir "a/b/c/sub-1/ses-2/func/sub-1_ses-2_task-rest_run-1_bold.nii.gz" "derive")
+  echo "$output" >&2
+  [[ "$output" = "derive/sub-1/ses-2/task-rest_run-1_bold" ]]
+}
+@test "bids in to deriv func noses" {
+  BIDSROOT="a/b/c"
+  output=$(bids_to_deriv_dir "a/b/c/sub-1/func/sub-1_task-rest_run-1_bold.nii.gz" "derive")
+  echo "$output" >&2
+  [[ "$output" = "derive/sub-1/task-rest_run-1_bold" ]]
+}
+@test "bids in to deriv anat" {
+  BIDSROOT="a/b/c"
+  output=$(bids_to_deriv_dir "a/b/c/sub-1/ses-2/anat/sub-1_ses-2_T1w.nii.gz" "derive")
+  echo "$output" >&2
+  [[ "$output" = "derive/sub-1/ses-2/T1w" ]]
+}
+
+@test "old derive" {
+  BIDSROOT="b"
+  OUTDIR="d"
+  T1DNAME="T1"; T2ROOT="bold";
+  # bold: $OUTPUTDIR/$T2ROOT/11757/sub-11757_task-SOA_bold 
+  # t1w : t1out="$OUTDIR/$T1DNAME/$id" #pre-20210519
+  run bids_to_old_deriv b/sub-11757/func/sub-11757_task-SOA_bold.nii.gz
+  echo $output >&2
+  [[ $output = "d/bold/11757/sub-11757_task-SOA_bold" ]]
+
+  run bids_to_old_deriv b/sub-11757/ses-X/func/sub-11757_ses-X_task-SOA_bold.nii.gz
+  echo $output >&2
+  [[ $output = "d/bold/11757/ses-X/sub-11757_ses-X_task-SOA_bold" ]]
+
+  run bids_to_old_deriv b/sub-11757/anat/sub-11757_T1w.nii.gz
+  echo $output >&2
+  [[ $output = "d/T1/11757" ]]
+
+  run bids_to_old_deriv b/sub-11757/ses-X/anat/sub-11757_ses-X_T1w.nii.gz
+  echo $output >&2
+  [[ $output = "d/T1/11757/ses-X" ]]
+}
