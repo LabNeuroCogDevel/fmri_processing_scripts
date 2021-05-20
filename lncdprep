@@ -36,7 +36,7 @@ lncdprep bidsroot outputdir [--participant_label participant1 [participant2 ...]
 
 =item C<--ppfmri_args|--> append to default settings. must be given last
 
-=item C<--ppmprage_args> args to send to preprocessMprage (e.g. '-r 1YO_1mm' N.B. all args within quotes)
+=item C<--ppmprage_args> args to send to preprocessMprage (e.g. '-r 1YO_2mm' N.B. all args within quotes)
 
 =item C<--pattern> - only run on pattern for functional images (default '*.nii.gz')
 
@@ -77,6 +77,14 @@ PARTIAL=1 # okay to rerun if something is already in the directory
 OLDDERIVFORMAT=0
     T1DNAME="MHT1_2mm"
     T2ROOT="func"
+T1TEMPLATE="MNI_2mm" # hard code ppMprage default. this must be changed if changed there
+T2TEMPLATE="MNI_2mm" # might want to use 3mm
+t1_tmpl_str(){
+    perl -lne 'if(m/^(.*)_([0-9.]+mm)$/) {
+     $t=$1;$r=$2;
+     $t =~ s/_//g;
+     print "tmpl-${t}_res-$r"; }' <<< "$1"
+} #MNI_2mm tmp-MNI_res-2mm
 
 usage(){ pod2usage "$0"; exit 1; }
 
@@ -104,32 +112,40 @@ C<SUBJS> is either provided in as arguments or from traversing the BIDS root at 
 
 SUBJS=""
 
-## default arguements for rest
-DEF_ARGS="\
-   -wavelet_despike  \
-   -wavelet_threshold 10 \
-   -siemens -slice_acquisition interleaved \
-   -threshold 98_2 \
-   -ica_aroma \
-   -rescaling_method 10000_globalmedian \
-   -template_brain MNI_2mm\
-   -func_struc_dof bbr  \
-   -warp_interpolation spline  \
-   -constrain_to_template y  \
-   -smoothing_kernel 4\
-   -nuisance_file nuisance_regressors.txt \
-   -nuisance_compute 6motion,d6motion,csf,dcsf,wm,dwm"
-
-# rest: stricter motion, bandpass, and regression
-REST_ARGS="\
-  -motion_censor fd=0.3 \
-  -bandpass_filter 0.009 .08 \
-  -nuisance_regression 6motion,d6motion,csf,dcsf,wm,dwm"
-
-# task: more permissive motion. high pass filter 111s ~= .009Hz
-TASK_ARGS="\
-   -motion_censor fd=0.8 \
-   -hp_filter 111s"
+default_preproc_args(){
+  ## default arguements for rest and task
+  # single input arg should be 'task' or 'rest'
+  DEF_ARGS="\
+     -wavelet_despike  \
+     -wavelet_threshold 10 \
+     -siemens -slice_acquisition interleaved \
+     -threshold 98_2 \
+     -ica_aroma \
+     -rescaling_method 10000_globalmedian \
+     -func_struc_dof bbr  \
+     -warp_interpolation spline  \
+     -constrain_to_template y  \
+     -smoothing_kernel default\
+     -nuisance_file nuisance_regressors.txt \
+     -nuisance_compute 6motion,d6motion,csf,dcsf,wm,dwm"
+  
+  # rest: stricter motion, bandpass, and regression
+  REST_ARGS="\
+    -motion_censor fd=0.3 \
+    -bandpass_filter 0.009 .08 \
+    -nuisance_regression 6motion,d6motion,csf,dcsf,wm,dwm"
+  
+  # task: more permissive motion. high pass filter 111s ~= .009Hz
+  TASK_ARGS="\
+     -motion_censor fd=0.8 \
+     -hp_filter 111s"
+  
+  case "$1" in
+      rest) echo "$DEF_ARGS $REST_ARGS";;
+      task) echo "$DEF_ARGS $TASK_ARGS";;
+      *)    echo "$FUNCNAME: unknown type '$1' (want task or rest)" >&2; return 1;;
+  esac
+}
 
 ## parse arguments
 ARGS=""
@@ -196,8 +212,8 @@ parse_args() {
    shift 2;
    while [ $# -gt 0 ]; do
     case "$1" in
-      --task) ARGS="$DEF_ARGS $TASK_ARGS"; shift 1;;
-      --rest) ARGS="$DEF_ARGS $REST_ARGS"; shift 1;;
+      --task) ARGS="$(default_preproc_args task)"; shift 1;;
+      --rest) ARGS="$(default_preproc_args rest)"; shift 1;;
       --participant_label) SUBJS="$SUBJS $2"; shift 2;;
       [^-]*) SUBJS="$SUBJS $1"; shift 1;;
       --onlyt1) ONLYT1=1;shift;;
@@ -229,7 +245,60 @@ parse_args() {
       echo "ERROR:    add '.... -- -no_warp' or remove '--onlyt2'" >&2
       exit 1
    fi
+   # MPRAGEARGS might be used to change the reference template
+   if [[ "$MPRAGEARGS" =~ (-r|-template_brain)\ [\"\']?([^ ]+) ]]; then
+       T1TEMPLATE=${BASH_REMATCH[2]} # eg. MNI_2mm, 1YO_2mm
+   fi
 }
+
+strip_mm(){ perl -lne 's/_[0-9.]+mm$//;print' <<<"$*"; }
+
+t2template(){
+   # echos e.g. "-template_brain MNI_3mm"
+   # checks that T2TEMPLATE isn't > 1mm from functional
+   # checks that T1 and T2 templates are the same space
+
+   # no warp, don't care
+   [[ "$ARGS" =~ "-no_warp" ]] && return 0
+
+   local func="$1"; shift
+   local t2res=$(3dinfo -adi "$func")
+   local defres=2 # could get from T2TEMPLATE, regex _([0-9.]+)mm$
+
+   # explicitly set then use that
+   # otherwise check that we are within 1mm 
+   if [[ "$ARGS" =~ \-template_brain\ [\"\']?([^ ]+) ]]; then
+       T2TEMPLATE=${BASH_REMATCH[1]} # eg. MNI_3mm
+
+   # handy defaults for MNI_2mm
+   elif [[ $(bc -l <<< "$t2res >= 3") -eq 1 && $T1TEMPLATE =~ ^MNI_2mm ]]; then
+       T2TEMPLATE=MNI_3mm
+   elif [[ $(bc -l <<< "$t2res <= 2.0") -eq 1 && $T1TEMPLATE =~ ^MNI_2mm ]]; then
+       T2TEMPLATE=MNI_2mm
+   elif [[ $(bc -l <<< "$t2res >= 2.0") -eq 1 && $T1TEMPLATE =~ ^MNI_2mm ]]; then
+       T2TEMPLATE=MNI_2.3mm
+
+   # for not default. check resolution and force explicit choice if > 1mm diff
+   else
+       local istoobig=$(bc -l <<< "sqrt($t2res - $defres)^2 >= 1")
+       if [ "$istoobig" -eq 1 ]; then
+	   echo "ERROR: bold warp template '$T2TEMPLATE' > 1mm different than functional ('$t2res')
+if you're okay with this, add: -- '-template_brain $T2TEMPLATE' to lncdprep
+" >&2
+	   return 1
+       fi
+   fi
+   
+   # template space should match across T1 and T2 preproc_functions
+   # eg MNI matches MNI
+   [[ "$(strip_mm ${T2TEMPLATE})" != "$(strip_mm ${T1TEMPLATE})" ]] &&
+     echo "template space mismatch! t1 '$T1TEMPLATE' != t2 '$T2TEMPLATE'" >&2 &&
+     return 1
+
+   
+   echo "-template_brain $T2TEMPLATE"
+}
+
 
 :<<=cut
 =head2 preprocessMprage
@@ -277,7 +346,7 @@ func() {
  local t1out="$1"; shift
  local thisout="$1"; shift
  local func="$1"; shift
- local args="$ARGS";
+ local args="$ARGS $(t2template $func)";
 
  if [ -n "$DRYRUN" ]; then
     echo "# DRYRUN: fork func '$thisout'"
@@ -387,6 +456,7 @@ _lncdprep(){
      [ ${#t1s[@]} -gt 1 ] && echo "ERROR: $id: more than one T1 ${t1s[*]}" && return
 
      t1out=$(bids_to_deriv_dir "${t1s[0]}" "$OUTDIR")
+     [ $OLDDERIVFORMAT -eq 0 ] && t1out="${t1out}_$(t1_tmpl_str "$T1TEMPLATE")"
      # previously: t1out="$OUTDIR/$T1DNAME/$id" #pre-20210519
      if [ ! -r $t1out/mprage_warpcoef.nii.gz ]; then
 	#test -r $t1out/.preprocessmprage_incomplete && echo "# rm $_ to restart" && return
@@ -438,6 +508,7 @@ prep_all_subjs() {
 
    total_subjs=${#SUBJS[@]}
    echo "# $total_subjs visits"
+   
    for sidx in $(seq 0 $((($total_subjs-1)))); do
      id=$(echo ${SUBJS[$sidx]}| sed s/sub-//)
      debug $id

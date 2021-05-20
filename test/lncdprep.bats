@@ -1,5 +1,9 @@
 #!/usr/bin/env bats
 
+mknii() {
+ 3dUndump -dimen 6 6 6 -srad 1 -ijk  -prefix $1 -overwrite  <(echo -e '1 1 1')
+ 3drefit -xdel $2 -ydel $2 -zdel $2 $1
+}
 setup() {
   # INPUTDIR="$BATS_TEST_DIRNAME/exampledata/ncanda_fm/"
   # [ ! -d $INPUTDIR ] && skip
@@ -106,3 +110,80 @@ teardown() {
   echo $output >&2
   [[ $output = "d/T1/11757/ses-X" ]]
 }
+
+
+@test "parseargs:template" {
+    # default
+    echo "def temp: '$T1TEMPLATE'" >&2
+    [[ $T1TEMPLATE == "MNI_2mm" ]]
+
+    parse_args BIDS DERIVE --task
+    echo "stll def temp: '$T1TEMPLATE'" >&2
+    [[ $T1TEMPLATE == "MNI_2mm" ]]
+
+    parse_args BIDS DERVE --task --ppmprage_args "-r 1YO_2mm"
+    echo "change def temp: '$T1TEMPLATE'" >&2
+    [[ $T1TEMPLATE == "1YO_2mm" ]]
+    
+}
+
+@test "template_string" {
+ run t1_tmpl_str MNI_2mm
+ echo "$output" >&2
+ [[ $output == "tmpl-MNI_res-2mm" ]]
+ [[ $(t1_tmpl_str MNI_FSL_2mm) == "tmpl-MNIFSL_res-2mm" ]]
+}
+
+@test "t2templatechecks" {
+  mknii func_2.nii.gz 2
+  mknii func_2.3.nii.gz 2.3
+  mknii func_3.nii.gz 3
+
+  run t2template func_2.nii.gz
+  echo "normal: $output" >&2
+  [[ $status -eq 0 ]]
+  [[ $output == "-template_brain MNI_2mm" ]]
+  
+  # stardard bump to 3mm fail if too big
+  run t2template func_3.nii.gz
+  echo "3: '$output' $status" >&2
+  [[ $status -eq 0 ]]
+  [[ $output == "-template_brain MNI_3mm" ]]
+
+  # stardard bump to 3mm fail if too big
+  run t2template func_2.3.nii.gz
+  echo "2.3: '$output' $status" >&2
+  [[ $status -eq 0 ]]
+  [[ $output == "-template_brain MNI_2.3mm" ]]
+  
+  #but not if we have no warp
+  ARGS="-no_warp"
+  run t2template func_3.nii.gz
+  echo "no warp: '$output' $status" >&2
+  [[ $status -eq 0 ]]
+  [[ $output == "" ]]
+  
+  # or if we force
+  ARGS="-template_brain MNI_2mm"
+  run t2template func_3.nii.gz
+  echo "force template: '$output' $status" >&2
+  [[ $status -eq 0 ]]
+  [[ $output == "$ARGS" ]]
+
+  # fail if templates mismatch
+  ARGS="-template_brain MNI_FSL_3mm"
+  run t2template func_3.nii.gz
+  echo "mismatch template: '$output' $status" >&2
+  [[ $output =~ mismatch ]]
+  [[ $status -gt 0 ]]
+  
+  # fail when non MNI is too big
+  # N.B. could also fail b/c template mismatch
+  T1TEMPLATE="1YO_2mm"
+  ARGS=""
+  run t2template func_3.nii.gz
+  echo "too big: '$output' $status" >&2
+  [[ $output =~ different ]]
+  [[ $status -gt 0 ]]
+}
+
