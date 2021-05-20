@@ -698,6 +698,10 @@ function parse_args {
     #FHWM=sigma * sqrt(8*log(2))
     #Hence, because FSL expects our smoothing specification to be a sigma,
     #we divide the FWHM value provided by $smoothing_kernel by 2.355 (approximately 8*log(2).
+    [[ "$smoothing_kernel" == "default" ]] &&
+	smoothing_kernel=$(get_default_smoothing "$mprageBet")
+    [ -z "$smoothing_kernel" -a $no_smooth -eq 0 ] &&
+	echo "cannot continue without smoothing kernel" && exit 1
 
     sigma=$( echo "scale=5; $smoothing_kernel/2.355" | bc )
 
@@ -906,5 +910,21 @@ load_func_bids(){
     sliceMotion4D=1
  fi
  
+}
+
+get_default_smoothing() {
+  # smooth size default based on desired resolution.
+  # will be overwritten if '-- -smoothing_kernel x' specified
+  # find_mprage_warp is from func_template. must be loaded
+  local bet="$1"
+  local template=$(find_mprage_warp "$bet" "template_brain.nii*")
+  [ -z "$template" ] && echo "cannot find template from mprage bet  '$mprageBet'" >&2 && return 1
+  local res=$(3dinfo -adi $template) # all templates are symetric (2x2x2)
+  case $res in
+      2.0*) echo 4;;
+      2.5*) echo 5;;
+      3.0*) echo 5;;
+      *) echo "$FUNCNAME: smoothing size for res '$res' of '$template' not specified. manually specify like '-smoothing_kernel X' (in mm)" >&2; return 1;;
+  esac
 }
 # vim: set tabstop=7:

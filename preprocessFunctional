@@ -142,7 +142,8 @@ Command line options:
         -slice_acquisition seqasc. Sequential ascending (bottom-up)
         -slice_acquisition seqdesc. Sequential descending (top-down)
         -slice_acquisition interleaved. Interleaved 1,3,5... 2,4,6...
-  -smoothing_kernel: The size of gaussian smoothing kernel in mm. Default: 5
+  -smoothing_kernel: The size of gaussian smoothing kernel in mm. Default: 5. 
+        -smoothing_kernel 'default' will use 5 if template res >=2.3., and 4 if 2mm.
   -smoother: The smoothing approach to use. Defaults to "susan" (tries to normalize intensities without
         blurring). Alternative is "gaussian", which is regular smoothing.
   -startover: rather than skipping preprocessing stages that have been
@@ -233,6 +234,8 @@ EndOfHelp
 #
 #Changelog:
 #
+#05/19/2021 (WF)
+#  - added '-smoothing_kernel "default"': kernel size based on template res
 #05/13/2021 (WF)
 #  - added '-unifize_funcref' 
 #01/25/2021 (WF)

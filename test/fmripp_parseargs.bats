@@ -124,6 +124,19 @@ teardown() {
 
 }
 
+@test "default smoothing" {
+    source $BATS_TEST_DIRNAME/../preproc_functions/template_funcs
+ # this test should maybe go into smoothing. or smoothing tests could go here
+ # kludgy mprage_bet->template_brain shortcircut
+ 3dUndump -dimen 6 6 6 -srad 1 -ijk  -prefix template_brain.nii.gz -overwrite  <(echo -e '1 1 1')
+ 3drefit -xdel 3 template_brain.nii.gz
+ parse_args -4d fake.nii.gz -mprage_bet template_brain.nii.gz -smoothing_kernel default
+ [[ "$smoothing_kernel" == 5 ]]
+
+ parse_args -4d fake.nii.gz -mprage_bet template_brain.nii.gz -smoothing_kernel 10
+ [[ "$smoothing_kernel" == 10 ]]
+
+}
 
 @test "fail if gsr but not in regression" {
  run parse_args -4d fake.nii.gz -gsr 
