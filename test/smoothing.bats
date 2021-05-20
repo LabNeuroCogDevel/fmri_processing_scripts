@@ -12,6 +12,7 @@ setup() {
  source ../preproc_functions/helper_functions # needed for others
  MYTEMP=$(mktemp -d $BATS_TMPDIR/bats_smooth_XXX)
  cd $MYTEMP
+ logFile="smoothing.log"
 # SPATIALSMOOTH_GLOBALS=(prefix funcFile smoothing_suffix no_smooth smoothing_kernel smoother susan_thresh p_2 median_intensity sigma)
 
  ext=.nii.gz
@@ -24,21 +25,27 @@ teardown(){
 }
 
 @test default_smoother_3is5 {
-    mknii_dim template_brain.nii.gz 3 
-    local smooth_k=$(get_default_smoothing $(pwd)/template_brain.nii.gz)
+    mknii_dim func.nii.gz 3 
+    local smooth_k=$(get_default_smoothing func.nii.gz)
 
     [[ "$smooth_k" == 5 ]]
 }
 
 @test default_smoother_2is4 {
-    mknii_dim template_brain.nii.gz 2
-    local smooth_k=$(get_default_smoothing $(pwd)/template_brain.nii.gz)
+    mknii_dim func.nii.gz 2
+    local smooth_k=$(get_default_smoothing func.nii.gz)
     [[ "$smooth_k" == 4 ]]
 }
-@test default_smoother_2is4_mpragesafe {
-    mknii_dim template_brain.nii.gz 2
-    cp template_brain.nii.gz mprage_bet.nii.gz
-    3drefit -xdel 5 mprage_bet.nii.gz
-    local smooth_k=$(get_default_smoothing $(pwd)/mprage_bet.nii.gz)
+
+@test defaultsmooth_MNI_2.3mm {
+    local smooth_k=$(get_default_smoothing MNI_2.3mm)
+    [[ "$smooth_k" == 5 ]]
+}
+@test defaultsmooth_MNI_3mm {
+    local smooth_k=$(get_default_smoothing MNI_3mm)
+    [[ "$smooth_k" == 5 ]]
+}
+@test defaultsmooth_2mm {
+    local smooth_k=$(get_default_smoothing MNI_FSL_2mm)
     [[ "$smooth_k" == 4 ]]
 }

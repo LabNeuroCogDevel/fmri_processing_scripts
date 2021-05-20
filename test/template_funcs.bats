@@ -110,6 +110,6 @@ setup() {
 
  # $templateBrain is the xx_template_brain different than whats inside $mpreageBet's directory
  run warp_template_check 
- [[ $output =~ ERROR ]]
- [ $status -eq 1 ]
+ [[ $output =~ WARN ]]
+ [ $status -eq 0 ]
 }

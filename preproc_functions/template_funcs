@@ -146,6 +146,8 @@ fixto1809c() {
 
 # 20210426 - functional shouldn't need to specify but we do so check instead of select
 warp_template_check() {
+   # 20210520 - okay if templates are exactly the same! can go 2mm to 3mm
+   #            TODO check preprocessMprage.log for (-r|-template_brain)
    #global $mprageBet $templateBrain $reference
    local func_template="$templateBrain"
    [ ! -r $func_template ] && func_template=$func_template.nii
@@ -159,8 +161,8 @@ warp_template_check() {
    # diff exist status is true when there is no difference
    # ! diff -q <(echo a) <(echo b) && echo diff # 'diff'
    if ! diff -q "$func_template" "$template" ; then
-      echo "# ERROR: '$templateBrain' ('$reference', '$func_template') does not match template '$template' of bet '$mprageBet'"
-      return 1
+      rel "# WARNING: '$templateBrain' ('$reference', '$func_template') does not match template '$template' of bet '$mprageBet'. This is res is different. not okay if one is MNI and the other FSL" c
+      return 0
    else
       rel "# template check success: '$templateBrain' (ref: '$reference') matches template '$template' (paired with bet '$mprageBet')" c
    fi
