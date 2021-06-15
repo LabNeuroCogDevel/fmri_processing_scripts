@@ -192,6 +192,13 @@ echo -e "$thiscommandinfo " > ${dotfile}_incomplete
 #now in preproc_functions/parse_args
 parse_mprage_args "$@" #parse command line inputs
 
+rel "settings:
+  reference    = $reference    
+  betOpts      = $betOpts      
+  strongBias   = $strongBias   
+  cleanup      = $cleanup      
+  bright_skull = $bright_skull 
+  brainmask    = $brainmask" c
 
 # make sure we are using the correct template
 old_template_check
