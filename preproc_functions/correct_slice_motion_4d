@@ -3,6 +3,11 @@
 function correct_slice_motion_4d {
     #4d slice timing + motion correction using sliceMotion4d
 
+
+    # 20210125 - only kill the computer when we explictly say to
+    env|grep -q OPENBLAS_NUM_THREADS || export OPENBLAS_NUM_THREADS=1
+    env|grep -q MKL_NUM_THREADS || export MKL_NUM_THREADS=1
+
     slcmotprefix="tm" #sliceMotion4D prepends a prefix onto existing input
     preMC="${prefix}${funcNifti}"
     preST="${prefix}${funcNifti}"
@@ -33,6 +38,7 @@ function correct_slice_motion_4d {
     if ! sliceMotion4d -h >/dev/null; then
        rel "'sliceMotion4d' failed to start! considider 'python3 -m pip install numpy==1.16.4'" c
        rel "20201016: stil a known issue. https://github.com/nipy/nipy/issues/456" c
+       exit 1
     fi
     rel "sliceMotion4d --inputs \"${preMC}\" --tr $tr --slice_times $slcorder --prefix ${slcmotprefix} ${siemensInterleaved} --mats"
 

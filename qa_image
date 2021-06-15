@@ -108,6 +108,8 @@ _qa_image_main(){
          crossfade tmp_{underlay,overlay}.png "$out"
          rm tmp_{underlay,overlay}.png 
          ;;
+      svg)
+         echo "SVG NOT IMPLEMENTED"; exit 1;;
       *)
          out="$(qa_image "$@")"
          ;;

@@ -1,6 +1,10 @@
 #!/bin/bash
-REGISTER_FUNC2STRUCT_GLOBALS=(mprageBet fm_phase unwarpdir bbr_pedir funcRefimg func_struct_dof bbrCapable createBBRFmapWarp)
+REGISTER_FUNC2STRUCT_GLOBALS=(mprageBet fm_phase unwarpdir funcRefimg func_struct_dof bbrCapable createBBRFmapWarp)
+
 function register_func2struct {
+    local transform_dir="$funcdir/transforms/"
+    local unwarp_folder=$(pwd)/unwarp
+
     [ -z "$createBBRFmapWarp" ] && createBBRFmapWarp=0
     [ -f .register_func2struc ] && rel "register_func2struct alraedy" c && return 0
     print_vars_in REGISTER_FUNC2STRUCT_GLOBALS
@@ -25,7 +29,8 @@ function register_func2struct {
     #then convert the PE direction for flirt BBR and setup the additional string to include fieldmap unwarping in flirt.
     if [[ -n "${fm_phase}" || ( -n "${se_phasepos}" && $topup_direct -eq 0 ) || -n "$DISTORTION_DIR" ]]; then
 
-	inweight="-inweight $(pwd)/unwarp/EF_UD_fmap_sigloss"
+	inweight="-inweight $unwarp_folder/EF_UD_fmap_sigloss" # $(pwd)/unwarp/EF_UD_fmap_sigloss.nii.gz
+
         if [ -z "$unwarpdir" -a -n "$fm_cfg" ]; then
             rel "$FUNCNAME doesn't know about fieldmaping, something is strange" c 
             find_and_source_fmconfig "$fm_cfg"
@@ -35,6 +40,7 @@ function register_func2struct {
             warn "$FUNCNAME: using fm (b/c fm_phase '$fm_phase', se_phasepos '$se_phasepos', or DISTORTION_DIR '$DISTORTION_DIR') but unrecoginzed fm_cfg '$fm_cfg' (no '\$unwarpdir');"
           return 1
         fi
+
 	#echo spacing and phase encode direction should be defined when $fm_cfg is sourced by prepareFieldmap (upstream)
 	#need to convert pedir to numeric codes x=1, y=2, z=3
 	case "$unwarpdir" in
@@ -47,14 +53,14 @@ function register_func2struct {
 	    *)     warn "$FUNCNAME Unable to determine unwarping direction from '$unwarpdir'"; exit 1 ;;
 	esac
 
-	bbrfmap="-fieldmap $(pwd)/unwarp/fmapForBBR -pedir $bbr_pedir -echospacing $dwelltime"
+	bbrfmap="-fieldmap $unwarp_folder/fmapForBBR -pedir $bbr_pedir -echospacing $dwelltime"
     fi
 
     if [ -n "$funcRefimg" ]; then
 	local target="epiref_brain_restore"
 	local oname="epiref"
 
-        if [[ ! -f "$funcdir/transforms/epiref_to_func.mat"  || ! -f .t2star_coreg_complete ]]; then
+        if [[ ! -f "$transform_dir/epiref_to_func.mat"  || ! -f .t2star_coreg_complete ]]; then
             #calculate ref -> func coregistration to concatenate with ref -> struct
             rel "Using intermediate T2* reference file (epiref) as coregistration target" c
 
@@ -78,7 +84,7 @@ function register_func2struct {
 	    rel "convert_xfm -omat transforms/epiref_to_func.mat -inverse transforms/func_to_epiref.mat"
 
 	    #compute sefmap -> func transform via epiref if available (TOPUP)
-	    if [ -f "$funcdir/transforms/sefmap_to_epiref.mat" ]; then
+	    if [ -f "$transform_dir/sefmap_to_epiref.mat" ]; then
 		rel "convert_xfm -omat ${funcdir}/transforms/sefmap_to_func.mat -concat ${funcdir}/transforms/epiref_to_func.mat ${funcdir}/transforms/sefmap_to_epiref.mat"
 	    fi
 
@@ -108,13 +114,13 @@ function register_func2struct {
 
 	#compute func -> epiref -> se fmap transform
 	if [ -n "$funcRefimg" ]; then
-	    rel "convert_xfm -omat $funcdir/transforms/func_to_sefmap.mat -concat $funcdir/transforms/epiref_to_sefmap.mat $funcdir/transforms/func_to_epiref.mat"
+	    rel "convert_xfm -omat $transform_dir/func_to_sefmap.mat -concat $transform_dir/epiref_to_sefmap.mat $transform_dir/func_to_epiref.mat"
 	else
 	    #this fires if there is no epiref in the pipeline. TopupPreprocessingAll calls everything 'epiref' regardless of whether it's a single band ref img or not.
-	    rel "cp $funcdir/transforms/epiref_to_sefmap.mat $funcdir/transforms/func_to_sefmap.mat"
+	    rel "cp $transform_dir/epiref_to_sefmap.mat $transform_dir/func_to_sefmap.mat"
 	fi
-	rel "convert_xfm -omat $funcdir/transforms/sefmap_to_func.mat -inverse $funcdir/transforms/func_to_sefmap.mat" #compute SE -> func transform
-	rel "convertwarp --relout --rel -r mc_target --premat=$funcdir/transforms/func_to_sefmap.mat --warp1=topup_undistort/SE_WarpField --postmat=$funcdir/transforms/sefmap_to_func.mat --out=topup_undistort/EF_WarpField"
+	rel "convert_xfm -omat $transform_dir/sefmap_to_func.mat -inverse $transform_dir/func_to_sefmap.mat" #compute SE -> func transform
+	rel "convertwarp --relout --rel -r mc_target --premat=$transform_dir/func_to_sefmap.mat --warp1=topup_undistort/SE_WarpField --postmat=$transform_dir/sefmap_to_func.mat --out=topup_undistort/EF_WarpField"
 	
 	rel "Undistorting mc_target images" c
 	rel "applywarp -i mc_target -r mc_target -o mc_target_undistorted -w topup_undistort/EF_WarpField --rel --interp=spline"
@@ -130,15 +136,15 @@ function register_func2struct {
     if [ "$use_fm" -eq 1 ]; then
 	#need to compute func_to_struct_init.mat via the concatentation of func -> fmap -> struct warps
 	if [ $target = "mc_target_brain_restore" ]; then
-	    rel "convert_xfm -omat $funcdir/transforms/func_to_struct_viafmap.mat -concat $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/func_to_fmap.mat"
-	    initMat=$funcdir/transforms/func_to_struct_viafmap.mat
+	    rel "convert_xfm -omat $transform_dir/func_to_struct_viafmap.mat -concat $transform_dir/fmap_to_struct.mat $transform_dir/func_to_fmap.mat"
+	    initMat=$transform_dir/func_to_struct_viafmap.mat
 	else
-	    rel "convert_xfm -omat $funcdir/transforms/epiref_to_struct_viafmap.mat -concat $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/epiref_to_fmap.mat"
-	    initMat=$funcdir/transforms/epiref_to_struct_viafmap.mat
+	    rel "convert_xfm -omat $transform_dir/epiref_to_struct_viafmap.mat -concat $transform_dir/fmap_to_struct.mat $transform_dir/epiref_to_fmap.mat"
+	    initMat=$transform_dir/epiref_to_struct_viafmap.mat
 	fi
     fi
 
-    if [[ ! -f "$funcdir/transforms/func_to_struct.mat" || ! -f .func2struct_complete ]]; then
+    if [[ ! -f "$transform_dir/func_to_struct.mat" || ! -f .func2struct_complete ]]; then
 	rel "Warping subject functional to subject structural" c
 
 	#TODO: move 6dof transform outside of these checks to reduce redundancy. Then mv to _init in case of BBR
@@ -152,8 +158,8 @@ function register_func2struct {
 		#leaving off inweight for now because should handle fieldmap in flirt now
 		if [ -z "$initMat" ]; then
 		    rel "Estimating initial $oname -> struct transform using 6dof coregistration" c
-		    rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct_init -omat $funcdir/transforms/${oname}_to_struct_init.mat -dof 6 -interp spline"
-		    initMat=$funcdir/transforms/${oname}_to_struct_init.mat
+		    rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct_init -omat $transform_dir/${oname}_to_struct_init.mat -dof 6 -interp spline"
+		    initMat=$transform_dir/${oname}_to_struct_init.mat
 		else
 		    rel "Using initial $oname -> struct transform from fieldmap coregistration process" c
 		    rel "applywarp -i ${target}${topupsuffix} -r $mprageBet --premat=$initMat --interp=spline --rel -o ${oname}_to_struct_init"
@@ -163,7 +169,7 @@ function register_func2struct {
 		
 		#now do the BBR-based registration
 		#N.B.: the epi_reg program uses betted T1 for initial transformation, but the unbetted image for BBR registration!
-		rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct -omat $funcdir/transforms/${oname}_to_struct.mat -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
+		rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct -omat $transform_dir/${oname}_to_struct.mat -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
 		    -cost bbr -init $initMat -dof 6 -schedule ${FSLDIR}/etc/flirtsch/bbr.sch $bbrfmap"
 
 		qa_image $mprageBet ${oname}_to_struct "${oname}_to_struct.png" "Structural overlaid with bbr-coregistered ${oname}"
@@ -175,27 +181,27 @@ function register_func2struct {
 		fi		    
 		
 		#KH: need the struct_to_func.mat for nuisance regression. Thus, do not limit to fieldmap transform below.
-		rel "convert_xfm -omat $funcdir/transforms/struct_to_${oname}.mat -inverse $funcdir/transforms/${oname}_to_struct.mat"
+		rel "convert_xfm -omat $transform_dir/struct_to_${oname}.mat -inverse $transform_dir/${oname}_to_struct.mat"
 	    else
 		rel "BBR EPI-to-T1 requested, but flirt < v6.0. Reverting to typical 6 DOF registration" c
 		func_struct_dof=6
-		rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct -omat $funcdir/transforms/${oname}_to_struct.mat -dof $func_struct_dof $inweight -interp spline"
+		rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct -omat $transform_dir/${oname}_to_struct.mat -dof $func_struct_dof $inweight -interp spline"
 		qa_image $mprageBet ${oname}_to_struct "${oname}_to_struct.png" "Structural overlaid with 6dof-coregistered ${oname}"
 	    fi
 	else
-	    rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct -omat $funcdir/transforms/${oname}_to_struct.mat -dof $func_struct_dof $inweight -interp spline"
+	    rel "flirt -in ${target}${topupsuffix} -ref $mprageBet -out ${oname}_to_struct -omat $transform_dir/${oname}_to_struct.mat -dof $func_struct_dof $inweight -interp spline"
 	    qa_image $mprageBet ${oname}_to_struct "${oname}_to_struct.png" "Structural overlaid with 6dof-coregistered ${oname}"
 	fi
 
 	#For intermediate target, concatenate func -> epiref and epiref -> struct to derive func -> struct
 	if [ -n "$funcRefimg" ]; then
-	    rel "convert_xfm -omat $funcdir/transforms/func_to_struct.mat -concat $funcdir/transforms/epiref_to_struct.mat $funcdir/transforms/func_to_epiref.mat"
-	    rel "convert_xfm -omat $funcdir/transforms/struct_to_func.mat -inverse $funcdir/transforms/func_to_struct.mat"
+	    rel "convert_xfm -omat $transform_dir/func_to_struct.mat -concat $transform_dir/epiref_to_struct.mat $transform_dir/func_to_epiref.mat"
+	    rel "convert_xfm -omat $transform_dir/struct_to_func.mat -inverse $transform_dir/func_to_struct.mat"
 	fi
 
 	if [ "$createBBRFmapWarp" -eq 1 ]; then
 	    #also generate a func -> struct image without fmap unwarping in BBR to verify that fieldmap unwarping is helping with coregistration
-	    rel "applywarp -i $target -o ${oname}_to_struct_nounwarp --premat=$funcdir/transforms/${oname}_to_struct.mat --interp=spline -r \"$mprageBet\""
+	    rel "applywarp -i $target -o ${oname}_to_struct_nounwarp --premat=$transform_dir/${oname}_to_struct.mat --interp=spline -r \"$mprageBet\""
 	    qa_image "$mprageBet" ${oname}_to_struct_nounwarp ${oname}_to_struct_nounwarp.png "Structural image overlaid with bbr-coregistered distorted ${oname}"
 	    
 	    #when BBR is used, we need to transform the FM into functional space via the inverse of the func -> struct warp
@@ -206,16 +212,16 @@ function register_func2struct {
 	    #create EF_UD_warp file used for one-step interpolation to MNI (potentially with MC, too)
 
 	    #invert func_to_struct.mat to generate struct_to_func transformation. Used to get fmap back into EPI space.
-	    rel "convert_xfm -omat $funcdir/transforms/fmap_to_epi_bbr.mat -concat $funcdir/transforms/struct_to_func.mat $funcdir/transforms/fmap_to_struct.mat" #assemble fmap_to_epi via fm -> struct + struct -> epi
+	    rel "convert_xfm -omat $transform_dir/fmap_to_epi_bbr.mat -concat $transform_dir/struct_to_func.mat $transform_dir/fmap_to_struct.mat" #assemble fmap_to_epi via fm -> struct + struct -> epi
 
 	    #warp fmap into EPI space using transform fmap_to_epi_bbr.mat
-	    rel "applywarp -i unwarp/FM_UD_fmap_unmasked -r mc_target --premat=$funcdir/transforms/fmap_to_epi_bbr.mat -o unwarp/EF_UD_fmap_bbr --interp=spline"
+	    rel "applywarp -i unwarp/FM_UD_fmap_unmasked -r mc_target --premat=$transform_dir/fmap_to_epi_bbr.mat -o unwarp/EF_UD_fmap_bbr --interp=spline"
 	    rel "fslmaths unwarp/EF_UD_fmap_bbr -abs -bin unwarp/EF_UD_fmap_bbr_mask" #create fmap mask
 
 	    #save unmasked shift map in EPI space
 	    rel "fugue --loadfmap=unwarp/EF_UD_fmap_bbr --mask=unwarp/EF_UD_fmap_bbr_mask --saveshift=unwarp/EF_UD_shift_bbr --unmaskshift --dwell=$dwelltime --unwarpdir=$unwarpdir"
 	    rel "convertwarp -r unwarp/EF_D_mc_target -s unwarp/EF_UD_shift_bbr -o unwarp/EF_UD_warp_bbr --shiftdir=$unwarpdir --relout" #warp coefficients to undistort EPI in functional space
-	    rel "convertwarp -r \"$mprageBet\" -s unwarp/EF_UD_shift_bbr -o unwarp/T1_UD_warp_bbr --postmat=$funcdir/transforms/func_to_struct.mat --shiftdir=$unwarpdir --relout" #warp coefficients to undistort and transform EPI into structural space
+	    rel "convertwarp -r \"$mprageBet\" -s unwarp/EF_UD_shift_bbr -o unwarp/T1_UD_warp_bbr --postmat=$transform_dir/func_to_struct.mat --shiftdir=$unwarpdir --relout" #warp coefficients to undistort and transform EPI into structural space
 	fi
 	
 	date >> .func2struct_complete

@@ -10,6 +10,12 @@ waitforlockfile=$(dirname ${BASH_SOURCE[0]})/waitforlock
 [ -r $waitforlock ] && source $waitforlockfile
 # also depend on prepare_mc_target, sourced in main script
 
+mk_unwarptmp(){
+    tempsdir=$(pwd)/unwarptemps
+    [ -d $tempsdir ] && rm -r $tempsdir
+    mkdir $tempsdir
+}
+
 #function to convert fieldmap to radians per second
 function fieldmap_make_rads_per_sec() {
 
@@ -131,7 +137,7 @@ function reset_magdir {
     fi
 }
 
-PREPARE_FIELDMAP_GLOBALS=(bbrCapable func_struct_dof fm_cfg mcMats fm_phase fm_magnitude ext logFile mprageBet qa_imgdir )
+PREPARE_FIELDMAP_GLOBALS=(bbrCapable func_struct_dof fm_cfg fm_phase fm_magnitude ext logFile mprageBet qa_imgdir )
 # bbrfmap from 'register_func2struct', but expected to be called after prepare_fieldmap. we probably want this to be empty
 
 ### Worker function for preparation of fieldmap.
@@ -173,9 +179,7 @@ function prepare_fieldmap {
     [ -f .prepare_fieldmap_complete ] && rel "fieldmap completed already" c &&  return 0
 
     # Make an unwarp temps working directory
-    tempsdir=$(pwd)/unwarptemps
-    [ -d $tempsdir ] && rm -r $tempsdir
-    mkdir $tempsdir
+    mk_unwarptmp
 
     # we need to do this before testing if complete
     # because we use the warpdir sourced from the file
@@ -354,7 +358,7 @@ function prepare_se_fieldmap {
 
 function prepare_gre_fieldmap {
     # check that all required variables exist (defined in cfg)
-    for inputName in mcMats fm_phase fm_magnitude epiTE dwelltime unwarpdir TEdiff signallossthresh scanner; do
+    for inputName in fm_phase fm_magnitude epiTE dwelltime unwarpdir TEdiff signallossthresh scanner; do
 	inputVal=${!inputName}
 	[ -z "${inputVal}" ] && echo "$inputName cannot be empty" && exit 1
     done
@@ -616,28 +620,37 @@ function prepare_gre_fieldmap {
     
 }
 
+warpdir_for_fugue(){
+   #Apr2014: When phase encoding is in the X direction, there is a disjunction between the unwarpdir for FUGUE versus convertwarp and flirt -bbr -pedir.
+   #Corresponded with Mark Jenkinson and he acknowledged the bug. This workaround assumes that the direction in the cfg file gives proper results for
+   #convertwarp and flirt -bbr -pedir, but that the direction needs to be reversed for FUGUE. This workaround pertains to some CogEmo data using 
+   #the Northwestern OFC and my K01 pilot data.
+   local unwarpdir="$1"
+   case $unwarpdir in
+      x-) fugue_unwarpdir=x;;
+      x) fugue_unwarpdir=x-;;
+      *) fugue_unwarpdir=$unwarpdir;;
+   esac
+   echo $fugue_unwarpdir
+   return 0
+}
+
 #preprocess fieldmap by creating masks, warping to structural, etc.
 #largely based on FSL epi_reg script
 function preproc_fieldmap {
+    
+   fugue_unwarpdir=$(warpdir_for_fugue $unwarpdir)
+   [ "$fugue_unwarpdir" != "$unwarpdir" ] &&
+      rel "Reversing phase encode direction for use in FUGUE. convertwarp and flirt -pedir will use $unwarpdir, whereas FUGUE will use $fugue_unwarpdir" c
 
-    #Apr2014: When phase encoding is in the X direction, there is a disjunction between the unwarpdir for FUGUE versus convertwarp and flirt -bbr -pedir.
-    #Corresponded with Mark Jenkinson and he acknowledged the bug. This workaround assumes that the direction in the cfg file gives proper results for
-    #convertwarp and flirt -bbr -pedir, but that the direction needs to be reversed for FUGUE. This workaround pertains to some CogEmo data using 
-    #the Northwestern OFC and my K01 pilot data.
-    if [ "$unwarpdir" = x ]; then
-	rel "Reversing phase encode direction for use in FUGUE. convertwarp and flirt -pedir will use x, whereas FUGUE will use x-" c
-	fugue_unwarpdir=x-
-    elif [ "$unwarpdir" = x- ]; then
-	rel "Reversing phase encode direction for use in FUGUE. convertwarp and flirt -pedir will use x-, whereas FUGUE will use x" c
-	fugue_unwarpdir=x
-    else
-	fugue_unwarpdir=$unwarpdir
-    fi
-
+    local transform_dir="$funcdir/transforms/"
     #assume that we have a) copied FM_UD_fmap_mag and FM_UD_fmap into unwarp directory and b) have cd'd into that directory
     #skull strip magnitude image for registration
-    [ -n "$funcRefimg" ] &&     rel "fslmaths ../epiref_brain_restore      ER_D_epiref"
-    rel "fslmaths ../mc_target_brain_restore                EF_D_mc_target"
+    [ -n "$funcRefimg" ] && 
+       rel "fslmaths ../epiref_brain_restore      ER_D_epiref"
+    [ ! -r "EF_D_mc_target.nii.gz" ] &&
+       rel "fslmaths ../mc_target_brain_restore   EF_D_mc_target"
+
     
     #change image orientation to LPI/RPI to match EPI (ease registration)
     #N.B. This needs to be run on the local copies, not in $fm_phasedir to avoid file collisions during parallel runs of preprocessFunctional
@@ -748,6 +761,7 @@ function preproc_fieldmap {
     _picture FM_UD_fmap                    "sub self from demeaned, apply ero. mask, add back (overwrite)"
 
     #clean up
+    [ -z "$tempsdir" ] && mk_unwarptmp # only doesn't exist if we are running in ./gre_field_unwarp
     mv FM_UD_fmap_tmp_fmapfilt* FM_UD_fmap_mag_brain_mask_ero* FM_UD_fmap_mag_brain_mask50* FM_UD_fmap_mag_brain_mask_i* $tempsdir
 
     ### STEP 4: Demedian fieldmap (again)
@@ -849,23 +863,23 @@ function preproc_fieldmap {
     #the func_to_fmap.mat matrix is only used internally here, but does lead EF_D_mc_target and EF_UD_mc_target to look quite ugly.
     # -refweight FM_D_fmap_sigloss
 
-    rel "flirt -in EF_D_mc_target -ref FM_D_fmap_mag_brain_siglossed -omat $funcdir/transforms/func_to_fmap.mat -o grot -dof 6"
+    rel "flirt -in EF_D_mc_target -ref FM_D_fmap_mag_brain_siglossed -omat $transform_dir/func_to_fmap.mat -o grot -dof 6"
     qa_image FM_D_fmap_mag_brain_siglossed grot func_to_fmap_mag_brain_siglossed.png "Distorted fm magnitude overlaid with distorted mc_target"
     
     if [ -n "$funcRefimg" ]; then
-	rel "flirt -in ER_D_epiref -ref FM_D_fmap_mag_brain_siglossed -omat $funcdir/transforms/epiref_to_fmap.mat -o grot -dof 6"
+	rel "flirt -in ER_D_epiref -ref FM_D_fmap_mag_brain_siglossed -omat $transform_dir/epiref_to_fmap.mat -o grot -dof 6"
 	qa_image FM_D_fmap_mag_brain_siglossed grot epiref_to_fmap_mag_brain_siglossed.png "Distorted fm magnitude overlaid with distorted epiref"
     fi
 	
     _picture grot "align FM (mag,sigloss in) to epi (ref) (make func_to_fmap.mat, use this image for thumbnail)"
    
     # reverse  EF->FM  to get FM->EF (to put all fieldmap stuff in epi space)
-    rel "convert_xfm -omat $funcdir/transforms/fmap_to_epi.mat -inverse $funcdir/transforms/func_to_fmap.mat"
-    [ -n "$funcRefimg" ] && rel "convert_xfm -omat $funcdir/transforms/fmap_to_ref.mat -inverse $funcdir/transforms/epiref_to_fmap.mat"
+    rel "convert_xfm -omat $transform_dir/fmap_to_epi.mat -inverse $transform_dir/func_to_fmap.mat"
+    [ -n "$funcRefimg" ] && rel "convert_xfm -omat $transform_dir/fmap_to_ref.mat -inverse $transform_dir/epiref_to_fmap.mat"
 
     # transform all the fieldmap images into EPI space (mc_target),  FM_UDs become EF_UDs
     for file in "FM_UD_fmap" "FM_UD_fmap_mag_brain" "FM_UD_fmap_mag_brain_mask" "FM_UD_fmap_sigloss"; do
-	rel "flirt -in $file -ref EF_D_mc_target -init $funcdir/transforms/fmap_to_epi.mat -applyxfm -out ${file/FM_/EF_} -interp spline"
+	rel "flirt -in $file -ref EF_D_mc_target -init $transform_dir/fmap_to_epi.mat -applyxfm -out ${file/FM_/EF_} -interp spline"
 	#creates "EF_UD_fmap" "EF_UD_fmap_mag_brain" "EF_UD_fmap_mag_brain_mask" "EF_UD_fmap_sigloss"
 	_picture ${file/FM_/EF_}  "align FM (mag,sigloss in) to epi (ref) (make func_to_fmap.mat)"
     done
@@ -917,6 +931,12 @@ function preproc_fieldmap {
     ## Skipping EF_D_mc_target.gif EF_UD_mc_target.gif EF_UD_fmap_mag_brain.gif
     ## for files in ^; do slicer &&  pngappend; done;  whirlgif
 
+    if [ -z "$mprageBet" ]; then
+       rel "WARNING: no mprageBet variable defined. This should only happen in 'gre_field_unwarp'" c
+       cd $funcdir
+       return 0
+    fi
+
     #STEP 11. Coregister the fieldmap to the structural image for use in func2struct alignment with BBR cost function and -fieldmap
     #adapted from epi_reg
     rel "Coregister the fieldmap to the structural image for use in func2struct alignment with BBR cost function." c
@@ -925,21 +945,21 @@ function preproc_fieldmap {
 	#MH: preliminary tests suggest that coregistration without the head is very slightly better, though I haven't looked systematically
 	rel "antsRegistrationSyN.sh -d 3 -f ${mprageBet} -m FM_UD_fmap_mag_brain${ext} -t r -o fmap_to_struct" #rigid transformation (6dof)
 	#convert to FSL-compatible transformation
-	rel "c3d_affine_tool -ref ${mprageBet} -src FM_UD_fmap_mag_brain${ext} -itk fmap_to_struct0GenericAffine.mat -ras2fsl -o $funcdir/transforms/fmap_to_struct.mat"
+	rel "c3d_affine_tool -ref ${mprageBet} -src FM_UD_fmap_mag_brain${ext} -itk fmap_to_struct0GenericAffine.mat -ras2fsl -o $transform_dir/fmap_to_struct.mat"
 	rel "immv fmap_to_structWarped fmap_to_struct"
 	rel "imrm fmap_to_structInverseWarped" #not useful
-	rel "mv fmap_to_struct0GenericAffine.mat ${funcdir}/transforms/fmap_to_struct.itk"
+	rel "mv fmap_to_struct0GenericAffine.mat $transform_dir/fmap_to_struct.itk"
     else
-	rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -dof 6 -omat $funcdir/transforms/fmap_to_struct.mat -out fmap_to_struct -interp spline" #skull-stripped magnitude to structural
+	rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet -dof 6 -omat $transform_dir/fmap_to_struct.mat -out fmap_to_struct -interp spline" #skull-stripped magnitude to structural
 	local predictable_suffix=$( echo "$mprageBet" | grep -E -q "(_brain|_bet)${ext}\$" )
 	local mprage_base=$( remove_ext ${mprageBet} | perl -pe 's/_brain|_bet//' )
 	#consistent with epi_reg, refine the transform using images that contain the head
 	if [[ $predictable_suffix -eq 0 && $( imtest $mprage_base ) -eq 1 ]]; then
 	    rel "Using non-skull-stripped images to refine fieldmap -> struct transformation" c
-	    mv  $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/fmap_brain_to_struct.mat
+	    mv  $transform_dir/fmap_to_struct.mat $transform_dir/fmap_brain_to_struct.mat
 	    immv fmap_to_struct fmap_brain_to_struct
 	    #Building on epi_reg, use unbetted MPRAGE and runs an additional flirt on the unbetted magnitude and MPRAGE images.
-	    rel "flirt -in FM_UD_fmap_mag -ref ${mprage_base} -dof 6 -init $funcdir/transforms/fmap_brain_to_struct.mat -omat $funcdir/transforms/fmap_to_struct.mat -out fmap_to_struct -interp spline -nosearch" #magnitude to structural with skull
+	    rel "flirt -in FM_UD_fmap_mag -ref ${mprage_base} -dof 6 -init $transform_dir/fmap_brain_to_struct.mat -omat $transform_dir/fmap_to_struct.mat -out fmap_to_struct -interp spline -nosearch" #magnitude to structural with skull
 	    qa_image "$mprageBet" fmap_brain_to_struct fmap_mag_brain_to_struct.png "Structural image overlaid with 6dof-coregistered undistorted fmap mag skull-stripped brain"			     
 	fi
     fi
@@ -952,15 +972,15 @@ function preproc_fieldmap {
 	local mprageBet_base=$( remove_ext ${mprageBet} ) #skull-stripped mprage image basename
 	rel "Using BBR algortihm to refine fmap -> struct transformation. This requires good WM contrast on the fieldmap or this will go badly! Check the results carefully!" c
 	rel "immv fmap_to_struct fmap_to_struct_init"
-	rel "mv $funcdir/transforms/fmap_to_struct.mat $funcdir/transforms/fmap_to_struct_init.mat"
+	rel "mv $transform_dir/fmap_to_struct.mat $transform_dir/fmap_to_struct_init.mat"
 
 	# create binary WM mask, fast_wmseg is function/script in prepoc_funtions
 	fast_wmseg "${mprageBet_base}" # makes ${mprageBet_base}_fast_wmseg (likely mprage_bet_fast_wmseg.nii.gz)
 
 	rel "flirt -in FM_UD_fmap_mag_brain -ref $mprageBet \
-	    	   -out fmap_to_struct -omat $funcdir/transforms/fmap_to_struct.mat \
+	    	   -out fmap_to_struct -omat $transform_dir/fmap_to_struct.mat \
             	   -interp spline -wmseg ${mprageBet_base}_fast_wmseg \
-	      	   -cost bbr -init $funcdir/transforms/fmap_to_struct_init.mat -dof 6 \
+	      	   -cost bbr -init $transform_dir/fmap_to_struct_init.mat -dof 6 \
              	   -schedule ${FSLDIR}/etc/flirtsch/bbr.sch"
 
 	qa_image "$mprageBet" fmap_to_struct fmap_mag_to_struct_bbr.png "Structural image overlaid with bbr-coregistered undistorted fmap mag"
@@ -973,7 +993,7 @@ function preproc_fieldmap {
     rel "fugue --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mask --unmaskfmap --savefmap=FM_UD_fmap_unmasked --unwarpdir=$fugue_unwarpdir"
 
     # the following is a NEW HACK to fix extrapolation when fieldmap is too small
-    rel "applywarp -i FM_UD_fmap_unmasked -r $mprageBet --premat=$funcdir/transforms/fmap_to_struct.mat -o FM_UD_fmap_to_struct_pad0"
+    rel "applywarp -i FM_UD_fmap_unmasked -r $mprageBet --premat=$transform_dir/fmap_to_struct.mat -o FM_UD_fmap_to_struct_pad0"
     rel "fslmaths FM_UD_fmap_to_struct_pad0 -abs -bin FM_UD_fmap_to_struct_pad0_innermask"
     rel "fugue --loadfmap=FM_UD_fmap_to_struct_pad0 --mask=FM_UD_fmap_to_struct_pad0_innermask --unmaskfmap --unwarpdir=${fugue_unwarpdir} --savefmap=FM_UD_fmap_to_struct_dilated"
     rel "fslmaths FM_UD_fmap_to_struct_dilated fmapForBBR" #create the fieldmap to be used for BBR func -> struct coregistration

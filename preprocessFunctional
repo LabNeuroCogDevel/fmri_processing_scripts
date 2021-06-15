@@ -159,6 +159,7 @@ Command line options:
         -template_brain MNI_FSL_2mm (MNI152 brain, 2mm isotropic voxels, template from FSL standard)
         -template_brain SPM_2mm (MNI brain from spm8 canonical template)
         -template_brain Tal_3mm (Talairach brain, 3mm isotropic voxels. Brain built by resampling MNI template in Tal space)
+                        1YO_2mm, neo_2mm, 1YO_3mm, neo_3mm - UNC baby templates
   -threshold: The method to use for thresholding/masking low intensity voxels. Options are:
         -threshold 98_2 (FSL's default, 2nd %ile + (98th %ile - 2nd %ile)/10
         -threshold 10 (mask any voxels below the 10th percentile)
@@ -167,6 +168,7 @@ Command line options:
   -siemens: only relevant for -4d input. If set, slice timing correction will check for interleaved
         order and odd vs. even number of slices. If even, will create and use --ocustom file 2,4,6...1,3,5...
         This is necessary because of different slice acquisition on Siemens for even versus odd total slices.
+  -unifize_funcref: run 3dUnifize on ref before 3dskullstrip. added 20210513
   -verbose: print whats going on (set -xv)
   -warpcoef: The warp coefficients used to transform the structural scan to standard space. Required.
   -warp_interpolation: The intepolation method used to warp functional data to the mprage and to the standard space (e.g., MNI). Default: spline.
@@ -178,6 +180,13 @@ Command line options:
         Note: This is an alternative to 3dDespike and should generally be preferred because it removes intensity artifacts in frequency space, which is useful
         because head movement often produces artifacts that are spread in time (spin history).
   -wavelet_threshold: This is the coefficient threshold value used during maxima and minima coefficient definition. Default: 10. See BWT_Documentation.pdf for details.
+
+ENVIRONMENT
+  to control e.g. python:numpy (sliceMotion4d) set environment. defaults to 1
+
+  export OPENBLAS_NUM_THREADS=5
+  # or
+  export MKL_NUM_THREADS=5
 
 The major steps in the processing pipeline are, in order:
   0)    fslorient (_) and optionally truncate (0)
@@ -224,6 +233,12 @@ EndOfHelp
 #
 #Changelog:
 #
+#05/13/2021 (WF)
+#  - added '-unifize_funcref' 
+#01/25/2021 (WF)
+#  - if not set, use OPENBLAS_NUM_THREADS=1 / MKL_NUM_THREADS=1
+#    set in correct_slice_motion_4d
+#    export before running preprocessFunctional to use different settings
 #09/16/2019 (WF) 
 #  - added -no_mc toption for running ontop of another pipeline
 #07/29/2019 (WF) 
@@ -415,7 +430,7 @@ set -o errtrace # inherits trap on ERR in function and subshell
 datefmt='+%F+%I:%M'
 #grab command, arguments, script version (date), and start time
 _datever=$(perl -ne 'print $1 if /^#Last updated: (.*)/' $0)
-_gitver=$(cd $(dirname $0); git log --pretty=oneline|sed 1q|cut -f1 -d' ') 
+_gitver=$(preproc_git_ver)  # from helper_functions
 thiscommandinfo="$0 $@ \n# preprocessFunctional v$_datever commit $_gitver\n# Run started $(date $datefmt) in $(pwd)"
 dotfile="${funcdir}/.preprocessfunctional"
 
@@ -430,6 +445,7 @@ parse_args "$@"
 
 # legacy check for old (bad, pre 201810) mni template
 old_template_check
+warp_template_check || exit 1
 
 #handle cleanup only scenario
 #TODO: tends to leave behind some mask files since logic for which mask is subject mask is below.

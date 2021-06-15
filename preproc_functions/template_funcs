@@ -2,6 +2,28 @@
 
 OLD_TEMPLATE_CHECK_GOLBALS=(stddir reference USE_OLD_TEMPLATE mprage_bet)
 
+find_mprage_warp(){
+   # search for a file within the directory that has mprageBet
+   # USAGE: find_mprage_warp $mprageBet [$search_file]
+   # search_file defaults to mprage_nonlinear_warp_MNI*.nii.gz
+   # used by warp_template_check with search_file=template_brain.nii*
+   # returns file path or "" if not found
+   local mprageBet="$1"; shift
+   if [ -z "$mprageBet" ] || ! imtestln "$mprageBet" ; then
+      echo ""
+      # TODO: failure?
+      # return 1?
+   fi
+   local mprage_prefix="$(basename $mprageBet bet.nii.gz)"
+   [ $# -eq 0 ] &&
+      search="${mprage_prefix}nonlinear_warp_MNI*.nii.gz" ||
+      search="$1"
+
+   # try both at the toplevel and in the actual file location
+   find \
+      "$(dirname "$mprageBet")" "$(dirname $(readlink -f "$mprageBet"))" \
+      -name "$search"| sed 1q
+}
 # reference is in mprage preproess, templateBrain is in functional
 #  need to change stddir for either (e.g. icaaroma in preprocessFunctional)
 #  only need to change templateBrain in for functional
@@ -23,12 +45,7 @@ old_template_check(){
 
    #rel "MPRAGE: $mprageBet" c
    if [ -n "$mprageBet" ] && imtestln "$mprageBet" ; then
-      local mprage_prefix="$(basename $mprageBet bet.nii.gz)"
-      # try both at the toplevel and in the actual file location
-      local warp="$(find \
-         "$(dirname "$mprageBet")" "$(dirname $(readlink -f "$mprageBet"))" \
-         -name "${mprage_prefix}nonlinear_warp_MNI*.nii.gz"|
-           sed 1q)"
+      local warp=$(find_mprage_warp "$mprageBet")
       local sext=114
       if [ -n "$warp" -a -r "$warp" ]; then
          dim=$(3dinfo -adi $warp)
@@ -47,10 +64,10 @@ old_template_check(){
       esac
 
       if [[ ! $sext =~ ^$want && -z "$USE_OLD_TEMPLATE" ]]; then
-         echo "ERROR need -use_old_mni: sext of $warp ($sext != $want) suggests old template!"
+         echo "ERROR: need -use_old_mni: sext of $warp ($sext !~ ^$want) suggests old template!"
          exit 1
       elif [[ $sext =~ ^$want && -n "$USE_OLD_TEMPLATE" ]]; then
-         echo "ERROR trying -use_old_mni but sext of $warp ($sext == $want) suggests new template!"
+         echo "ERROR: trying -use_old_mni but sext of $warp ($sext =~ ^$want) suggests new template!"
          exit 1
 
       fi
@@ -125,6 +142,30 @@ fixto1809c() {
      echo "$cmd # $(pwd)"
   fi
   eval "$cmd" && 3dNotes -h "[$FUNCNAME] $cmd" "$output"
+}
+
+# 20210426 - functional shouldn't need to specify but we do so check instead of select
+warp_template_check() {
+   #global $mprageBet $templateBrain $reference
+   local func_template="$templateBrain"
+   [ ! -r $func_template ] && func_template=$func_template.nii
+   [ ! -r $func_template ] && func_template=$func_template.gz
+   [ ! -r $func_template ] && echo "ERROR: $templateBrain (.nii and .nii.gz '$func_template') DNE!" && return 1
+   local template=$(find_mprage_warp "$mprageBet" "template_brain.nii*")
+   # cannot do anything if it doesn't ready exist
+   [ -z "$template" -o ! -r "$template" ] && 
+      echo "# WARNING: cannot find 'tempalte_brain.nii*' for '$mprageBet'" && return
+
+   # diff exist status is true when there is no difference
+   # ! diff -q <(echo a) <(echo b) && echo diff # 'diff'
+   if ! diff -q "$func_template" "$template" ; then
+      echo "# ERROR: '$templateBrain' ('$reference', '$func_template') does not match template '$template' of bet '$mprageBet'"
+      return 1
+   else
+      rel "# template check success: '$templateBrain' (ref: '$reference') matches template '$template' (paired with bet '$mprageBet')" c
+   fi
+
+   return 0 
 }
 
 # vim: set tabstop=7:

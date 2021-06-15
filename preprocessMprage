@@ -57,7 +57,11 @@ Command line options:
   -o -output: output file name. The filename for the final warped mprage image.
         Defaults to mprage_nonlinear_warp_<referenceName>.nii.gz
   -p -dicom: file pattern for dicom MR files. Defaults to "MR*". Please enclose the pattern in quotes or it may not function properly
-  -r -template_brain: reference brain. Currently supports "MNI_2mm", "MNI_FSL_2mm", "SPM_2mm", and "Tal_2mm". Default is "MNI_2mm".
+  -post_bet_skullmask: provide a mask to remove extra skull even after skull stripping. likely created by hand using afni's draw plugin
+        See https://labneurocogdevel.github.io/tuts/afni_draw
+  -r -template_brain: reference brain. Currently supports "MNI_2mm", "MNI_FSL_2mm", "SPM_2mm", "Tal_2mm", 1YO_2mm, neo_2mm.
+        Default is "MNI_2mm".
+  -startover: ignore .preprocessmprage_complete. useful if changing/adding arguments like "-ss_method bet -b '-f .6 -R'"
   -ss_method: skull-stripping method used to create final brain-extracted data. Default is fnirt-inv. Options:
         fnirt-inv: uses the template brain mask warped onto the subject's brain to define brain mask
         bet: uses the bet program (FSL) to skull strip (also respects -bet_opts).
@@ -65,6 +69,8 @@ Command line options:
         noisy: use @NoisySkullStrip
         ROBEX: uses the ROBEX program (which doesn't accept any parameters).
   -strong_bias: used for images with very strong bias fields
+  -unifize:  run afni's 3dUnifize on input mprage
+  -use_old_mni: support legacy preprocessing
   -w -warpres: resolution of warp basis (nonlinear neighborhood size) in mm. Default is 8 mm.
   -weak_bias: used for images with little and/or smooth bias fields (cf. fsl_anat). This is the default.
 
@@ -76,9 +82,16 @@ EndOfHelp
 
 #Author: Michael Hallquist
 #Written: 5/2/2010
-#Last updated: 7/21/2017
+#Last defaults updated: 7/21/2017
 #
 #Changelog:
+# 12/05/2021(WF)
+#  - update version reporting to include git+dirty/clean & user@host:pwd
+# 10/05/2021(WF)
+#  - '-post_bet_skullmask' added for applying hand drawn skull mask 
+#22/04/2021 (WF) 
+# - '-unifize' switch runs 3dUnifize (remove shading artificat)
+# - save mprage nifti notes to 'mprage_history.txt' (e.g. lncdtools/mknii)
 #11/0l/2018 (WF) 
 # - can use octave, add old_template_check (-use_old_mni)
 #10/29/2018 (WF) 
@@ -141,7 +154,7 @@ set -e #exit if any error occurs (stop processing)
 
 scriptDir=$( dirname "$0" )
 
-source "${scriptDir}/preproc_functions/helper_functions" #contains rel for running/logging; also sets up stddir env variable
+source "${scriptDir}/preproc_functions/helper_functions" #contains rel for running/logging; also sets up stddir env variable, preproc_git_ver
 source "${scriptDir}/preproc_functions/parse_args" #contains function for parsing command line args
 source "${scriptDir}/preproc_functions/template_funcs" # old_template_check
 
@@ -168,6 +181,8 @@ ssmethod=fnirt-inv
 gcoeffs= #no gradient nonlinearity correction by default
 
 dotfile=.preprocessmprage
+unifize=0
+post_bet_skullmask="" # 20210510. hand drawn mask of troublesome skull
 
 #exit script if processing complete
 if [[ -f "${dotfile}_complete" && "$@" != *-startover* && "$@" != *-cleanup_only* && "$@" != *-help* ]]; then
@@ -184,7 +199,7 @@ fi
 datefmt='+%F+%I:%M'
 #grab command, arguments, script version (date), and start time.
 #needs to come before while loop because the positional parameters get popped off.
-thiscommandinfo="$0 $@ \n# preprocessMprage v$(perl -ne 'print $1 if /^#Last updated: (.*)/' $0) \n# Run started $(date $datefmt) "
+thiscommandinfo="$0 $@ \n# preprocessMprage v$(perl -ne 'print $1 if /^#Last defaults updated: (.*)/' $0) git $(preproc_git_ver) \n# Run started $(date $datefmt)\n# $(whoami)@$(hostname):$(pwd)"
 
 # write to an incomplete file (later to be changed to complete if process finishes)
 echo -e "$thiscommandinfo " > ${dotfile}_incomplete
@@ -244,8 +259,33 @@ case "$reference" in
 	unbettedRefBrain=${stddir}/spm8_mni/T1;
 	refMask=${stddir}/spm8_mni/brainmask_0.5thresh;
 	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
-    *) echo -e "Reference brain not recognized. Options are MNI_2mm, MNI_FSL_2mm, SPM_2mm, and Tal_2mm."; exit 1 ;;
+    # 20210317WF for LC 
+    1YO_2mm)  bettedRefBrain=${stddir}/UNCInfant/2mm/infant-1yr-brain
+	unbettedRefBrain=${stddir}/UNCInfant/2mm/infant-1yr-withSkull
+	refMask=${stddir}/UNCInfant/2mm/infant-1yr-brainmask;
+	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
+    # 20210416WF
+    neo_2mm)  bettedRefBrain=${stddir}/UNCInfant/2mm_neo/infant-neo-brain
+	unbettedRefBrain=${stddir}/UNCInfant/2mm_neo/infant-neo-withSkull
+	refMask=${stddir}/UNCInfant/2mm_neo/infant-neo-brainmask;
+	fnirtConfig=${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf;;
+    *) echo -e "Reference brain '$reference' not recognized. Options are MNI_2mm, MNI_FSL_2mm, SPM_2mm, Tal_2mm, 1YO_2mm, neo_2mm."; exit 1 ;;
 esac
+
+echo "settings:
+  preproc_override?  '$override_string'
+  reference    = '$reference'
+  ssmethod     = '$ssmethod'
+  betOpts      = '$betOpts'
+  strongBias   = '$strongBias'
+  cleanup      = '$cleanup'
+  bright_skull = '$bright_skull'
+  unifize      = '$unifize'
+  skullmask    = '$post_bet_skullmask'
+  brainmask    = '$brainmask'"
+
+[ -n "$DRYRUN" ] && exit 1
+
 
 #define warped brain mask without dilation (used for creating a final betted image)
 nodil=$( echo $refMask | perl -pe 's/(_dil[0-9]*)*(\.nii)*(\.gz)*$//' ) #remove any dil, as well as file extension
@@ -271,6 +311,11 @@ fi
 if [[ -n $nifti && ! -f $nifti ]]; then
     echo -e "Instructed to start preprocessing with nifti (-n), but file not found.\nFile:${nifti}\n"
     exit 1
+fi
+
+if [ -n "$post_bet_skullmask" -a ! -r "$post_bet_skullmask" ]; then
+   echo "set -post_bet_skullmask but '$post_bet_skullmask' does not exist (in $(pwd))"
+   exit 1
 fi
 
 #figure out file extension for FSL programs
@@ -408,7 +453,19 @@ if [ $cleanup_only -eq 1 ]; then
 fi
 
 #reorient structural to RPI/LPI to match template
+# this removes any history from mprage. so save to text file
+[ -n "$(3dNotes "$nifti"  2>/dev/null)" ] && rel "3dNotes '$nifti' > ${T1}_history.txt"
 rel "fslreorient2std $nifti $nifti"
+
+if [ $unifize -eq 1 ]; then
+   # 20210422 "remove shading artifacts." implemented for baby data  
+   # > The output dataset has the white matter (WM) intensity approximately
+   # > uniformized across space, and scaled to peak at about 1000.
+   pre_unifize=${T1}_preunifize.nii.gz
+   [ ! -r  $pre_unifize ] && cp $nifti $pre_unifize || rel "using existing $(ls -l $pre_unifize)" c
+   rel "3dUnifize -prefix $nifti -overwrite -input $pre_unifize"
+fi
+
 [ -n "$brainmask" ] && rel "fslreorient2std $brainmask $brainmask"
 
 if [ $robustfov -eq 1 ]; then
@@ -556,6 +613,17 @@ else
 	rel "3dSkullStrip -input ${T1}_biascorr${ext} -prefix ${T1}_skullstrip${ext} ${betOpts}" #default option for initial strip
 	initstrip="3dSkullStrip"
     fi
+fi
+
+# 20210510 apply $post_bet_skullmask
+# overwrite _skullstrip (with backup to _skullstrip_pre-skullmask). 
+# skillstrip used to create ${flirtAffCoef}  (i.e. this mask is also applied when using flirt-inv method)
+if [ -n "$post_bet_skullmask" ]; then
+   skullstripped=${T1}_skullstrip${ext}
+   rel "3dcopy -overwrite $skullstripped ${T1}_skullstrip_pre-skullmask.nii.gz"
+   qa_image "${T1}_biascorr" "${T1}_skullstrip_pre-skullmask" mprage_pre-skullstrip.png "Bias-corrected mprage overlaid with skull strip before masking: $initstrip"
+   post_bet_skullmask="$(resample_or_keep $skullstripped $post_bet_skullmask)"
+   rel "3dcalc -m '$post_bet_skullmask' -i $skullstripped -expr 'not(m)*i' -overwrite -prefix '$skullstripped'"
 fi
 
 qa_image "${T1}_biascorr" "${T1}_skullstrip" mprage_skullstrip.png "Bias-corrected mprage overlaid with skull strip: $initstrip"

@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+set -eo pipefail
+trap 'e=$?; [ $e -ne 0 ] && echo "$0 exited in error"' EXIT
+
+#
+#  quickly test out gre fieldmap configurations
+#  for older siemens protocols.
+#  newer (2021+) should probably be using spin echo for distortion correction
+#  20201228WF  init
+
+scriptDir="$(dirname $0)"
+source "${scriptDir}/preproc_functions/helper_functions"
+source "${scriptDir}/preproc_functions/prepare_fieldmap"
+source "${scriptDir}/preproc_functions/prepare_gre_fieldmap"
+source "${scriptDir}/preproc_functions/register_func2struct"
+source "${scriptDir}/preproc_functions/prepare_mc_target"
+source "${scriptDir}/preproc_functions/fast_wmseg"
+
+# FM_ - fieldmap space
+# EF_ - epi space 
+#
+# _D   - distorted (origianl)
+# _UD  - undistored (corrected)
+
+fm_cfg=; epi=; mag=; phase=;
+# initialize vars allowed to be none
+fmap_struct_dof=bbr
+use_ants=1
+mprage_bet=""
+savedir=""
+
+usage(){
+   # usage extracted from source
+   # match -OPT) .... # DESCRIPTON
+   # and spit out for documentation
+   echo -e "$(basename $0) USAGE: "
+   perl -lne '
+    BEGIN{$_=<> until /^\s*#DOCSTART/}
+    exit if /^\s*#DOCSTOP/;
+    print "  $1\t$3" if /(-.*?)(\)|\|).*?#(.*)/' $0|
+       column -ts$'\t'
+    exit
+}
+
+while [ $# -gt 0 ]; do
+   #DOCSTART -- options parsed by perl oneliner in usage()
+   case "$1" in
+      -help|-usage|-h) usage;; # usage
+      -cfg) fm_cfg="$2"; shift 2;; # fieldmap configuration file (includes TEdiff, unwarpdir, ..)
+      -epi) epi="$2"; shift 2;;    # epi to undistort (one volume, e.g. mc_target.nii.gz)
+      -mag) mag="$2"; shift 2;;    # magnitude nifti (e.g. fmap/magintude1.nii.gz)
+      -phase) phase="$2"; shift 2;; # phase nifti (e.g. fmap/phase.nii.gz)
+      -mprage_bet) mprage_bet="$2"; shift 2;; # optional: structural to use for warping. (longer to run)
+      -quick) mprage_bet=""; shift;; # optional: remove mprage_bet if specified earlier. order dependent.
+      -savedir) savedir="$2"; shift 2;; # optional: folder to save everything (otherwise us fm_cfg name)
+      -noants) use_ants=0; shift ;; #optional: disable ants. only applied w/mprage_bet
+      -nobbr) fmap_struct_dof=6; shift ;; #optional: disable bbr. use 6 dof warp instead (only w/mprage_bet)
+      *) echo "unknown option '$1', see -help!"; exit 1;;
+   esac
+   #DOCSTOP
+done
+
+[ -z "$fm_cfg" ] && echo "must have -cfg" && exit 1
+[ -z "$savedir" ] && savedir=fmcfg-$(basename $fm_cfg)
+
+# check paths and make absolute
+for var in epi mag phase mprage_bet fm_cfg; do
+   [ -z "${!var}" ] && continue
+   [ ! -s "${!var}" ] && echo "$var '${!var}' does not exist or is zero size!" && exit 1
+   printf -v "$var" "$(realpath ${!var})"
+done
+
+source $fm_cfg
+[ -z "$dwelltime" ] && echo "'$fm_cfg' is missing 'dwelltime'" && exit 1
+
+[ ! -d $savedir ] && mkdir $savedir
+
+cd $savedir
+savedir=$(pwd)
+
+better_UD_name() {
+   undistorted=$1/EF_UD_$(basename $savedir).nii.gz
+   local from=$1/EF_UD_mc_target.nii.gz
+   3dcopy $from $undistorted -overwrite
+}
+
+# globals from preprocessFunctional
+logFile="$savedir/main.log" # no logging
+funcdir="$savedir"
+qa_imgdir="$savedir/qa"; test -d $qa_imgdir || mkdir $_
+qa_imglog="$savedir/qa/img.log"
+#fm_phasedir=$(pwd) DISTORTION_DIR=""
+bbrCapable=1
+ext=.nii.gz
+use_fm=1
+
+# expected inputs 
+test ! -d "$savedir/transforms" && mkdir $_
+3dcopy $phase phase.nii.gz -overwrite
+3dcopy $mag   mag.nii.gz -overwrite
+3dcopy "$epi" mc_target.nii.gz -overwrite
+test -n "$mprage_bet" -a ! -r mprage_bet.nii.gz && ln -s "$mprage_bet" $_
+
+# "quick" - no mprage
+# we are running just to compare
+#  EF_UD_mc_target.nii.gz and
+#  EF_D_mc_target.nii.gz
+if [ -z "$mprage_bet" ]; then
+   echo "Run without warp to structural"
+   test ! -r mc_target_brain_restore.nii.gz && 
+     3dSkullStrip -overwrite -input mc_target.nii.gz -orig_vol  -prefix $_
+   3dcopy mc_target_brain_restore.nii.gz EF_D_mc_target.nii.gz -overwrite
+   prepare_gre_fieldmap mag.nii.gz phase.nii.gz
+   cd $savedir
+   ! test -r FM_UD_fmap.nii.gz  && ln -s unwarp/$_ ./
+   preproc_fieldmap
+
+   cd $savedir
+   better_UD_name . # set undistorted
+   echo "INSPECT OUTPUT: "
+   echo "  afni $savedir/EF_D_mc_target.nii.gz $undistorted"
+   echo " and/or "
+   echo "  feh $savedir/qa/undistort_mc_target.png"
+   exit 
+fi
+
+
+## deal with fieldmap files
+# create FM* files: FM_UD_fmap FM_UD_fmap_mag
+DISTORTION_DIR=$savedir/fm_unwarp
+preprocessDistortion -phase $phase -mag $mag -fm_cfg $fm_cfg -savedir $DISTORTION_DIR -method gre.nii.gz
+DISTORTION_DIR=$DISTORTION_DIR/unwarp
+
+cd $savedir
+
+# EF_D_mc_target should be without skull!?
+#! test -r  EF_D_mc_target.nii.gz && 3dcopy mc_target.nii.gz  $_
+
+# create sigloss, mask, and warps
+#[ ! -r EF_UD_mc_target.nii.gz ] && preproc_fieldmap
+#preproc_fieldmap
+func_struct_dof=$fmap_struct_dof
+mprageBet="$mprage_bet"
+prepare_mc_target
+prepare_fieldmap 
+cd $savedir # might not return to the correct directory
+register_func2struct
+
+# a non-skullstripped func to overlay on anat
+# if using BBR we have T1_UD_warp_bbr. otherwise just use func_to_struct.mat
+func_in_anat="funcskull-anat_$(basename "$savedir").nii.gz"
+test -r unwarp/T1_UD_warp_bbr.nii.gz &&
+  niinote $func_in_anat \
+    applywarp --in=mc_target.nii.gz --out=$func_in_anat --interp=spline --ref=mprage_bet.nii.gz --warp=$_ ||
+  niinote $func_in_anat \
+    flirt -in mc_target -ref mprage_bet.nii.gz -out $func_in_anat -init transforms/func_to_struct_viafmap.mat \
+          -applyxfm -interp spline
+
+
+# make t2->t1 without fmap (or bbr, or wmseg)
+func_anat_simple=funcskull-anat_simple.nii.gz 
+flirt -in mc_target_brain_restore -ref mprage_bet.nii.gz -out epi2T1_simple.nii.gz -omat transforms/epi2T1_simple.mat  -interp spline
+niinote $func_anat_simple flirt -in mc_target -ref mprage_bet.nii.gz -init transforms/epi2T1_simple.mat \
+          -o $func_anat_simple \
+          -applyxfm -interp spline
+
+better_UD_name unwarp
+
+echo =============
+echo SEE:
+echo "  afni $(pwd)/{mprage_bet.nii.gz,$func_in_anat,$func_anat_simple,$undistorted}"
+
+

@@ -62,13 +62,13 @@ function ica_aroma {
         #does not apply any spatial transformations to the output dataset, it just uses it to check components against mask files distributed
         #with the package that are in FSL MNI152 2mm space.
        
-        if [ ! -r "$stddir/mni_icbm152_nlin_asym_09c/fonov_mni152_to_fsl_mni152_warpcoef.nii.gz" ]; then
+        local warptoFSL="$stddir/mni_icbm152_nlin_asym_09c/fonov_mni152_to_fsl_mni152_warpcoef.nii.gz"
+        if [ ! -r "$warptoFSL" ]; then
           echo "Cannot find fonov_mni152_to_fsl_mni152_warpcoef.nii.gz needed to warp Fonov MNI into FSL MNI for ICA-AROMA"
           return 1
         fi
     
         #handle no_warp situation
-        local warptoFSL="$stddir/mni_icbm152_nlin_asym_09c/fonov_mni152_to_fsl_mni152_warpcoef.nii.gz"
         if [ $no_warp -eq 1 ]; then
           rel "convertwarp --ref=${stddir}/fsl_mni152/MNI152_T1_2mm --premat=$funcdir/transforms/func_to_struct.mat --warp1=$warpCoef \
                        --warp2=$stddir/mni_icbm152_nlin_asym_09c/fonov_mni152_to_fsl_mni152_warpcoef.nii.gz --relout --out=func_to_fsl_warpfield"
@@ -82,7 +82,22 @@ function ica_aroma {
     
         [ $no_warp -eq 1 ] && rel "imrm func_to_fsl_warpfield"
     
-    elif [[ $templateName = MNI_FSL_3mm || $templateName = MNI_FSL_2.3mm || $templateName = MNI_FSL_2mm ]]; then
+    elif [[ $templateName =~ (neo|1YO)_(3|2)mm ]]; then
+	local babytmpl=${BASH_REMATCH[1]}
+	local tplres=${BASH_REMATCH[2]}
+        warpcoef="$stddir/UNCInfant/2mm_${babytmpl}/warps/1YO2mm_to_fsl.nii.gz"
+	if [ ! -r $warpcoef ]; then
+          echo "Cannot find warp coef needed to warp into FSL MNI for ICA-AROMA ('$warpcoef')"
+          return 1
+        fi
+	[ $no_warp -eq 1 ] && echo "ica -no_warp is not implemented for this template! (ref: '$reference')" && return 1
+
+        idmat=$(dirname $0)/identity.mat
+        [ ! -r $idmat ] && rel "missing warp identity matrix '$idmat'" c && exit 1
+
+        rel "$aroma_cmd -w \"$warptoFSL\" -a \"$idmat\""
+
+    elif [[ $templateName =~ MNI_FSL_(3|2.3|2)mm ]]; then
         #if data are in FSL MNI152 already, then the warp should be complete at this point
         #in this case, ICA_AROMA.py does not need -affmat or -warp. Data will be resampled by the python script to 2mm to match template
     
@@ -91,7 +106,7 @@ function ica_aroma {
         rel "$aroma_cmd $warpsuffix"
     else
         rel "ICA-AROMA support only provided for FSL and Fonov MNI templates at the moment." c
-        rel "Must use -template_brain <MNI_3mm|MNI_2.3mm|MNI_FSL_3mm|MNI_FSL_2.3mm|MNI_FSL_2mm>" c
+        rel "Must use -template_brain <MNI_3mm|MNI_2.3mm|MNI_FSL_3mm|MNI_FSL_2.3mm|MNI_FSL_2mm|1YO_2mm>" c
         return 1
     fi
 

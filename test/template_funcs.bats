@@ -72,3 +72,44 @@ setup() {
  run old_template_check 
  [[ $status == 1 ]]
 }
+
+@test "find_template.nii" {
+ t=$BATS_RUN_TMPDIR/template_brain.nii.gz
+ date > $t
+ touch $BATS_RUN_TMPDIR/mprage_bet.nii.gz
+ tx=$(find_mprage_warp  "$_" 'template_brain.nii*' | tr -d '\n')
+ echo "t '$t' vs out '$tx'" >&2
+ [[ $t = $tx ]]
+}
+
+@test "warp_template_check_success" {
+ reference="my_fake_template"
+ mprageBet=$BATS_RUN_TMPDIR/mprage_bet.nii.gz
+ t_mprage=$BATS_RUN_TMPDIR/template_brain.nii.gz
+ templateBrain=$BATS_RUN_TMPDIR/xx_template_brain.nii.gz
+
+ touch $mprageBet
+ echo a > $templateBrain
+ echo a > $t_mprage
+
+ # $templateBrain is the template_brain inside $mpreageBet's directory
+ run warp_template_check
+ [[ $output =~ success ]]
+ [ $status -eq 0 ]
+}
+
+@test "warp_template_check_fail" {
+ reference="my_fake_template"
+ mprageBet=$BATS_RUN_TMPDIR/mprage_bet.nii.gz
+ t_mprage=$BATS_RUN_TMPDIR/template_brain.nii.gz
+ templateBrain=$BATS_RUN_TMPDIR/xx_template_brain.nii.gz
+
+ touch $mprageBet
+ echo a > $templateBrain
+ echo b > $t_mprage
+
+ # $templateBrain is the xx_template_brain different than whats inside $mpreageBet's directory
+ run warp_template_check 
+ [[ $output =~ ERROR ]]
+ [ $status -eq 1 ]
+}

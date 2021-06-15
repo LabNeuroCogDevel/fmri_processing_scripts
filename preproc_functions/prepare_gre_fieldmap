@@ -22,7 +22,9 @@ archive_dcm() {
   rel "tar cvzf $tarname $pattern" && rel "rm -f ./$1"
 }
 
-# fm_phase fm_phasedir fm_magnitude TEdiff 
+# needs fm_phase fm_phasedir fm_magnitude
+# global TEdiff 
+# writes ${fm_phasedir}/FM_UD_fmap
 fieldmap_make_rads_per_sec() {
     local fm_phase="$1"; shift
     local fm_phasedir="$1"; shift

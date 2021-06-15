@@ -86,6 +86,7 @@ function parse_args {
     KEEP_MOTION_FILES=
     n_rm_firstvols=0
     USE_OLD_TEMPLATE=
+    unifize_funcref=0
 
     #figure out file extension for FSL programs
     if [ -z $FSLOUTPUTTYPE ]; then
@@ -491,7 +492,14 @@ function parse_args {
 		MNI_2.3mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2.3mm" ;;
 		SPM_2mm) templateBrain="${stddir}/spm8_mni/T1_brain" ;;
 		MNI_2mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm" ;;
-		*) echo -e "Reference brain -template_brain ${2} not recognized. Options are MNI_3mm, MNI_FSL_3mm, SPM_2mm, and Tal_3mm."; exit 1 ;;
+		MNI_2mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm" ;;
+
+              # 20210426. added to preprocessMprage ealier
+              1YO_2mm)  templateBrain="${stddir}/UNCInfant/2mm/infant-1yr-brain";;
+              1YO_3mm)  templateBrain="${stddir}/UNCInfant/2mm/infant-1yr-brain-3mm";;
+              neo_2mm)  templateBrain="${stddir}/UNCInfant/2mm_neo/infant-neo-brain";;
+              neo_3mm)  templateBrain="${stddir}/UNCInfant/2mm_neo/infant-neo-brain-3mm";;
+		*) echo -e "Reference brain -template_brain ${2} not recognized. Options are MNI_3mm, MNI_FSL_3mm, SPM_2mm, Tal_3mm, 1YO_3mm, neo_3mm."; exit 1 ;;
 	    esac
 	    shift 2
 	elif [ $1 = -threshold ]; then
@@ -516,6 +524,9 @@ function parse_args {
        # LNCD mMR/PET uses old template 
        elif [[ $1 = -use_old_mni  ]]; then
           USE_OLD_TEMPLATE=yes
+          shift 1
+       elif [[ $1 = -unifize_funcref ]]; then # added 20210513
+	   unifize_funcref=1
           shift 1
 	elif [ $1 = -verbose ]; then
 	    verbose=1
@@ -724,6 +735,7 @@ function parse_args {
 function parse_mprage_args() {
 
     USE_OLD_TEMPLATE=
+    unifize=0
 
     while [ _$1 != _ ] ; do
 	if [[ $1 = -b || $1 = -bet_opts ]] ; then
@@ -760,6 +772,9 @@ function parse_mprage_args() {
 	elif [[ $1 = -p || $1 = -dicom ]]; then
 	    dicomPattern="${2}"
 	    shift 2
+       elif [[ $1 = "-post_bet_skullmask" ]]; then
+	    post_bet_skullmask="${2}"
+	    shift 2
 	elif [[ $1 = -fnirt_mask ]]; then
 	    fnirt_mask="${2}"
 	    shift 2
@@ -790,11 +805,22 @@ function parse_mprage_args() {
 	elif [[ $1 = -ss_method ]]; then
 	    ssmethod="${2}"
 	    shift 2
+	elif [[ $1 = -startover ]]; then
+           # explicity used in flag file (.preprocessmprage_complete) check
+           # needed here only to shift out
+	    shift 1
 	elif [[ $1 = -strongbias || $1 = -strong_bias ]]; then
 	    strongBias=1
 	    shift 1
        elif [[ $1 = -use_old_mni  ]]; then
           USE_OLD_TEMPLATE=yes
+          shift 1
+       elif [[ $1 = -unifize  ]]; then
+          # 20210422 use 3dUnifize (implemented for baby data)
+          #  remove shading artifacts.
+          # The output dataset has the white matter (WM) intensity approximately
+          # uniformized across space, and scaled to peak at about 1000.
+          unifize=1
           shift 1
 	elif [[ $1 = -warpres || $1 = -w ]]; then
 	    wr="${2}"
