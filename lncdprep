@@ -313,6 +313,7 @@ mprage() {
  local t1s="$1"
  [ ! -d $t1out ] && mkdir -p $t1out
  cd $t1out
+ pwd
  3dcopy $t1s mprage.nii.gz -overwrite
  preprocessMprage -n mprage.nii.gz $MPRAGEARGS
 }

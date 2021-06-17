@@ -66,12 +66,12 @@ qa_title(){
 crossfade(){
  local frmt="format=rgba,fade=d=1:t=in:alpha=1,setpts=PTS-STARTPTS"
  ffmpeg -y   \
-    -framerate 10 -loop 1 -t 1 -i "$1" \
-    -framerate 10 -loop 1 -t 2 -i "$2" \
-    -framerate 10 -loop 1 -t 1 -i "$1" \
+    -framerate 5 -loop 1 -t 2 -i "$1" \
+    -framerate 5 -loop 1 -t 4 -i "$2" \
+    -framerate 5 -loop 1 -t 2 -i "$1" \
     -filter_complex   \
-     "[1]$frmt+1/TB[f0]; \
-      [2]$frmt+3/TB[f1]; \
+     "[1]$frmt+2/TB[f0]; \
+      [2]$frmt+6/TB[f1]; \
       [0][f0]overlay[bg1];[bg1][f1]overlay,split[v0][v1]; \
       [v0]palettegen[p];[v1][p]paletteuse[v]" \
      -map "[v]" \
@@ -80,10 +80,11 @@ crossfade(){
 
 _qa_image_main(){
    local mksmall=0
-   local mkgif=0
+   local mkanimate=""
    while [[ $1 =~ ^- ]]; do
       case "$1" in
-         -gif) mkgif=1; shift;;
+         -gif) mkanimate=gif; shift;;
+         -svg) mkanimate=svg; shift;;
          -small) mksmall=1; shift;;
          -verbose) set -x; shift;;
          *) echo "unknown option '$1'"; qa_image_usage;;
@@ -95,19 +96,24 @@ _qa_image_main(){
    [ "x$2" != "x" -a ! -r "$2" ] && echo "ERROR: cannot read overlay '$2'" && exit 1
 
    
-   if [ $mkgif -eq 1 ]; then
-      qa_image "$1" "" tmp_underlay.png >/dev/null
-      qa_image "$2" "" tmp_overlay.png >/dev/null
+   case $mkanimate in
+      gif)
+         qa_image "$1" "" tmp_underlay.png >/dev/null
+         qa_image "$2" "" tmp_overlay.png >/dev/null
 
-      qa_title "$(basename "$1" .nii.gz)" "tmp_underlay.png"
-      qa_title "$(basename "$2" .nii.gz)" "tmp_overlay.png"  
+         qa_title "$(basename "$1" .nii.gz)" "tmp_underlay.png"
+         qa_title "$(basename "$2" .nii.gz)" "tmp_overlay.png"  
 
-      out="$(echo "$3" | sed 's/.gif$\|.png$//').gif"
-      crossfade tmp_{underlay,overlay}.png "$out"
-      rm tmp_{underlay,overlay}.png 
-   else
-      out="$(qa_image "$@")"
-   fi
+         out="$(echo "$3" | sed 's/.gif$\|.png$//').gif"
+         crossfade tmp_{underlay,overlay}.png "$out"
+         rm tmp_{underlay,overlay}.png 
+         ;;
+      svg)
+         echo "SVG NOT IMPLEMENTED"; exit 1;;
+      *)
+         out="$(qa_image "$@")"
+         ;;
+   esac
 
    if [ $mksmall -eq 1 ]; then
       local width=500
