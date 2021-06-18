@@ -216,8 +216,8 @@ parse_args() {
       --rest) ARGS="$(default_preproc_args rest)"; shift 1;;
       --participant_label) SUBJS="$SUBJS $2"; shift 2;;
       [^-]*) SUBJS="$SUBJS $1"; shift 1;;
-      --onlyt1) ONLYT1=1;shift;;
-      --onlyt2) ONLYT2=1;shift;;
+      --onlyt1|--t1only) ONLYT1=1;shift;;
+      --onlyt2|--t2only) ONLYT2=1;shift;;
       --use_ses) USE_SES=1; shift;;
       --njobs) MAXJOBS="$2"; shift 2;;
       --fm_patt) FMPATT="$2"; shift 2;;
@@ -228,6 +228,7 @@ parse_args() {
       # push unknown args onto preprocessFunctional
       --|--ppfmri_args) shift; ARGS="$ARGS $*"; break;;
       --ppmprage_args) MPRAGEARGS="$2"; shift 2;;
+      # TODO: dont use a star here? should probably error with nonsense flags
       --t1*) OLDDERIVFORMAT=1; T1DNAME="$2"; shift 2;;
       --t2*) OLDDERIVFORMAT=1; T2ROOT="$2"; shift 2;;
       *) echo "ERROR: unknown arg '$1'" && usage;;
