@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+
+current_step_file(){
+   # GLOBAL: T1
+   #echo "(${FUNCNAME[1]}) $FUNCNAME: step:'$step_str'; T1=$T1" >&2
+   [ $# -gt 0 ] && step_str="$1" || read step_str < .cur_step
+   echo ${T1}_${step_str}.nii.gz
+}
+cur_and_next(){
+   # give 'new step name'
+   # echo out the previous and new current step file names
+   # GLOBAL: T1 (implicit)
+   # SIDEEFFECT: update step_str file '.cur_step'
+   local next_step="$1"
+   local pre out step_str
+   read step_str < .cur_step
+   read pre < <(current_step_file $step_str)
+   step_str="${step_str}_${next_step}"
+   echo $step_str > .cur_step
+   read out < <(current_step_file $step_str)
+   echo -e "$pre\t$out"
+}
+already_run(){
+   # check pre exists (exit with error otherwise).
+   # return true if output exists
+   # false if still needs to be created
+   local pre="$1"; shift
+   local out="$1"; shift
+   [ ! -r "$pre" ] && echo "#ERROR: $FUNCNAME input '$pre' DNE!" >&2 && exit 1
+   [ -r $out ] && rel "reusing $(ls -l $out)" c && return 0
+   # need to run, return with error=>not already run
+   return 1
+}
+backup_original(){
+   local T1="$1"; shift
+   local nifti="$1"; shift
+   local orig=${T1}_original.nii.gz
+   if [ -r "$orig" ]; then
+      # if orig is current, we don't need to do anything
+      # this might happen with lncdprep
+      diff -q "$orig" "$nifti" && return 0
+      rel "3dcopy -overwrite $orig $nifti"
+   else
+      rel "3dcopy -overwrite $nifti $orig"
+   fi
+}
+reorient(){
+   # GLOBAL: nifti, T1
+   # SIDE-EFFECT: update step_str file .cur_step
+   # assume reorient is always first step
+   #reorient structural to RPI/LPI to match template
+   # this removes any history from mprage. so save to text file
+   local pre=$nifti
+   [ ! -r "$pre" ] && echo "#ERROR: $FUNCNAME input '$pre' DNE!" && exit 1
+   step_str="reorient"
+   echo $step_str > .cur_step
+
+   local out="$(current_step_file $step_str)"
+   [ -r "$out" ] && rel "reusing $(ls -l $out)" c && return 0
+
+   [ -n "$(3dNotes "$nifti"  2>/dev/null)" ] && rel "3dNotes '$nifti' > ${T1}_history.txt"
+   rel "fslreorient2std $pre $out"
+}
+
+unifize(){
+   # GLOBALS: T1
+   # SIDE-EFFECT: update step_str in file .cur_step
+   # 20210422 "remove shading artifacts." implemented for baby data  
+   # > The output dataset has the white matter (WM) intensity approximately
+   # > uniformized across space, and scaled to peak at about 1000.
+   local pre out
+   rel "# removing shading artifact" c
+   read pre out < <(cur_and_next "unifize")
+   already_run "$pre" "$out" ||
+    rel "3dUnifize -prefix $out -overwrite -input $pre"
+}
+
+deneck(){
+   # implict global T1
+   # sideffect update step_str in file .cur_step
+   # histogram/local min to remove neck and below from image
+   rel "# remove neck and down" c
+   local pre out
+   read pre out < <(cur_and_next "deneck")
+   already_run "$pre" "$out" ||
+     rel "remove_neck.py $pre $out"
+}
+
+deface(){
+   # implict global T1
+   # sideffect update step_str in file .cur_step
+   # pydeface. hopefully get arms and hands near face too
+   rel "# remove face" c
+   local pre out
+   read pre out < <(cur_and_next "deface")
+   already_run "$pre" "$out" ||
+     rel "pydeface $pre --outfile $out"
+}
