@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # * Imports
 # numpy and plotting
 # also need something to smooth
@@ -6,7 +6,7 @@ import sys
 import nipy
 import numpy as np
 from scipy.signal import argrelextrema
-from argparse import ArgumentParser, BooleanOptionalAction
+from argparse import ArgumentParser
 
 # * Inputs
 # for testing we used
@@ -15,14 +15,13 @@ from argparse import ArgumentParser, BooleanOptionalAction
 argpar = ArgumentParser()
 argpar.add_argument('infile', nargs=1, help="input image with too much neck")
 argpar.add_argument('outfile', help="output file name", default="no_neck.nii.gz", nargs='?')
-argpar.add_argument('--showplot', help="show plot?", default=False, action=BooleanOptionalAction)
+argpar.add_argument('--showplot', help="show plot?", default=False)
 args = argpar.parse_args(sys.argv[1:])
-fname=args.infile[0]
-outfile=args.outfile
-print(args)
+fname = args.infile[0]
+outfile = args.outfile
 
 nii = nipy.load_image(fname)
-no_neck =  nipy.load_image(fname) # todo: correct way to make a copy (or reuse nii)
+no_neck = nipy.load_image(fname)  # todo: correct way to make a copy (or reuse nii)
 
 # * Algo
 # <2021-06-15 Tue> initial testing
@@ -44,10 +43,10 @@ coronal_mask = coronal > np.mean(coronal)
 # window size was picked arbitrarily.
 line_coverage = np.sum(coronal_mask, axis=0)
 win_sz = 30
-hat = np.ones(win_sz,'d')/win_sz # flat
+hat = np.ones(win_sz, 'd')/win_sz  # flat
 line_smooth = np.convolve(hat, line_coverage)[win_sz:]
 mins = argrelextrema(line_smooth, np.less)[0]
-neck_at = mins[-1] + int(win_sz/4) # a little higher up than actual
+neck_at = mins[-1] + int(win_sz/4)  # a little higher up than actual
 
 # ** Cut
 no_neck.get_data()[:,:,0:neck_at] = 0
@@ -59,6 +58,7 @@ if not args.showplot:
     sys.exit()
 
 import matplotlib.pyplot as plt
+
 def im(i, x, **kargs):
     """subplot of nii slice: plot #, yaxis increasing, no axis label
     kargs for imshow keywords (namely cmap='bone')"""
@@ -66,9 +66,11 @@ def im(i, x, **kargs):
     plt.imshow(x, origin='lower', **kargs)
     plt.axis('off')
 
+
 def mkline(x):
     "make a vertical line with bounds of current plot"
     plt.vlines(x, ymin=plt.ylim()[0], ymax=plt.ylim()[1])
+
 
 def plot_changes():
     "plot with a lot of globals"
@@ -80,9 +82,10 @@ def plot_changes():
     plt.plot(line_coverage)
     plt.plot(line_smooth)
 
-    center_slice = no_neck[:,int(no_neck.shape[1]/2),:]
+    center_slice = no_neck[:, int(no_neck.shape[1]/2), :]
     im(3, center_slice, cmap='bone')
 
     plt.show()
+
 
 plot_changes()
