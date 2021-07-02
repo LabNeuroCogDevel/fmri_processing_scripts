@@ -4,8 +4,12 @@ function warp_structmask_to_func {
     structvol="${1}"
     outvol="${2}"
 
+    # ignore structvol and just use template... assuming that's why we're not warping but still want nuissance regressor
+    if [ "x$no_warp" == "x1" -a ! -d unwarp/ ]; then
+	rel "$FUNCNAME: no warp but want regressor? assuming no warp is needed" c
+       rel "3dcopy $structvol.nii.gz $outvol.nii.gz" # NB. assuming ext is always .nii.gz
     #warp anatomical mask into functional space
-    if [ $( imtest "unwarp/T1_UD_warp_bbr" ) -eq 1 ]; then
+    elif [ $( imtest "unwarp/T1_UD_warp_bbr" ) -eq 1 ]; then
 	rel "Using inverse of unwarp/T1_UD_warp_bbr to warp $structvol into functional space with distortion" c
 	[ ! -f "unwarp/struct_to_func_transform_and_distort${ext}" ] && rel "invwarp -w unwarp/T1_UD_warp_bbr -o unwarp/struct_to_func_transform_and_distort -r unwarp/EF_D_mc_target"
 	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --warp=unwarp/struct_to_func_transform_and_distort"
@@ -187,6 +191,9 @@ function compute_nuisance_regressors {
 		elif [ $templateName = MNI_FSL_2mm ]; then
 		    #for the FSL MNI 2mm, thr 0.75 works well visually: 193 voxels
 		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_csf_2mm.nii\" -thr 0.75 -bin .template_csf_prob"
+		elif [ $templateName = 1YO_2mm ]; then
+		    # numbered 1 to N for likelyhood?
+		    rel "fslmaths \"$stddir/UNCInfant/2mm_1YO/infant-1yr-csf.nii.gz\" -thr 0.99 -bin -eroF .template_csf_prob"
 		else
 		    rel "Unsupported template brain for CSF extraction: $templateName" c
 		    exit 1
@@ -265,6 +272,9 @@ function compute_nuisance_regressors {
 		elif [ $templateName = MNI_FSL_2mm ]; then
 		    #0.85 with erosion: 3113 voxels
 		    rel "fslmaths \"$stddir/fsl_mni152/avg152T1_white_2mm.nii\" -thr 0.85 -bin -eroF .template_wm_prob"	    
+		elif [ $templateName = 1YO_2mm ]; then
+		    # integers 0 to 246. 75% is 184
+		    rel "fslmaths \"$stddir/UNCInfant/2mm_1YO/infant-1yr-wm.nii.gz\" -thr 184 -bin -eroF .template_wm_prob"	    
 		else
 		    rel "Unsupported template brain for WM extraction: $templateName" c
 		    exit 1
