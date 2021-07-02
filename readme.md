@@ -28,7 +28,7 @@ Limited testing using [bats](https://github.com/bats-core/bats-core) in `test/`.
 see `make test` ([Makefile](./Makefile))
 
 ## See also
- * [fmriprep](https://fmriprep.readthedocs.io/en/stable/index.html)
+ * [fmriprep](https://fmriprep.readthedocs.io/en/stable/index.html), [clpipe](https://github.com/cohenlabUNC/clpipe)
  * [afni\_proc](https://afni.nimh.nih.gov/pub/dist/doc/program_help/afni_proc.py.html)
 
 ## FYI OSS
