@@ -6,7 +6,7 @@ function register_func2struct {
     local unwarp_folder=$(pwd)/unwarp
 
     [ -z "$createBBRFmapWarp" ] && createBBRFmapWarp=0
-    [ -f .register_func2struc ] && rel "register_func2struct alraedy" c && return 0
+    [ -f .register_func2struc ] && rel "register_func2struct already" c && return 0
     print_vars_in REGISTER_FUNC2STRUCT_GLOBALS
     #Obtain a transformation matrix that co-registers the subject's
     #structural T1 scan with the functional T2* image used as the motion coregistration target (mc_target).

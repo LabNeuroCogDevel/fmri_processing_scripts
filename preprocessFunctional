@@ -243,7 +243,7 @@ EndOfHelp
 #    set in correct_slice_motion_4d
 #    export before running preprocessFunctional to use different settings
 #09/16/2019 (WF) 
-#  - added -no_mc toption for running ontop of another pipeline
+#  - added -no_mc option for running ontop of another pipeline
 #07/29/2019 (WF) 
 # - add partial_proc to stop in error at motion or warp 
 #   b/c we have >2000 NCANDA scans to preprocess but are not sure what fieldmap should be
