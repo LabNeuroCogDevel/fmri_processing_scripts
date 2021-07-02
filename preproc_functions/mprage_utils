@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
 
 current_step_file(){
+   # echo curernt file: like T1_reorient.nii.gz
+   # using .cur_step file or input arg
+   # WARNING: if no input and no .cur_step assume .nii.gz -- this could be wrong
    # GLOBAL: T1
    #echo "(${FUNCNAME[1]}) $FUNCNAME: step:'$step_str'; T1=$T1" >&2
-   [ $# -gt 0 ] && step_str="$1" || read step_str < .cur_step
-   echo ${T1}_${step_str}.nii.gz
+   if [ $# -gt 0 ]; then
+      step_str="$1"
+   else
+      [ ! -r .cur_step ] && step_str="" || read step_str < .cur_step
+   fi
+   [ -n "$step_str" ] && suffix="_${step_str}" || suffix=""
+   echo ${T1}${suffix}.nii.gz
 }
 cur_and_next(){
    # give 'new step name'
@@ -13,9 +21,13 @@ cur_and_next(){
    # SIDEEFFECT: update step_str file '.cur_step'
    local next_step="$1"
    local pre out step_str
-   read step_str < .cur_step
+
+   [ -r .cur_step ] && read step_str < .cur_step || cur_step=""
    read pre < <(current_step_file $step_str)
-   step_str="${step_str}_${next_step}"
+   [ -z "$step_str" ] && \
+      step_str="$next_step" || \
+      step_str="${step_str}_${next_step}"
+
    echo $step_str > .cur_step
    read out < <(current_step_file $step_str)
    echo -e "$pre\t$out"
@@ -65,7 +77,7 @@ reorient(){
 unifize(){
    # GLOBALS: T1
    # SIDE-EFFECT: update step_str in file .cur_step
-   # 20210422 "remove shading artifacts." implemented for baby data  
+   # 20210422 "remove shading artifacts." implemented for baby data
    # > The output dataset has the white matter (WM) intensity approximately
    # > uniformized across space, and scaled to peak at about 1000.
    local pre out
@@ -73,6 +85,29 @@ unifize(){
    read pre out < <(cur_and_next "unifize")
    already_run "$pre" "$out" ||
     rel "3dUnifize -prefix $out -overwrite -input $pre"
+}
+
+cut_zindex(){
+   # GLOBALS: T1
+   # SIDE-EFFECT: update step_str in file .cur_step
+   # cut zindex. can be single intenger/slice number or range.
+   local z1 z2 zidx
+   zidx="$1"; shift
+
+   rel "# crop image w/zindex $zidx" c
+   local pre out
+   read pre out < <(cur_and_next "zindex-$zidx")
+   already_run "$pre" "$out" && return 0
+
+   if [[ $zidx =~ ([0-9]+)-([0-9]+)  ]]; then
+      z1=${BASH_REMATCH[1]}
+      z2=${BASH_REMATCH[2]}
+   else
+      z1=$zidx
+      z2=$(3dinfo -nk $pre)
+      let --z2 # zero based indexing
+   fi
+   rel "3dZcutup -prefix $out -keep $z1 $z2 $pre"
 }
 
 deneck(){

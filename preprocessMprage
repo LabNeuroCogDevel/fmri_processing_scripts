@@ -36,10 +36,14 @@ Command line options:
   -custom_brainmask: a NIfTI image containing a custom brain mask to be used instead of running a skull strip internally.
         Must be the same dimensions as the structural scan. Technically, this can even be a skull-stripped volume such that
         non-zero values are used to mask the structural image.
+  -cut_zindex Z:  keep index Z to end. use Z1-Z2 to specify range. (e.g. '0-100' to keep up until 100 instead of 100 and up)
+        useful when brain is only part of image.
   -d -delete_dicom: delete or archive DICOM files. Options are -d n ("no": leaves DICOM
         untouched), -d y ("yes": deletes DICOM files), -d a ("archive":
         compresses files into archive file: mprage_dicom.tar.gz. If not
         passed, user will be prompted for action. Can also use "yes", "no", and "archive."
+  -deface: use pydeface to remove face and maybe also hands and arms near the face (esp. babies)
+  -deneck: remove from the neck down with local remove_neck.py (implemented for baby data)
   -fnirt_mask: controls how dilated the --refmask is for fnirt. Changing this may help with undesirable stretching at edge. Options:
   	vtight: no dilation of template brain mask
 	tight: 1x dilation (-dilF) of mask
@@ -85,6 +89,10 @@ EndOfHelp
 #Last defaults updated: 7/21/2017
 #
 #Changelog:
+# 17/06/2021(WF)
+#  - add '-deneck' and '-deface' for OHSU baby dataset
+#    added preproc_functions/mprage_utils. moved reorient to there
+#    '.cur_step' file tracks "pre-preprocess" steps, things before skullstripping
 # 12/05/2021(WF)
 #  - update version reporting to include git+dirty/clean & user@host:pwd
 # 10/05/2021(WF)
@@ -157,6 +165,7 @@ scriptDir=$( dirname "$0" )
 source "${scriptDir}/preproc_functions/helper_functions" #contains rel for running/logging; also sets up stddir env variable, preproc_git_ver
 source "${scriptDir}/preproc_functions/parse_args" #contains function for parsing command line args
 source "${scriptDir}/preproc_functions/template_funcs" # old_template_check
+source "${scriptDir}/preproc_functions/mprage_utils" # reorient, unifize, deface, deneck, current_step_file
 
 
 ##load necessary modules if running on cluster (specific to ACI at the moment)
@@ -165,10 +174,15 @@ if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then
     source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash
 fi
 
+## NB. these defaults might be overwritten when parse_mprage_args is called
+#      (even if the user doesn't call any flag)
 #set defaults for dicomPattern, reference, betOpts, and outputFile
+deface=0
+deneck=0
 bright_skull=0
 cleanup=0
 cleanup_only=0
+CUT_ZIDX=""
 biasCorrect=1
 strongBias=0 #0 for weak bias correction, 1 for strong bias
 dicomPattern="MR*"
@@ -206,14 +220,6 @@ echo -e "$thiscommandinfo " > ${dotfile}_incomplete
 
 #now in preproc_functions/parse_args
 parse_mprage_args "$@" #parse command line inputs
-
-rel "settings:
-  reference    = $reference    
-  betOpts      = $betOpts      
-  strongBias   = $strongBias   
-  cleanup      = $cleanup      
-  bright_skull = $bright_skull 
-  brainmask    = $brainmask" c
 
 # make sure we are using the correct template
 old_template_check
@@ -282,7 +288,10 @@ echo "settings:
   bright_skull = '$bright_skull'
   unifize      = '$unifize'
   skullmask    = '$post_bet_skullmask'
-  brainmask    = '$brainmask'"
+  deface/deneck= '$deface'/'$deneck'
+  brainmask    = '$brainmask'
+  CUT_ZIDX     = '$CUT_ZIDX'
+  "
 
 [ -n "$DRYRUN" ] && exit 1
 
@@ -452,21 +461,18 @@ if [ $cleanup_only -eq 1 ]; then
     exit 0
 fi
 
-#reorient structural to RPI/LPI to match template
-# this removes any history from mprage. so save to text file
-[ -n "$(3dNotes "$nifti"  2>/dev/null)" ] && rel "3dNotes '$nifti' > ${T1}_history.txt"
-rel "fslreorient2std $nifti $nifti"
+#### START preprocessing
+backup_original "$T1" "$nifti" # get back to original or make a copy so we can later
+reorient        # match templte LPI
+[ -n "$CUT_ZIDX" ] && cut_zindex $CUT_ZIDX
+[ $deneck  -eq 1 ] && deneck
+[ $unifize -eq 1 ] && unifize
+[ $deface  -eq 1 ] && deface
 
-if [ $unifize -eq 1 ]; then
-   # 20210422 "remove shading artifacts." implemented for baby data  
-   # > The output dataset has the white matter (WM) intensity approximately
-   # > uniformized across space, and scaled to peak at about 1000.
-   pre_unifize=${T1}_preunifize.nii.gz
-   [ ! -r  $pre_unifize ] && cp $nifti $pre_unifize || rel "using existing $(ls -l $pre_unifize)" c
-   rel "3dUnifize -prefix $nifti -overwrite -input $pre_unifize"
-fi
-
-[ -n "$brainmask" ] && rel "fslreorient2std $brainmask $brainmask"
+# downstream uses "$nifti"
+last_prepre="$(current_step_file)"
+rel "setting '$nifti' to the last pre-preproc step '$last_prepre'" c
+rel "3dcopy -overwrite $last_prepre $nifti"
 
 if [ $robustfov -eq 1 ]; then
     if [ $( imtest "${T1}_fullfov" ) -eq 0 ]; then
@@ -475,10 +481,21 @@ if [ $robustfov -eq 1 ]; then
     fi
     rel "robustfov -i \"${T1}_fullfov\" -r \"${T1}\""
 
-    if [ -n "$brainmask" ]; then
+    # 20210630 - DISABLED!
+    #  use 3dresmample below to ensure mask matches anat
+    if [ 0 -eq 1 -a  -n "$brainmask" ]; then
 	[ $( imtest "${brainmask}_fullfov" ) -eq 0 ] && rel "imcp \"${brainmask}\" \"${brainmask}_fullfov\""
 	rel "robustfov -i \"${brainmask}_fullfov\" -r \"${brainmask}\""
     fi
+fi
+
+if [ -n "$brainmask" ]; then 
+   rel "fslreorient2std $brainmask ${brainmask}_std" # flip storage and header
+   if 3dinfo -same_all_grid ${brainmask}_std$ext $T1${ext} |grep 0  -q; then
+      rel "WARNING: mask doesn't match $T1 in dim/delta (maybe b/c robustfov, see -no_robustfov) resampling!" c
+      rel "3dresample -master $T1$ext -inset ${brainmask}_std$ext -overwrite -rmode NN -prefix ${brainmask}_std$ext"
+   fi
+
 fi
 
 #initial correction for any negative values in original image
@@ -592,9 +609,9 @@ elif [ -n "${brainmask}" ]; then
 	echo "Cannot locate -custom_brainmask: ${brainmask}${ext}"
 	exit 1
     fi
-    rel "fslmaths ${T1}_biascorr -mas $brainmask ${T1}_skullstrip" #apply custom brainmask
+    rel "fslmaths ${T1}_biascorr -mas ${brainmask}_std ${T1}_skullstrip" #apply custom brainmask
     ssmethod=custom #override ssmethod so that fnirt-inv doesn't fire below
-    initstrip="$brainmask"
+    initstrip="${brainmask}"
 elif [ $ssmethod = noisy ]; then
     rel "@NoisySkullStrip -input ${T1}_biascorr${ext}"
     rel "3dcopy ${T1}_biascorr${ext}.ns+orig. ${T1}_bet_initial${ext}" #default option for initial strip

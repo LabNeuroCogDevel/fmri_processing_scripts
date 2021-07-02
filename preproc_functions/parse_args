@@ -740,7 +740,11 @@ function parse_args {
 function parse_mprage_args() {
 
     USE_OLD_TEMPLATE=
+    # NB. defaults here will overwrite those in preprocessMprage
     unifize=0
+    deneck=0
+    deface=0
+    CUT_ZIDX=""
 
     while [ _$1 != _ ] ; do
 	if [[ $1 = -b || $1 = -bet_opts ]] ; then
@@ -761,6 +765,9 @@ function parse_mprage_args() {
 	elif [[ $1 = -custom_brainmask ]]; then
 	    brainmask="${2}"
 	    shift 2
+	elif [[ $1 = -cut_zindex ]]; then
+	    CUT_ZIDX="${2}"
+	    shift 2
 	elif [[ $1 = -d || $1 = -delete_dicom ]]; then
 	    low=$( echo "${2}" | awk '{print tolower($0)}' ) 	#force lower case input
 	    if [[ $2 = "delete" || $2 = "yes" || $2 = "no" || $2 = "archive" ]]; then
@@ -774,6 +781,14 @@ function parse_mprage_args() {
 		echo -e "Unrecognized ${1}: ${2}.\n  Options are: ${1} delete yes no archive."
 		exit 1
 	    fi
+       elif [[ $1 = -deface  ]]; then
+          # 20210617 remove face (arms and hands near face too)
+          deface=1
+          shift 1
+       elif [[ $1 = -deneck  ]]; then
+          # 20210617 remove below neck
+          deneck=1
+          shift 1
 	elif [[ $1 = -p || $1 = -dicom ]]; then
 	    dicomPattern="${2}"
 	    shift 2
