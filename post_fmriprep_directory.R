@@ -1,7 +1,7 @@
 post_fmriprep_directory <- function(
   dir, subject_regex="sub-.*", bold_regex="sub-.*_task.*desc-preproc_bold\\.nii\\.gz", 
   config_yaml = "post_fmriprep.yaml",
-  ncpus=4L, chunksize=1L, subj_min=35, scheduler="slurm") {
+  ncpus=4L, chunksize=1L, subj_min=60, scheduler="slurm") {
 
   checkmate::assert_directory_exists(dir)
   checkmate::assert_string(subject_regex)
@@ -36,6 +36,7 @@ post_fmriprep_directory <- function(
       future::plan(
         tweak(future.batchtools::batchtools_slurm,
           template = "slurm-simple", # good enough for now
+          workers = length(sfiles), # one job per file -- can lower this to some fixed value if you want to limit jobs
           resources = list(
             walltime = subj_min * 60 * chunksize, # walltime is in seconds, hence the 60s
             memory = 8000, # 8 GB per core
