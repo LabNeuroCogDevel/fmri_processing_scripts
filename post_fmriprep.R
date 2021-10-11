@@ -138,6 +138,9 @@ temporal_filter <- function(in_file, prefix="f", low_pass_hz=0, high_pass_hz=1/1
   temp_tmean <- tempfile()
   run_fsl_command(glue("fslmaths {in_file} -Tmean {temp_tmean}"), log_file=log_file)
   run_fsl_command(glue("fslmaths {in_file} -bptf {hp_volumes} {lp_volumes} -add {temp_tmean} {out_file} "), log_file = log_file)
+  tnif <- paste0(temp_tmean, ".nii.gz")
+  if (checkmate::test_file_exists(tnif)) { unlink(tnif) } # cleanup
+  
   return(out_file)
 }
 
@@ -201,7 +204,8 @@ spatial_smooth <- function(in_file, prefix="s", fwhm_mm=6, brain_mask=NULL, over
     run_fsl_command(glue("fslmaths {out_file} -mas {brain_mask} {out_file} -odt float"), log_file = log_file)
   }
   run_fsl_command(glue("susan {in_file} {sigma} 3 1 1 {temp_tmean} {susan_thresh} {out_file}"), log_file = log_file)
-  if (checkmate::test_file_exists(temp_tmean))  { unlink(temp_tmean) } # cleanup
+  tnif <- paste0(temp_tmean, ".nii.gz")
+  if (checkmate::test_file_exists(tnif)) { unlink(tnif) } # cleanup
   return(out_file)
 }
 
@@ -331,7 +335,7 @@ process_subject <- function(in_file, config_file="post_fmriprep.yaml") {
     }
 
     if ("confound_regression" %in% cfg$processing_sequence) {
-      to_regress <- tempfile(pattern = "filtered_confounds")
+      to_regress <- cfg$confound_regression$output_file
       data.table::fwrite(subset(filtered_confounds, select = cfg$confound_regression$columns),
         file = to_regress, col.names = FALSE
       )
@@ -392,8 +396,9 @@ process_subject <- function(in_file, config_file="post_fmriprep.yaml") {
   return(cur_file)
 }
 
-sdir <- "/proj/mnhallqlab/studies/bsocial/clpipe/data_fmriprep/fmriprep/sub-221256/func"
-setwd(sdir)
-process_subject("sub-221256_task-clock_run-2_space-MNI152NLin2009cAsym_desc-preproc_bold.nii.gz",
-  config_file = "/proj/mnhallqlab/users/michael/fmri.pipeline/R/post_fmriprep.yaml"
-)
+# for testing
+# sdir <- "/proj/mnhallqlab/studies/bsocial/clpipe/data_fmriprep/fmriprep/sub-221256/func"
+# setwd(sdir)
+# process_subject("sub-221256_task-clock_run-2_space-MNI152NLin2009cAsym_desc-preproc_bold.nii.gz",
+#   config_file = "/proj/mnhallqlab/users/michael/fmri.pipeline/R/post_fmriprep.yaml"
+# )
