@@ -1,5 +1,6 @@
 tr: 1.0
-log_file: "post_fmriprep.log"
+#log_file: "post_fmriprep.log"
+log_file: "{proc_files$prefix}_post_fmriprep.log"
 overwrite: FALSE
 keep_intermediates: FALSE
 

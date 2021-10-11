@@ -36,7 +36,7 @@ nii_to_mat <- function(ni_in) {
   return(mat)
 }
 
-run_fsl_command <- function(args, fsldir=NULL, echo=TRUE, run=TRUE, stdout=NULL, stderr=NULL, log_file=NULL, intern=FALSE) {
+run_fsl_command <- function(args, fsldir=NULL, echo=TRUE, run=TRUE, log_file="", intern=FALSE, stop_on_fail=TRUE) {
   #look for FSLDIR in system environment if not passed in
   if (is.null(fsldir)) {
     #check for FSLDIR in sourced .bashrc
@@ -61,17 +61,53 @@ run_fsl_command <- function(args, fsldir=NULL, echo=TRUE, run=TRUE, stdout=NULL,
   Sys.setenv(FSLDIR=fsldir) #export to R environment
   fslsetup <- paste0("FSLDIR=", fsldir, "; PATH=${FSLDIR}/bin:${PATH}; . ${FSLDIR}/etc/fslconf/fsl.sh; ${FSLDIR}/bin/")
   fslcmd <- paste0(fslsetup, args)
-  if (!is.null(stdout)) { fslcmd <- paste(fslcmd, ">", stdout) }
-  if (!is.null(stderr)) { fslcmd <- paste(fslcmd, "2>", stderr) }
+
+  ofile <- tempfile(pattern="stdout")
+  efile <- tempfile(pattern="stderr")
+
+  fslcmd <- paste(fslcmd, ">", ofile)
+  fslcmd <- paste(fslcmd, "2>", efile)
+
   #cat("FSL command: ", fslcmd, "\n")
   if (!is.null(log_file)) { cat(args, file=log_file, append=TRUE, sep="\n") }
   if (isTRUE(echo)) { cat(args, "\n") }
   if (isTRUE(run)) {
-    retcode <- system(fslcmd, intern=intern)
-    return(retcode)
+    retcode <- system(fslcmd)
   } else {
-    return(0) # no run retcode
+    retcode <- 0 # no run result (dummy)
   }
+
+  if (file.exists(efile)) {
+    stderr <- readLines(efile)
+    if (identical(character(0), stderr)) stderr <- ""
+  } else {
+    stderr <- ""
+  }
+
+  if (file.exists(ofile)) {
+    stdout <- readLines(ofile)
+    if (identical(character(0), stdout)) stdout <- ""
+  } else {
+    stdout <- ""
+  }
+
+  to_return <- retcode # return exit code of command
+  # if specified, switch to stdout as return
+  if (isTRUE(intern)) {
+    to_return <- stdout # return output of command
+    attr(to_return, "retcode") <- retcode
+  }
+
+  attr(to_return, "stdout") <- stdout
+  attr(to_return, "stderr") <- stderr
+
+  if (retcode != 0) {    
+    errmsg <- glue("run_fsl_command failed with exit code: {retcode}, stdout: {paste(stdout, collapse='\n')}, stderr: {paste(stderr, collapse='\n')}")
+    cat(errmsg, "\n", file = log_file, append = TRUE)
+    if (isTRUE(stop_on_fail)) { stop(errmsg) }
+  }
+
+  return(to_return)
 }
 
 out_file_exists <- function(in_file, prefix, overwrite=TRUE) {
@@ -145,10 +181,17 @@ temporal_filter <- function(in_file, prefix="f", low_pass_hz=0, high_pass_hz=1/1
 }
 
 apply_aroma <- function(in_file, brain_mask=NULL, prefix="a", mixing_file, noise_file, overwrite=FALSE, log_file=NULL, use_R=FALSE) {
-  #checkmate::assert_file_exists(in_file)
+  # checkmate::assert_file_exists(in_file)
   checkmate::assert_string(prefix)
-  checkmate::assert_file_exists(mixing_file)
-  checkmate::assert_file_exists(noise_file)
+  if (isFALSE(checkmate::test_file_exists(mixing_file))) {
+    warning(glue("Cannot find mixing file corresponding to {in_file}. Skipping AROMA regression"))
+    return(in_file)
+  }
+
+  if (isFALSE(checkmate::test_file_exists(noise_file))) {
+    warning(glue("Cannot find ICA noise components file corresponding to {in_file}. Skipping AROMA regression"))
+    return(in_file)
+  }
 
   # handle extant file
   res <- out_file_exists(in_file, prefix, overwrite)
@@ -203,7 +246,6 @@ spatial_smooth <- function(in_file, prefix="s", fwhm_mm=6, brain_mask=NULL, over
     # re-threshold image after smoothing so that only brain voxels are retained
     run_fsl_command(glue("fslmaths {out_file} -mas {brain_mask} {out_file} -odt float"), log_file = log_file)
   }
-  run_fsl_command(glue("susan {in_file} {sigma} 3 1 1 {temp_tmean} {susan_thresh} {out_file}"), log_file = log_file)
   tnif <- paste0(temp_tmean, ".nii.gz")
   if (checkmate::test_file_exists(tnif)) { unlink(tnif) } # cleanup
   return(out_file)
@@ -277,29 +319,33 @@ get_fmriprep_outputs <- function(in_file) {
   ret_list <- lapply(ret_list, function(x) {
     ifelse(checkmate::test_file_exists(x), x, NULL)
   }) # NULL out missing files
+  ret_list[["prefix"]] <- first_chars # sub id info
   return(ret_list)
 }
 
 # primary function to process a given fmriprep subject dataset
-process_subject <- function(in_file, config_file="post_fmriprep.yaml") {
+process_subject <- function(in_file, cfg="post_fmriprep.yaml") {
   checkmate::assert_file_exists(in_file)
-  checkmate::assert_file_exists(config_file)
+  
   #checkmate::assert_list(processing_sequence)
   proc_files <- get_fmriprep_outputs(in_file)
 
   sdir <- dirname(in_file)
   setwd(sdir)
-  cfg <- yaml::read_yaml(config_file)
 
-  cat("Start fmriprep postprocessing: ", as.character(Sys.time()), "\n", file=cfg$log_file, append=FALSE)
-  # currently insist on yaml
-  # if (checkmate::test_file_exists(config_file)) {
-  #   cfg <- yaml::read_yaml(config_file)
-  # } else {
-  #   processing_sequence <- c("spatial_smooth", "apply_aroma", "temporal_filter", "intensity_normalize")
-  # }
+  if (is.list(cfg)) {
+    # for now, nothing here -- just use list as-is
+  } else if (checkmate::test_string(cfg)) {
+    checkmate::assert_file_exists(cfg)
+    cfg <- yaml::read_yaml(cfg)
+  }
+  
+  log_file <- glue(cfg$log_file) #evaluate location of log
+
+  cat("Start fmriprep postprocessing: ", as.character(Sys.time()), "\n", file=log_file, append=TRUE)
 
   cur_file <- proc_files$bold
+  file_set <- cur_file
 
   # handle confounds, filtering to match MRI data
   if ("confound_regression" %in% cfg$processing_sequence || isTRUE(cfg$confound_calculate$compute)) {
@@ -312,7 +358,7 @@ process_subject <- function(in_file, config_file="post_fmriprep.yaml") {
     if ("apply_aroma" %in% cfg$processing_sequence) {
       confound_nii <- apply_aroma(confound_nii,
         mixing_file = proc_files$melodic_mix,
-        noise_file = proc_files$noise_ics, overwrite=cfg$overwrite, log_file=cfg$log_file, use_R=TRUE
+        noise_file = proc_files$noise_ics, overwrite=cfg$overwrite, log_file=log_file, use_R=TRUE
       )
     }
 
@@ -320,7 +366,7 @@ process_subject <- function(in_file, config_file="post_fmriprep.yaml") {
     if ("temporal_filter" %in% cfg$processing_sequence) {
       confound_nii <- temporal_filter(confound_nii,
         tr = cfg$tr, low_pass_hz = cfg$temporal_filter$low_pass_hz,
-        high_pass_hz = cfg$temporal_filter$high_pass_hz, overwrite=cfg$overwrite, log_file=cfg$log_file
+        high_pass_hz = cfg$temporal_filter$high_pass_hz, overwrite=cfg$overwrite, log_file=log_file
       )
     }
 
@@ -342,42 +388,40 @@ process_subject <- function(in_file, config_file="post_fmriprep.yaml") {
     }
   }
 
-  file_set <- cur_file
-
   # loop over processing steps in sequence
   for (step in cfg$processing_sequence) {
     if (step == "spatial_smooth") {
       cur_file <- spatial_smooth(cur_file,
         brain_mask = proc_files$brain_mask, prefix = cfg$spatial_smooth$prefix,
-        fwhm_mm = cfg$spatial_smooth$fwhm_mm, overwrite = cfg$overwrite, log_file = cfg$log_file
+        fwhm_mm = cfg$spatial_smooth$fwhm_mm, overwrite = cfg$overwrite, log_file = log_file
       )
       file_set <- c(file_set, cur_file)
     } else if (step == "apply_aroma") {
       cur_file <- apply_aroma(cur_file, prefix = cfg$apply_aroma$prefix,
         brain_mask = proc_files$brain_mask, mixing_file = proc_files$melodic_mix,
         noise_file = proc_files$noise_ics,
-        overwrite=cfg$overwrite, log_file=cfg$log_file
+        overwrite=cfg$overwrite, log_file=log_file
       )
       file_set <- c(file_set, cur_file)
     } else if (step == "temporal_filter") {
       cur_file <- temporal_filter(cur_file, prefix = cfg$temporal_filter$prefix,
         tr = cfg$tr, low_pass_hz = cfg$temporal_filter$low_pass_hz,
         high_pass_hz = cfg$temporal_filter$high_pass_hz,
-        overwrite=cfg$overwrite, log_file=cfg$log_file
+        overwrite=cfg$overwrite, log_file=log_file
       )
       file_set <- c(file_set, cur_file)
     } else if (step == "intensity_normalize") {
       cur_file <- intensity_normalize(cur_file, prefix = cfg$intensity_normalize$prefix,
         brain_mask = proc_files$brain_mask,
         global_median = cfg$intensity_normalize$global_median,
-        overwrite=cfg$overwrite, log_file=cfg$log_file
+        overwrite=cfg$overwrite, log_file=log_file
       )
       file_set <- c(file_set, cur_file)
     } else if (step == "confound_regression") {
       cur_file <- confound_regression(cur_file, prefix = cfg$confound_regression$prefix,
         brain_mask = proc_files$brain_mask,
         to_regress = to_regress,
-        overwrite=cfg$overwrite, log_file=cfg$log_file
+        overwrite=cfg$overwrite, log_file = log_file
       )
       file_set <- c(file_set, cur_file)
     }
@@ -387,12 +431,12 @@ process_subject <- function(in_file, config_file="post_fmriprep.yaml") {
     # initial file is the BOLD input from fmriprep, last file is the final processed image
     to_delete <- file_set[2:(length(file_set) - 1)]
     for (ff in to_delete) {
-      cat("Removing", ff, "\n", file = cfg$log_file, append=TRUE)
+      cat("Removing", ff, "\n", file = log_file, append=TRUE)
       if (file.exists(ff)) unlink(ff)
     }
   }
 
-  cat("End fmriprep postprocessing: ", as.character(Sys.time()), "\n", file = cfg$log_file, append = TRUE)
+  cat("End fmriprep postprocessing: ", as.character(Sys.time()), "\n", file = log_file, append = TRUE)
   return(cur_file)
 }
 
@@ -400,5 +444,5 @@ process_subject <- function(in_file, config_file="post_fmriprep.yaml") {
 # sdir <- "/proj/mnhallqlab/studies/bsocial/clpipe/data_fmriprep/fmriprep/sub-221256/func"
 # setwd(sdir)
 # process_subject("sub-221256_task-clock_run-2_space-MNI152NLin2009cAsym_desc-preproc_bold.nii.gz",
-#   config_file = "/proj/mnhallqlab/users/michael/fmri.pipeline/R/post_fmriprep.yaml"
+#   cfg = "/proj/mnhallqlab/users/michael/fmri.pipeline/R/post_fmriprep.yaml"
 # )
