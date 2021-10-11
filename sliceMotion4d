@@ -71,9 +71,9 @@ else:
     elif cmdInput.slice_direction.lower() == "z":
         slice_direction=2
 
-wiLoops=map(int, cmdInput.loops.split(',')) #convert input to list
-speedup=map(int, cmdInput.speedup.split(','))
-bwLoops=map(int, cmdInput.bw_loops.split(','))
+wiLoops=list(map(int, cmdInput.loops.split(','))) #convert input to list
+speedup=list(map(int, cmdInput.speedup.split(',')))
+bwLoops=list(map(int, cmdInput.bw_loops.split(',')))
 
 #verify comparable lengths for loops and speedup
 l1 = len(wiLoops)

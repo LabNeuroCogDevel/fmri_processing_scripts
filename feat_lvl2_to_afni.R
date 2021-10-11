@@ -5,7 +5,7 @@
 ##For L2 analyses, the individual cope*.feat directories have the L1 structure and can be digested accordingly
 
 if (Sys.getenv("AFNIDIR") == "") {
-  Sys.setenv(AFNIDIR="/gpfs/group/mnh5174/default/sw/afni")  
+  Sys.setenv(AFNIDIR="/proj/mnhallqlab/sw/afni")  
 }
 
 printHelp <- function() {

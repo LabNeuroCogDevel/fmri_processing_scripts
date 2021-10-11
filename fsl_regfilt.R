@@ -1,7 +1,9 @@
 #!/usr/bin/env Rscript
 args = commandArgs(trailingOnly=TRUE)
-if (length(args) < 3 || length(args) > 4) {
-  stop("Expects three arguments (input file, melodic.mix, classified_motion_ICAs) or four arguments (input file, melodic.mix, classified_motion_ICAs, njobs).n", call.=FALSE)
+# for testing
+#args <- list("/tmp/RtmpiIGTC0/confounds17f72d3c13af.nii.gz", "sub-221256_task-clock_run-2_desc-MELODIC_mixing.tsv", "sub-221256_task-clock_run-2_AROMAnoiseICs.csv", "1", "test")
+if (length(args) < 3 || length(args) > 5) {
+  stop("Expects at least three arguments: input_file, melodic_mix, motion_ics_file, <njobs=4>, <output_fname>.", call.=FALSE)
 }
 
 #handle package dependencies
@@ -22,25 +24,22 @@ partialLm <- function(y, X, ivs=NULL) {
   return(as.vector(y - pred))
 }
 
-#set defaults
+# set defaults
 njobs <- 4
+output_fname <- "ica_aroma/denoised_func_data_nonaggr"
 
-clustersocketport <- 10290
-if (length(args) ==3) {
-    dataset <- args[[1]]
-    melodic.mix.df<- args[[2]]
-    motion_components <- args[[3]]
-} else {
-    dataset <- args[[1]]
-    melodic.mix.df <- args[[2]]
-    motion_components <- args[[3]]
-    njobs <- as.integer(args[[4]])
-}
+dataset <- args[[1]]
+melodic.mix.df <- args[[2]]
+motion_components <- args[[3]]
+
+if (length(args) > 3) njobs <- as.integer(args[[4]])
+if (length(args) > 4) output_fname <- args[[5]]
+
+output_fname <- sub("\\.nii(\\.gz)*$", "", output_fname, perl = TRUE) # strip extension to avoid double extension in writeNIfTI
 
 stopifnot(file.exists(dataset))
 stopifnot(file.exists(melodic.mix.df))
-stopifnot(file.exists(motion_components))
-  
+stopifnot(file.exists(motion_components))  
 
 #dataset <- args[[1]]
 message("Running fslRegFilt.R with ", njobs, " jobs")
@@ -54,7 +53,7 @@ melmix <- data.matrix(read.table(melodic.mix.df, header=FALSE, colClasses="numer
 nonconst <- apply(fmri_ts_data, c(1,2,3), function(ts) { !all(ts==ts[1]) })
 mi <- which(nonconst==TRUE, arr.ind=TRUE)
 
-toprocess <- apply(fmri_ts_data, 4, function(x) { x[nonconst] })
+toprocess <- apply(fmri_ts_data, 4, function(x) x[nonconst]) # becomes a voxels x timepoints matrix
 rownames(toprocess) <- 1:nrow(toprocess) #used to set progress bar inside loop
 message("fMRI data to analyze consist of ", nrow(toprocess), " voxels and ", ncol(toprocess), " timepoints")
 
@@ -64,10 +63,6 @@ cat("The following components will be removed from the data using partial regres
 cat(paste(badics, collapse=", "), "\n\n")
 
 if (njobs > 1) {
-    ##setDefaultClusterOptions(master="localhost", port=clustersocketport)
-    ##cl <- makeSOCKcluster(njobs, outfile = "")
-    ##registerDoSNOW(cl)
-
     cl <- parallel::makePSOCKcluster(njobs, outfile = "")
     registerDoParallel(cl)
 } else {
@@ -114,7 +109,7 @@ fmri_ts_data@.Data[miassign] <- res
 #add min/max to header to have it play well across packages
 fmri_ts_data@cal_min <- min(fmri_ts_data)
 fmri_ts_data@cal_max <- max(fmri_ts_data)
-writeNIfTI(fmri_ts_data, filename="ica_aroma/denoised_func_data_nonaggr")                    
+writeNIfTI(fmri_ts_data, filename = output_fname)
 
 #this completely blows the ram...
 #fmri_ts_data@.Data <- abind(lapply(data.frame(fmri_ts_data), function(col) {
