@@ -383,12 +383,12 @@ process_subject <- function(in_file, cfg="post_fmriprep.yaml") {
 
     if (isTRUE(cfg$confound_calculate$compute)) {
       data.table::fwrite(subset(filtered_confounds, select = cfg$confound_calculate$columns),
-        file = cfg$confound_calculate$output_file
+        file = glue(cfg$confound_calculate$output_file)
       )
     }
 
     if ("confound_regression" %in% cfg$processing_sequence) {
-      to_regress <- cfg$confound_regression$output_file
+      to_regress <- glue(cfg$confound_regression$output_file)
       data.table::fwrite(subset(filtered_confounds, select = cfg$confound_regression$columns),
         file = to_regress, col.names = FALSE
       )
@@ -445,7 +445,7 @@ process_subject <- function(in_file, cfg="post_fmriprep.yaml") {
 
   end_time <- Sys.time()
   cat("End fmriprep postprocessing: ", as.character(end_time), "\n", file = log_file, append = TRUE)
-  cat(start_time, end_time, file=complete_file, sep="\n")
+  cat(as.character(start_time), as.character(end_time), file = complete_file, sep = "\n")
   return(cur_file)
 }
 

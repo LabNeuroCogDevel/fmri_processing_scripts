@@ -23,7 +23,7 @@ intensity_normalize:
 confound_regression:
   prefix: "r"
   columns: [ "csf", "csf_derivative1", "white_matter", "white_matter_derivative1" ]
-  output_file: "confound_regressors.txt"
+  output_file: "{proc_files$prefix}_confound_regressors.txt"
 
 confound_calculate:
   compute: TRUE # will extract these confounds and filter to match fMRI data if TRUE

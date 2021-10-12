@@ -62,8 +62,8 @@ post_fmriprep_directory <- function(
   }
 }
 
-post_fmriprep_directory(
-  dir = "/proj/mnhallqlab/studies/bsocial/clpipe/data_fmriprep/fmriprep",
-  bold_regex = "sub-.*_task-clock_run.*desc-preproc_bold\\.nii\\.gz",
-  config_yaml="/proj/mnhallqlab/lab_resources/fmri_processing_scripts/post_fmriprep.yaml"
-)
+# post_fmriprep_directory(
+#   dir = "/proj/mnhallqlab/studies/bsocial/clpipe/data_fmriprep/fmriprep",
+#   bold_regex = "sub-.*_task-clock_run.*desc-preproc_bold\\.nii\\.gz",
+#   config_yaml="/proj/mnhallqlab/lab_resources/fmri_processing_scripts/post_fmriprep.yaml"
+# )
