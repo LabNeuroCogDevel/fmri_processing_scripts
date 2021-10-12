@@ -28,7 +28,7 @@ confound_regression:
 confound_calculate:
   compute: TRUE # will extract these confounds and filter to match fMRI data if TRUE
   columns: [ "csf", "csf_derivative1", "white_matter", "white_matter_derivative1" ]
-  output_file: "postprocessed_confounds.txt"
+  output_file: "{proc_files$prefix}_postprocessed_confounds.txt"
 
 processing_sequence: [ 
   "spatial_smooth", 

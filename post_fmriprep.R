@@ -341,7 +341,7 @@ process_subject <- function(in_file, cfg="post_fmriprep.yaml") {
   }
   
   log_file <- glue(cfg$log_file) #evaluate location of log
-  complete_file <- paste0(".", proc_files$prefix, "_complete") #evaluate location of log
+  complete_file <- paste0(".", basename(proc_files$prefix), "_complete") # evaluate location of log
 
   if (isFALSE(cfg$overwrite) && file.exists(complete_file)) {
     message(glue("Already completed postprocessing for {in_file}. Skipping"))
