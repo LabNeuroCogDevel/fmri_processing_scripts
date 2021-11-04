@@ -241,7 +241,7 @@ spatial_smooth <- function(in_file, prefix="s", fwhm_mm=6, brain_mask=NULL, over
   # compute mean functional image used in susan
   temp_tmean <- tempfile()
   run_fsl_command(glue("fslmaths {in_file} -Tmean {temp_tmean}"), log_file=log_file) # save tmean to temporary file
-  run_fsl_command(glue("susan {in_file} {sigma} 3 1 1 {temp_tmean} {susan_thresh} {out_file}"), log_file = log_file)
+  run_fsl_command(glue("susan {in_file} {susan_thresh} {sigma} 3 1 1 {temp_tmean} {susan_thresh} {out_file}"), log_file = log_file)
   if (!is.null(brain_mask)) {
     # re-threshold image after smoothing so that only brain voxels are retained
     run_fsl_command(glue("fslmaths {out_file} -mas {brain_mask} {out_file} -odt float"), log_file = log_file)
