@@ -165,3 +165,18 @@ maybe_dilate_bias_in() {
       fnirt_in="$fnirt_dil_in"
    fi
 }
+
+fsbrain_to_local(){
+   # resample freesurfer to match original input
+   # 20211105WF - added b/c 7T GRAPPA T1 are not handled well. but FS does a good job
+   # used with -ss_method fresufer=/path/to/brainmask.mgz
+   local mprage="$1"; shift
+   local fsmask="$1"; shift
+   local saveas="$1"; shift
+   [ ! -r "$mprage" ] && echo "$FUNCNAME: mprage file missing! '$mprage' DNE" && exit 1
+   [ ! -r "$fsmask" ] && echo "bad fs mask given! '$fsmask' DNE" && exit 1
+
+   [ -r "$saveas" ] && echo "WARNING: already have $(pwd)/$saveas. overwritting" 
+   mri_convert "$fsmask" mprage_fs_brainmask.nii.gz
+   3dresample -inset mprage_fs_brainmask.nii.gz -master "$mprage" -prefix "$saveas" -overwrite
+}

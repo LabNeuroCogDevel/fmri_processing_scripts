@@ -72,6 +72,7 @@ Command line options:
         3dSkullStrip: uses the 3dSkullStrip program (can pass additional parameters using -bet_opts).
         noisy: use @NoisySkullStrip
         ROBEX: uses the ROBEX program (which doesn't accept any parameters).
+        freesurfer=/path/to/subj/mri/brainmask.mgz
   -strong_bias: used for images with very strong bias fields
   -unifize:  run afni's 3dUnifize on input mprage
   -use_old_mni: support legacy preprocessing
@@ -89,6 +90,8 @@ EndOfHelp
 #Last defaults updated: 7/21/2017
 #
 #Changelog:
+# 11/05/2021(WF)
+#  - add ss_method option freesurfer=$SUBJECT_DIR/mri/brainmask.mgz (b/c 7T GRAPPA T1 are difficult)
 # 09/07/2021(WF)
 #  - add DIL_FNIRT_INPUT_BY env variable. testing nonlinear warp with baby brains
 # 17/06/2021(WF)
@@ -622,6 +625,10 @@ elif [ $ssmethod = 3dSkullStrip ]; then
     [ -z "$betOpts" ] && betOpts="-touchup -orig_vol" #default 3dss options
     rel "3dSkullStrip -input ${T1}_biascorr${ext} -prefix ${T1}_skullstrip${ext} ${betOpts}" #default option for initial strip
     initstrip="3dSkullStrip"
+elif [[ $ssmethod =~ ^freesurfer ]]; then
+   fs_mask=${ssmethod##*=}
+   fsbrain_to_local mprage.nii.gz $fs_mask ${T1}_skullstrip${ext}
+   initstrip="freesurfer ($fs_mask)"
 else
     if [ $init_ss_program = runROBEX.sh ]; then
 	rel "runROBEX.sh ${T1}_biascorr${ext} ${T1}_skullstrip${ext}"
