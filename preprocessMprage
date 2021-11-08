@@ -89,6 +89,8 @@ EndOfHelp
 #Last defaults updated: 7/21/2017
 #
 #Changelog:
+# 09/07/2021(WF)
+#  - add DIL_FNIRT_INPUT_BY env variable. testing nonlinear warp with baby brains
 # 17/06/2021(WF)
 #  - add '-deneck' and '-deface' for OHSU baby dataset
 #    added preproc_functions/mprage_utils. moved reorient to there
@@ -774,8 +776,15 @@ function bright_skull_correction() {
 #run bright skull correction, if requested
 bright_skull_correction
 
+# 20210709. fnirt input is ${T1}_biascorr${warpsuffix}  (likely 'mprage_biascorr')
+#           and is not skullstripped. fnirt template <-> mprage w/skull
+#           problem for large FOV baby data
+
+fnirt_in=${T1}_biascorr${warpsuffix}
+maybe_dilate_bias_in
+
 #re-run fnirt even if output already exists because files upstream may have been changed (e.g., betted mprage)
-rel "fnirt --ref=$unbettedRefBrain --refmask=$refMask --in=${T1}_biascorr${warpsuffix} --aff=$flirtAffCoef \
+rel "fnirt --ref=$unbettedRefBrain --refmask=$refMask --in="$fnirt_in" --aff=$flirtAffCoef \
         --fout=\"$( remove_ext ${outputFile} )_warpfield\" --cout=\"${T1}_warpcoef\" --iout=\"$outputFile\" \
 	--config=$fnirtConfig --logout=${T1}_to_${reference}_fnirt_settings.log --warpres=${wr},${wr},${wr} -v"
 

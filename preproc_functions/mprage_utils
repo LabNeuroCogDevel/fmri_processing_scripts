@@ -131,3 +131,37 @@ deface(){
    already_run "$pre" "$out" ||
      rel "pydeface $pre --outfile $out"
 }
+
+
+maybe_dilate_bias_in() {
+   # SIDEFFECT: can change fnirt_in (and make files)
+   # GLOBALS:
+   #   T1=mprage
+   #   ext=.nii.gz
+   #   fnirt_in=${T1}_biascorr${warpsuffix}
+   #   DIL_FNIRT_INPUT_BY=0
+   [ ! -v fnirt_in ] &&
+      echo "$FUNCNAME: missing global variable fnirt_in" >&2  && return 1
+   [ ! -v T1 ] &&
+      echo "$FUNCNAME: missing global variable T1" && return 1
+   [ ! -v ext ] && local ext=.nii.gz
+
+   if [ -z "$DIL_FNIRT_INPUT_BY" ]; then
+      # nothing to do. keep fnirt_in as is
+      :
+   elif [ "$DIL_FNIRT_INPUT_BY" -ge 0 ]; then
+
+      local bet=${T1}_bet${ext}
+      # mprage_bet probably doesn't exist yet, but skullstrip should
+      [ ! -r "$bet" ] && bet=${T1}_skullstrip${ext}
+      [ ! -r "$bet" ] &&
+         echo "ERROR: cannot find '$bet' in $(pwd)" >&2 && return 1
+      local fnirt_dil_in=${fnirt_in}_dil${DIL_FNIRT_INPUT_BY}mask.nii.gz
+      local dilmask=${T1}_mask_dil$DIL_FNIRT_INPUT_BY.nii.gz
+      local betmask=${T1}_bet_mask.nii.gz
+      rel "3dcalc -expr 'step(a)' -a $bet -prefix $betmask"
+      rel "3dmask_tool -input $betmask -prefix $dilmask -dilate_inputs $DIL_FNIRT_INPUT_BY"
+      rel "3dcalc -expr 'm*b' -m $dilmask -b $fnirt_in${ext} -prefix $fnirt_dil_in"
+      fnirt_in="$fnirt_dil_in"
+   fi
+}
