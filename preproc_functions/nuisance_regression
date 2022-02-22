@@ -5,8 +5,9 @@ function warp_structmask_to_func {
     outvol="${2}"
 
     # ignore structvol and just use template... assuming that's why we're not warping but still want nuissance regressor
-    if [ "x$no_warp" == "x1" -a ! -d unwarp/ ]; then
-	rel "$FUNCNAME: no warp but want regressor? assuming no warp is needed" c
+    if [ "x$no_warp" == "x1" -a ! -d unwarp/ ] && all_same_grid $structvol.nii.gz $templateBrain; then
+       # all_same_grid from helper_functions
+       rel "$FUNCNAME: no warp but want regressor w/o fieldmap and structvol is template" c
        rel "3dcopy $structvol.nii.gz $outvol.nii.gz" # NB. assuming ext is always .nii.gz
     #warp anatomical mask into functional space
     elif [ $( imtest "unwarp/T1_UD_warp_bbr" ) -eq 1 ]; then
@@ -14,6 +15,8 @@ function warp_structmask_to_func {
 	[ ! -f "unwarp/struct_to_func_transform_and_distort${ext}" ] && rel "invwarp -w unwarp/T1_UD_warp_bbr -o unwarp/struct_to_func_transform_and_distort -r unwarp/EF_D_mc_target"
 	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --warp=unwarp/struct_to_func_transform_and_distort"
     else
+       # TODO: test if all_same_grid $structvol as $func
+       # otherwise something is wrong
 	rel "Using struct_to_func transform to warp ${structvol} mask into functional space" c
 	rel "applywarp --in=\"${structvol}\" --out=\"${outvol}\" --interp=spline --ref=mc_target --premat=$funcdir/transforms/struct_to_func.mat"
     fi

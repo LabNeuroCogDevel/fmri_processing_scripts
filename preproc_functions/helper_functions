@@ -940,4 +940,9 @@ preproc_git_ver(){
    echo "$rev $(git diff --quiet && echo 'clean' || echo 'dirty')"
 }
 
+# returns true of all same grid (no 0s)
+all_same_grid(){
+   3dinfo -same_all_grid "$@" |grep -qv 0
+}
+
 # vim: set tabstop=7:
