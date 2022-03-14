@@ -4,10 +4,17 @@ function warp_structmask_to_func {
     structvol="${1}"
     outvol="${2}"
 
+    # need to know the actual file for afni. fsl is cool without the extention
+    local templateBrainfile="$templateBrain"
+    [ ! -f "$templateBrainfile" ] && templateBrainfile="$templateBrain.nii"
+    [ ! -f "$templateBrainfile" ] && templateBrainfile="$templateBrain.nii.gz"
+    [ ! -f "$templateBrainfile" ] && rel "ERROR: no file for templateBrain '$templateBrain'" c && exit 1
+
     # ignore structvol and just use template... assuming that's why we're not warping but still want nuissance regressor
-    if [ "x$no_warp" == "x1" -a ! -d unwarp/ ] && all_same_grid $structvol.nii.gz $templateBrain; then
+    if [ "x$no_warp" == "x1" -a ! -d unwarp/ ] && all_same_grid "$structvol.nii.gz" "$templateBrainfile"; then
        # all_same_grid from helper_functions
        rel "$FUNCNAME: no warp but want regressor w/o fieldmap and structvol is template" c
+       rel "see struct vs template: 3dinfo -same_all_grid '$structvol.nii.gz' '${templateBrain}'" c
        rel "3dcopy $structvol.nii.gz $outvol.nii.gz" # NB. assuming ext is always .nii.gz
     #warp anatomical mask into functional space
     elif [ $( imtest "unwarp/T1_UD_warp_bbr" ) -eq 1 ]; then
