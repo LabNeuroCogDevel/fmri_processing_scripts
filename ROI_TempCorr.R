@@ -37,6 +37,7 @@ printHelp <- function() {
       "      median uses the median within each ROI",
       "      mean uses the mean within each ROI",
       "      huber uses the huber robust estimate of the center of the distribution (robust to outliers)",
+      "  -roi_vals <roi_nums_csv>: comma separated list of roi values to use. should be subset of values in -rois image. eg. -roi_vals 1,5,10",
       "  -brainmask <3D file>: A 0/1 mask file defining voxels in the brain. This will be applied to the ROI mask before computing correlations.",
       "  -dropvols <integer=0>: The number of initial volumes to drop from all voxel time series prior to computing correlations (e.g., for steady state problems)",
       "  -censor <1D file>: An AFNI-style 1D censor file containing a single column of 0/1 values where 0 represents volumes to be censored (e.g., for motion scrubbing)",
@@ -116,7 +117,7 @@ nuisance_regressors <- NULL #filename of nuisance regressors to be removed from 
 detrend_order <- 2 #deterministic detrending order (0, 1, or 2) to be projected from ROI time series
 roi_arima_fits <- NULL #contains the fits for ARIMA models to each time series, if relevant
 white_lags <- 6 #hard code for now: the number of lags to test with Breusch-Godfrey whiteness test in ARIMA
-
+MASKVALS_ARG <- NULL # from  -roi_vals. as.numeric of csv input list
 #for testing
 #fname_rsproc <- "/gpfs/group/mnh5174/default/MMClock/MR_Proc/11336_20141204/mni_nosmooth_aroma_hp/rest1/Abrnawuktm_rest1.nii.gz" #name of preprocessed fMRI data
 #fname_rsproc <- "/gpfs/group/mnh5174/default/MMClock/MR_Proc/11336_20141204/mni_5mm_3ddespike/rest1/brnswudktm_rest1_5.nii.gz" #name of preprocessed fMRI data
@@ -158,6 +159,11 @@ while (argpos <= length(args)) {
     fname_censor1D <- args[argpos + 1] #name of censor file
     argpos <- argpos + 2
     stopifnot(file.exists(fname_censor1D))
+  } else if (args[argpos] == "-roi_vals") {
+    MASKVALS_ARG <- as.numeric(strsplit(args[argpos+1],split=",")[[1]])
+    argpos <- argpos + 2
+    stopifnot(!any(is.na(MASKVALS_ARG)))
+    stopifnot(length(MASKVALS_ARG)>0)
   } else if (args[argpos] == "-brainmask") {
     fname_brainmask <- args[argpos + 1] #mask file for brain voxels
     argpos <- argpos + 2
@@ -536,6 +542,13 @@ if (length(maskvals) > 1050) {
                   fname_roimask, length(maskvals), min(maskvals), max(maskvals)))
 }
 
+# 20220315 - possible to give comma seperated roi values to subset mask. useful for subseting freesurfer
+if(!is.null(MASKVALS_ARG)){
+   missing_roi_vals <- ! MASKVALS_ARG %in% maskvals
+   if(any(missing_roi_vals)) warning("Not all -roi_vals are in roimask:", paste(collapse=",", MASKVALS_ARG[missing_roi_vals]))
+   maskvals <- MASKVALS_ARG 
+}
+
 if (njobs > 1) {
   clusterobj <- makePSOCKcluster(njobs, master="localhost", port=clustersocketport)
   registerDoParallel(clusterobj)
@@ -608,6 +621,7 @@ roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, 
        message("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels of ", dim(roivox)[2],
                " had acceptable time series. Removing this ROI from correlations.")
     ts <- rep(NA_real_, nrow(roivox))
+    #NB TODO BUG!! colnames using maskvals will fail (w/-write_header). will get "V1" instead of "roi1"
   } else {
     if (sum(badvox) > 0) {
       ##cat("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.\n", file=".roilog", append=TRUE)

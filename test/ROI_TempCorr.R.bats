@@ -28,6 +28,20 @@ teardown() {
   ! [[ $output =~ 'had bad time series' ]]
 }
 
+@test "-roi_vals subsets" {
+  run ROI_TempCorr.R -ts $shortrestfile -rois $roi -njobs 1 -roi_vals 4,3 -write_header 1
+  [ $status -eq 0 ] 
+  [ -r ./corr_rois_pearson.txt ]
+  head -n1  ./corr_rois_pearson.txt | grep roi3
+  head -n1  ./corr_rois_pearson.txt |  grep -v roi2
+}
+@test "warn about -roi_vals outside of mask" {
+  run ROI_TempCorr.R -ts $shortrestfile -rois $roi -njobs 1 -roi_vals 4,100000
+  [ $status -eq 0 ] 
+  [[ $output =~ 'Not all -roi_vals are in roimask'.*100000 ]]
+  # NB. will not have reasonable column names! BUG TODO. 
+}
+
 @test "warn about bad rois unless -no_badmsg" {
   3dUndump -overwrite -prefix bad_roi.nii.gz -master $shortrestfile <(echo -e "10 10 10 1 10\n30 30 30 2 10")
   run ROI_TempCorr.R -ts $shortrestfile -rois bad_roi.nii.gz -njobs 1
