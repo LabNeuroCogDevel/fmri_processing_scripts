@@ -549,6 +549,8 @@ if(!is.null(MASKVALS_ARG)){
    maskvals <- MASKVALS_ARG 
 }
 
+if(length(maskvals) < 1) stop("no roi values! cannot run. use -rois or -roi_vals")
+
 if (njobs > 1) {
   clusterobj <- makePSOCKcluster(njobs, master="localhost", port=clustersocketport)
   registerDoParallel(clusterobj)
@@ -564,10 +566,14 @@ if (njobs > 1) {
 #    }))
 
 #generate a 4d mat of indices
+message("# num rois:", length(maskvals), "; 4D timeseries size:", paste(collapse=",", dim(rsproc)))
+rsproc_ndim <- length(dim(rsproc))
+if(rsproc_ndim !=4) stop("timeseries is ",rsproc_ndim,"D. should be 4D")
 roimats <- lapply(maskvals, function(v) {
   mi <- which(roimask==v, arr.ind=TRUE)
-  nvol <- dim(rsproc)[4]
   nvox <- nrow(mi)
+  #print(paste0("## voxels=",v,"=",nvox))
+  nvol <- dim(rsproc)[4]
   mi4d <- cbind(pracma::repmat(mi, nvol, 1), rep(1:nvol, each=nvox))
   mat <- matrix(rsproc[mi4d], nrow=nvox, ncol=nvol) #need to manually reshape into matrix from vector
   attr(mat, "maskval") <- v #add mask value as attribute so that information about bad ROIs can be printed below
@@ -580,6 +586,7 @@ roimats <- lapply(1:length(roimats), function(i) {
   attr(roimats[[i]], "maskindex") <- i
   return(roimats[[i]])
 })
+
 
 rm(rsproc) #clear imaging file from memory now that we have obtained the roi time series 
 
