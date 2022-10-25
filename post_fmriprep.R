@@ -19,8 +19,8 @@ mat_to_nii <- function(mat, ni_out="mat") {
   nif <- readNIfTI(ni_out, reorient = FALSE)
   nif <- drop_img_dim(nif) # need to cleanup dim_ attribute to avoid writeNIfTI failure
 
-  # populate nifti
-  nif@.Data <- array(mat, dim = c(ncol(mat), 1, 1, nrow(mat))) # add singleton dimensions for y and z
+  # populate nifti -- need to transpose to be consistent with column-wise array filling
+  nif@.Data <- array(t(mat), dim = c(ncol(mat), 1, 1, nrow(mat))) # add singleton dimensions for y and z
   nif[is.na(nif)] <- 0 # cannot handle missingness in NIfTIs
 
   # write NIfTI with regressors back to file
