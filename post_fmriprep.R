@@ -1,7 +1,6 @@
 ## simple script to handle post-fmriprep processing
 require(glue)
 require(oro.nifti)
-#nfsa
 
 # matrix must be time x units/regions
 mat_to_nii <- function(mat, ni_out="mat") {
@@ -13,7 +12,7 @@ mat_to_nii <- function(mat, ni_out="mat") {
   tr <- 1
   xorigin <- yorigin <- zorigin <- 0
 
-  system(glue("fslcreatehd {ncol(mat)} {ydim} {zdim} {nrow(mat)} {xsz} {ysz} {zsz} {tr} {xorigin} {yorigin} {zorigin} 64 {ni_out}"))
+  run_fsl_command(glue("fslcreatehd {ncol(mat)} {ydim} {zdim} {nrow(mat)} {xsz} {ysz} {zsz} {tr} {xorigin} {yorigin} {zorigin} 64 {ni_out}"))
 
   ## read empty NIfTI into R
   nif <- readNIfTI(ni_out, reorient = FALSE)
@@ -357,9 +356,14 @@ process_subject <- function(in_file, cfg="post_fmriprep.yaml") {
   # handle confounds, filtering to match MRI data
   if ("confound_regression" %in% cfg$processing_sequence || isTRUE(cfg$confound_calculate$compute)) {
     confounds <- data.table::fread(proc_files$confounds, na.strings = c("n/a", "NA", "."))
-    confound_cols <- union(cfg$confound_regression$columns, cfg$confound_calculate$columns)
-    confounds <- subset(confounds, select = confound_cols)
-    confound_nii <- mat_to_nii(confounds, ni_out = tempfile(pattern = "confounds"))
+    confound_cols <- as.character(union(cfg$confound_regression$columns, cfg$confound_calculate$columns))
+    noproc_cols <- as.character(union(cfg$confound_regression$noproc_columns, cfg$confound_calculate$noproc_columns)) # no AROMA or filter
+    if (any(noproc_cols %in% confound_cols)) {
+      stop("Cannot handle overlaps in noproc_columns and columns for confounds")
+    }
+    
+    confounds_to_filt <- subset(confounds, select = confound_cols)
+    confound_nii <- mat_to_nii(confounds_to_filt, ni_out = tempfile(pattern = "confounds"))
 
     # apply AROMA denoising to confounds if AROMA is applied to MRI data
     if ("apply_aroma" %in% cfg$processing_sequence) {
@@ -380,21 +384,29 @@ process_subject <- function(in_file, cfg="post_fmriprep.yaml") {
     # read in processed confounds and convert back to time x signals data.frame
     filtered_confounds <- data.frame(nii_to_mat(confound_nii))
     filtered_confounds <- setNames(filtered_confounds, confound_cols)
-
+    
     if (isTRUE(cfg$confound_calculate$compute)) {
-      data.table::fwrite(subset(filtered_confounds, select = cfg$confound_calculate$columns),
-        file = glue(cfg$confound_calculate$output_file)
-      )
+      df <- subset(filtered_confounds, select = cfg$confound_calculate$columns)
+      if (!is.null(cfg$confound_calculate$noproc_columns)) {
+        noproc_df <- subset(confounds, select=cfg$confound_calculate$noproc_columns)
+        noproc_df[is.na(noproc_df)] <- 0 # force 0 value -- NAs don't work as regressors
+        df <- cbind(df, noproc_df)
+      }
+      data.table::fwrite(df, file = glue(cfg$confound_calculate$output_file))
     }
 
     if ("confound_regression" %in% cfg$processing_sequence) {
+      df <- subset(filtered_confounds, select = cfg$confound_regression$columns)
+      if (!is.null(cfg$confound_regression$noproc_columns)) {
+        noproc_df <- subset(confounds, select=cfg$confound_regression$noproc_columns)
+        noproc_df[is.na(noproc_df)] <- 0 # force 0 value -- NAs don't work as regressors
+        df <- cbind(df, noproc_df)
+      }
       to_regress <- glue(cfg$confound_regression$output_file)
-      data.table::fwrite(subset(filtered_confounds, select = cfg$confound_regression$columns),
-        file = to_regress, col.names = FALSE
-      )
+      data.table::fwrite(df, file = to_regress, col.names = FALSE)
     }
   }
-
+  
   # loop over processing steps in sequence
   for (step in cfg$processing_sequence) {
     if (step == "spatial_smooth") {
@@ -454,4 +466,11 @@ process_subject <- function(in_file, cfg="post_fmriprep.yaml") {
 # setwd(sdir)
 # process_subject("sub-221256_task-clock_run-2_space-MNI152NLin2009cAsym_desc-preproc_bold.nii.gz",
 #   cfg = "/proj/mnhallqlab/users/michael/fmri.pipeline/R/post_fmriprep.yaml"
+# )
+
+# for testing
+# sdir <- "~/longleaf/studies/bsocial/clpipe/data_fmriprep/fmriprep/sub-221256/func"
+# setwd(sdir)
+# process_subject("sub-221256_task-clock_run-2_space-MNI152NLin2009cAsym_desc-preproc_bold.nii.gz",
+#   cfg = "~/fmri_processing_scripts/post_fmriprep.yaml"
 # )
