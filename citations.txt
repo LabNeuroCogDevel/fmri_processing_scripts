@@ -1,3 +1,7 @@
+https://pubmed.ncbi.nlm.nih.gov/23747457/ (Hallquist et al., 2013)
+
+------
+
 ROBEX
 https://sites.google.com/site/jeiglesias/ROBEX
 Iglesias JE, Liu CY, Thompson P, Tu Z: "Robust Brain Extraction Across Datasets and Comparison with Publicly Available Methods", IEEE Transactions on Medical Imaging, 30(9), 2011, 1617-1634.
@@ -30,4 +34,26 @@ Patel AX and Bullmore ET (2016) A wavelet-based estimator of the degrees of free
 NIPY (4dslicewarp)
 https://nipype.readthedocs.io/en/0.12.0/about.html
 Gorgolewski, Krzysztof J. ; Esteban, Oscar ; Burns, Christopher ; Ziegler, Erik ; Pinsard, Basile ; Madison, Cindee ; Waskom, Michael ; Ellis, David Gage ; Clark, Dav ; Dayan, Michael ; Manhães-Savio, Alexandre ; Notter, Michael Philipp ; Johnson, Hans ; Dewey, Blake E ; Halchenko, Yaroslav O. ; Hamalainen, Carlo ; Keshavan, Anisha ; Clark, Daniel ; Huntenburg, Julia M. ; Hanke, Michael ; Nichols, B. Nolan ; Wassermann , Demian ; Eshaghi, Arman ; Markiewicz, Christopher ; Varoquaux, Gael ; Acland, Benjamin ; Forbes, Jessica ; Rokem, Ariel ; Kong, Xiang-Zhen ; Gramfort, Alexandre ; Kleesiek, Jens ; Schaefer, Alexander ; Sikka, Sharad ; Perez-Guevara, Martin Felipe ; Glatard, Tristan ; Iqbal, Shariq ; Liu, Siqi ; Welch, David ; Sharp, Paul ; Warner, Joshua ; Kastman, Erik ; Lampe, Leonie ; Perkins, L. Nathan ; Craddock, R. Cameron ; Küttner, René ; Bielievtsov, Dmytro ; Geisler, Daniel ; Gerhard, Stephan ; Liem, Franziskus ; Linkersdörfer, Janosch ; Margulies, Daniel S. ; Andberg, Sami Kristian ; Stadler, Jörg ; Steele, Christopher John ; Broderick, William ; Cooper, Gavin ; Floren, Andrew ; Huang, Lijie ; Gonzalez, Ivan ; McNamee, Daniel ; Papadopoulos Orfanos, Dimitri ; Pellman, John ; Triplett, William ; Ghosh, Satrajit (2016). Nipype: a flexible, lightweight and extensible neuroimaging data processing framework in Python. 0.12.0-rc1. Zenodo. 10.5281/zenodo.50186
+
+
+-----
+
+https://www.biorxiv.org/content/10.1101/2022.05.02.490303v2.full.pdf
+2.6. MR data preprocessing
+Structural MRI data were preprocessed to extract the brain from the skull and warped to
+the MNI standard using both linear (FLIRT) and non-linear (FNIRT) transformations. rsfMRI data
+were preprocessed using a pipeline that minimized the effects of head motion (Hallquist et al.,
+2013) including 4D slice-timing and head motion correction, skull stripping, intensity
+thresholding, wavelet despiking (Patel et al., 2014), coregistration to the structural image and
+nonlinear warping to MNI space, local spatial smoothing with a 5mm Gaussian kernel based on
+the SUSAN algorithm, intensity normalization, and nuisance regression based on head motion (6
+of translation/rotation and their first derivative) and non-gray matter signal (white matter and CSF
+and their first derivative). Bandpass filtering between .009 and .08 Hz was done simultaneously
+with nuisance regression. Frame-wise motion estimates were computed for resting-state data.
+Functional volumes containing frame-wise displacement (FD) > 0.3 mm were excluded from
+analyses (Siegel et al., 2013). Participants with more than 40% of TRs censored were excluded
+altogether from rsfMRI analyses, resulting in the exclusion of 64 participants. Neuroimaging
+analyses were performed in AFNI (Cox, 1996).
+
+
 
