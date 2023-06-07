@@ -56,6 +56,9 @@ exec <- function(cmd, quiet=FALSE) {
 #read in command line arguments.
 args <- commandArgs(trailingOnly = TRUE)
 
+# for testing
+# args <- c("-matrix", "unfiltered_nuisance_regressors.txt", "-tr", ".635", "-time_along_rows", "-out_file", "nuisance_regressors.txt", "-hp_volumes", "80.2460")
+
 if (length(args) == 0L) {
   message("1dbptf expects at least -matrix <regressors x time> -lp_seconds <low pass seconds> OR -hp_seconds <high pass seconds>.\n")
   printHelp()
@@ -88,6 +91,7 @@ if (any(grepl("-lp_seconds", args, fixed=TRUE)) && any(grepl("-lp_hz", args, fix
 }
 
 #print(args)
+
 argpos <- 1
 while (argpos <= length(args)) {
   if (args[argpos] == "-demean") {
@@ -213,6 +217,15 @@ nif <- readNIfTI(file.path(odir, "regressors"), reorient=FALSE)
 
 #populate nifti
 nif@.Data <- array(m, dim=c(nrow(m), 1, 1, ncol(m))) #add singleton dimensions for y and z
+
+# 20191119 FSL6: some dims are 0, need to be 1
+#   Error in .writeNIfTI(nim, filename, onefile, gzipped, verbose, warn, compression) : 
+#    all dim elements > dim[1] must be 1
+# /usr/lib/fsl/5.0/fslcreatehd 16 1 1 192 1 1 1 1 0 0 0  64 test.nii.gz; Rscript -e 'print(oro.nifti::readNIfTI("test.nii.gz")@dim_)'
+#   [1]   4  16   1   1 192   1   1   1
+# /opt/ni_tools/fsl_6/bin/fslcreatehd 16 1 1 192 1 1 1 1 0 0 0  64 test.nii.gz; Rscript -e 'print(oro.nifti::readNIfTI("test.nii.gz")@dim_)'
+#   [1]   4  16   1   1 192   0   0   0
+nif@dim_[nif@dim_<1]  <- 1
 
 #write NIfTI with regressors back to file
 writeNIfTI(nif, filename=file.path(odir, "regressors"))
