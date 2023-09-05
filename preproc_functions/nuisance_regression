@@ -1,5 +1,8 @@
 #!/bin/bash
 
+FSLCLUSTER=fsl-cluster
+command -v $FSLCLUSTER >&/dev/null || FSLCLUSTER=cluster
+
 function warp_structmask_to_func {
     structvol="${1}"
     outvol="${2}"
@@ -227,7 +230,7 @@ function compute_nuisance_regressors {
 		rel "3dmask_tool -overwrite -input .csf_pve_thr0p8${ext} -dilate_result -1 -prefix .csf_pve_thr0p8_ero1${ext}"
 
 		#cluster csf mask and only retain clusters of 5 or more contiguous voxels
-		rel "fsl-cluster -i .csf_pve_thr0p8_ero1 -t 1.0 --osize=.csf_pve_clustsize --no_table"	    
+		rel "$FSLCLUSTER -i .csf_pve_thr0p8_ero1 -t 1.0 --osize=.csf_pve_clustsize --no_table"
 		rel "fslmaths .csf_pve_clustsize -thr 5.01 -bin -mas ${postSS}_tmean_mask .csf_mask -odt char" #multiply by tight brain mask to eliminate non-brain voxels
 		
 		#if fewer than 20 CSF voxels (in functional space) are present, revert to a non-dilated csf mask
@@ -236,7 +239,7 @@ function compute_nuisance_regressors {
 
 		if [ $nvox -lt 20 ]; then
 		    rel "Warning: fewer than 20 CSF voxels were found in .csf_mask. Reverting to a non-dilated mask" c	
-		    rel "fsl-cluster -i .csf_pve_thr0p8 -t 1.0 --osize=.csf_pve_clustsize_noero --no_table"
+		    rel "$FSLCLUSTER -i .csf_pve_thr0p8 -t 1.0 --osize=.csf_pve_clustsize_noero --no_table"
 		    rel "fslmaths .csf_pve_clustsize_noero -thr 15.01 -bin -mas ${postSS}_tmean_mask .csf_mask_noero -odt char"
 
 		    local csfmask=.csf_mask_noero${ext}
@@ -308,7 +311,7 @@ function compute_nuisance_regressors {
 		rel "3dmask_tool -overwrite -input .wm_pve_thr0p8${ext} -dilate_result -2 -prefix .wm_pve_thr0p8_ero2${ext}"
 
 		#cluster wm mask and only retain clusters of 15 or more contiguous voxels
-		rel "fsl-cluster -i .wm_pve_thr0p8_ero2 -t 1.0 --osize=.wm_pve_clustsize --no_table"
+		rel "$FSLCLUSTER -i .wm_pve_thr0p8_ero2 -t 1.0 --osize=.wm_pve_clustsize --no_table"
 		rel "fslmaths .wm_pve_clustsize -thr 15.01 -bin -mas ${postSS}_tmean_mask .wm_mask -odt char"
 		
 		#check that at least 50 voxels are present in mask to get a reasonable sampling distribution of WM timeseries
@@ -319,7 +322,7 @@ function compute_nuisance_regressors {
 		    rel "Warning: fewer than 50 WM voxels were found in .wm_mask. Reverting to a 1x eroded WM mask" c
 		    rel "3dmask_tool -overwrite -input .wm_pve_thr0p8${ext} -dilate_result -1 -prefix .wm_pve_thr0p8_ero1${ext}"
 		    
-		    rel "fsl-cluster -i .wm_pve_thr0p8_ero1 -t 1.0 --osize=.wm_pve_clustsize_ero1 --no_table"
+		    rel "$FSLCLUSTER -i .wm_pve_thr0p8_ero1 -t 1.0 --osize=.wm_pve_clustsize_ero1 --no_table"
 		    rel "fslmaths .wm_pve_clustsize_ero1 -thr 50.01 -bin -mas ${postSS}_tmean_mask .wm_mask_ero1 -odt char"
 
 		    local wmmask=.wm_mask_ero1${ext}

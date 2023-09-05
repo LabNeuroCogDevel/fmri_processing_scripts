@@ -10,6 +10,16 @@ waitforlockfile=$(dirname ${BASH_SOURCE[0]})/waitforlock
 [ -r $waitforlock ] && source $waitforlockfile
 # also depend on prepare_mc_target, sourced in main script
 
+# 20230905WF, but from 20230606MH
+# cluster is also a graphviz package
+# use fsl-cluster when it exists
+# NB. this is also used in preproc_functions/nuisance_regression
+# TODO:
+# should maybe set elsewhere and use "${FSLCLUSTER:-fsl-cluster}"
+# instead of copy pasting this around when needed
+FSLCLUSTER=fsl-cluster
+command -v $FSLCLUSTER >&/dev/null || FSLCLUSTER=cluster
+
 mk_unwarptmp(){
     tempsdir=$(pwd)/unwarptemps
     [ -d $tempsdir ] && rm -r $tempsdir
@@ -686,7 +696,7 @@ function preproc_fieldmap {
 
     # To handle the above scenario of 0-valued voxels in fieldmap, use cluster to obtain the largest cluster of non-zero
     # (non-brain) voxels in the above mask. The output of cluster is an integer-valued image with masks for each spatial cluster
-    rel "fsl-cluster -i FM_UD_fmap_mag_brain_mask_inv -t 0.5 --no_table -o FM_UD_fmap_mag_brain_mask_idx"
+    rel "$FSLCLUSTER -i FM_UD_fmap_mag_brain_mask_inv -t 0.5 --no_table -o FM_UD_fmap_mag_brain_mask_idx"
 
     # This will grab the largest spatial cluster (the max of the range, -R), which refers to the biggest non-brain cluster
     outsideIdx=$(fslstats FM_UD_fmap_mag_brain_mask_idx -R | awk '{print  $2}')
