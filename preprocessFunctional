@@ -605,7 +605,7 @@ remove_group_components
 # handle request for computing, but not applying, warp to standard space.
 # This is useful if one wishes to warp files to template space later (e.g., after GLM),
 # but to complete preprocessing pipeline in native space.
-if [[ "$compute_warp" -eq 1 && ! -f .compute_warp_complete ]]; then
+if [[ "$no_warp" -eq 0 && "$compute_warp" -eq 1 && ! -f .compute_warp_complete ]]; then
 
     # Note: these warp coefficients only represent EPI -> template and do not include fieldmap unwarping or
     # motion correction. These steps are applied upstream by warp_to_template

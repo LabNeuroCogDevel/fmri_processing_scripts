@@ -149,6 +149,7 @@ warp_template_check() {
    # 20210520 - okay if templates are exactly the same! can go 2mm to 3mm
    #            TODO check preprocessMprage.log for (-r|-template_brain)
    #global $mprageBet $templateBrain $reference
+   [ -v no_warp ] && [ $no_warp -eq 1 ] && echo "# no template check" && return
    local func_template="$templateBrain"
    [ ! -r $func_template ] && func_template=$func_template.nii
    [ ! -r $func_template ] && func_template=$func_template.gz
@@ -156,7 +157,7 @@ warp_template_check() {
    local template=$(find_mprage_warp "$mprageBet" "template_brain.nii*")
    # cannot do anything if it doesn't ready exist
    [ -z "$template" -o ! -r "$template" ] && 
-      echo "# WARNING: cannot find 'tempalte_brain.nii*' for '$mprageBet'" && return
+      echo "# WARNING: cannot find 'tempalte_brain.nii*' within dir of mprage '$mprageBet'" && return
 
    # diff exist status is true when there is no difference
    # ! diff -q <(echo a) <(echo b) && echo diff # 'diff'

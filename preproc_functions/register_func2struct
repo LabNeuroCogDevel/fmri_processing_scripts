@@ -5,6 +5,7 @@ function register_func2struct {
     local transform_dir="$funcdir/transforms/"
     local unwarp_folder=$(pwd)/unwarp
 
+    [ -z "$mprageBet" ] && return
     [ -z "$createBBRFmapWarp" ] && createBBRFmapWarp=0
     [ -f .register_func2struc ] && rel "register_func2struct already" c && return 0
     print_vars_in REGISTER_FUNC2STRUCT_GLOBALS
