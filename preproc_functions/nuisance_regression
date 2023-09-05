@@ -527,6 +527,7 @@ function compute_nuisance_regressors {
 }
 
 function nuisance_regression {
+
     #handle nuisance regression and/or bandpass filtering
     if [[ \
          "$nuisance_compute"    -eq 0 &&  \
@@ -537,6 +538,9 @@ function nuisance_regression {
       #rel "(Not trying to deal with nuisance regressors, bandpassing, or autocorrelation)" c
       return 0 #no nuisance, bandpass, or basis correct. exit
     fi
+
+    # 20230111 - wish had these for regenerating single missing in 7T mgsencmem
+    print_vars_in COMPUTE_NUISANCE_REGRESSORS_GLOBALS || :
 
     preNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
 
