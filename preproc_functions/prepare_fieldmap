@@ -686,7 +686,7 @@ function preproc_fieldmap {
 
     # To handle the above scenario of 0-valued voxels in fieldmap, use cluster to obtain the largest cluster of non-zero
     # (non-brain) voxels in the above mask. The output of cluster is an integer-valued image with masks for each spatial cluster
-    rel "cluster -i FM_UD_fmap_mag_brain_mask_inv -t 0.5 --no_table -o FM_UD_fmap_mag_brain_mask_idx"
+    rel "fsl-cluster -i FM_UD_fmap_mag_brain_mask_inv -t 0.5 --no_table -o FM_UD_fmap_mag_brain_mask_idx"
 
     # This will grab the largest spatial cluster (the max of the range, -R), which refers to the biggest non-brain cluster
     outsideIdx=$(fslstats FM_UD_fmap_mag_brain_mask_idx -R | awk '{print  $2}')

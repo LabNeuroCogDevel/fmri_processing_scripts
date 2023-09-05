@@ -367,6 +367,7 @@ function cleanup_preprocessFunctional {
     if [ ${ica_aroma} -eq 1 ]; then
 	apre="a"
 	rm -rf ica_aroma/melodic.ica #work folder from ICA decomposition
+	deleteFile ica_aroma/denoised_func_data_nonaggr${ext}
     fi
     
     [ $no_warp -eq 0 ] && wpre="w" || wpre=""
