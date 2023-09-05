@@ -229,11 +229,14 @@ EndOfHelp
 #Written: 2010/5/18
 #Changelog:
 #
-#Last updated: 2019/09/16 - added no_mc, improve template checks
+#Last updated: 08/26/2022 - initial support for fmriprpe output
 #Last defaults change: 2018/7/26 - 3dREMLfit is default 'r'
 #
 #Changelog:
 #
+#08/26/2022 (WF)
+#  no_mc, no_st, no_warp for fmriprep output of task data
+#  preprocessFunctional -no_mc -no_st -no_warp -4d func.nii.gz -hp_filter 40 -rescaling_method 10000_globalmedian
 #05/19/2021 (WF)
 #  - added '-smoothing_kernel "default"': kernel size based on template res
 #05/13/2021 (WF)
