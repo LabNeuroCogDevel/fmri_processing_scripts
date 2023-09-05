@@ -5,11 +5,16 @@
 # use retroicor on pre-slice/motion functional input
 #
 
-REG_PHYSIO_GLOBALS=(prefix funcFile use_physio physio_resp physio_card physio_func_info)
+REG_PHYSIO_GLOBALS=(prefix funcFile use_physio physio_resp physio_card physio_func_info tr)
 reg_physio() {
    # skip if we have nothing to do
    [ -z "$use_physio" ] && return 0
    [ -r .reg_physio_complete ] && return 0
+
+   # manually set tr. supported in siemphysdat as of 2022-10
+   [ -n "${tr:-}" ] &&
+      args="--changetr $tr -t all -n $(3dinfo -nt "$prefix$funcFile.nii.gz")" ||
+      args="-t all"
 
    # write what we use to a file (and do nothing if it fails)
    print_vars_in REG_PHYSIO_GLOBALS || :
@@ -27,7 +32,7 @@ reg_physio() {
    [ -d xx_retroicor.results ] && rm -r xx_retroicor.results
 
    # extract time -- this is likely to fail. physio is often bad
-   rel "siemphysdat  $physio_resp $physio_card  $physio_func_info -t all -o $spfix"
+   rel "siemphysdat $physio_resp $physio_card  $physio_func_info $args -o $spfix"
 
    # file with our prefix modified in the last 3 minutes
    local retrots=$(find -maxdepth 1 -type f -iname "$spfix*slibase.1D" -mmin -3 -print -quit)
