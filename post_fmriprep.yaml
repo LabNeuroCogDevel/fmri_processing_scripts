@@ -1,0 +1,40 @@
+tr: 1.0
+#log_file: "post_fmriprep.log"
+log_file: "{proc_files$prefix}_post_fmriprep.log"
+overwrite: FALSE
+keep_intermediates: FALSE
+
+spatial_smooth:
+  prefix: "s"
+  fwhm_mm: 6
+
+apply_aroma:
+  prefix: "a"
+
+temporal_filter:
+  prefix: "f"
+  low_pass_hz: 0
+  high_pass_hz: 0.008333333 # 1/120
+
+intensity_normalize:
+  prefix: "n"
+  global_median: 10000
+
+confound_regression:
+  prefix: "r"
+  columns: [ "csf", "csf_derivative1", "white_matter", "white_matter_derivative1" ]
+  noproc_columns: [ ]
+  output_file: "{proc_files$prefix}_confound_regressors.txt"
+
+confound_calculate:
+  compute: TRUE # will extract these confounds and filter to match fMRI data if TRUE
+  columns: [ "csf", "csf_derivative1", "white_matter", "white_matter_derivative1" ]
+  noproc_columns: [ "framewise_displacement" ] # no AROMA or filter, just copy
+  output_file: "{proc_files$prefix}_postprocessed_confounds.txt"
+
+processing_sequence: [
+  "spatial_smooth",
+  "apply_aroma",
+  "temporal_filter",
+  "intensity_normalize"
+  ]

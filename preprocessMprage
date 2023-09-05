@@ -177,6 +177,8 @@ source "${scriptDir}/preproc_functions/mprage_utils" # reorient, unifize, deface
 if command -v module >/dev/null && uname -a | grep -q aci.ics.psu.edu ; then
     #setup DEPENd lab environment and programs
     source /gpfs/group/mnh5174/default/lab_resources/ni_path.bash
+elif command -v module >/dev/null && uname -a | grep -q its.unc.edu ; then
+    source /proj/mnhallqlab/lab_resources/ni_path.bash
 fi
 
 ## NB. these defaults might be overwritten when parse_mprage_args is called
