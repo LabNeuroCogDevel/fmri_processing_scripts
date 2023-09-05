@@ -62,7 +62,7 @@ printHelp <- function() {
       "  Example: -corr_method pearson,cor.shrink -pcor_method pcor.shrink,adalasso.net",
       "",
       "The script depends on the following R libraries: foreach, doParallel, MASS, oro.nifti, parcor, ppcor, pracma, and robust. These can be installed using:",
-      "  install.packages(c(\"foreach\", \"doParallel\", \"MASS\", \"oro.nifti\", \"parcor\", \"ppcor\", \"pracma\", \"ppcor\", \"robust\", \"tictoc\", \"forecast\", \"lmtest\"))",
+      "  install.packages(c(\"foreach\", \"doParallel\", \"MASS\", \"oro.nifti\", \"ppcor\", \"pracma\", \"ppcor\", \"robust\", \"tictoc\", \"forecast\", \"lmtest\")); remotes::install_github(c('cran/ppls','cran/parcor'))",
       sep="\n")
 }
 
