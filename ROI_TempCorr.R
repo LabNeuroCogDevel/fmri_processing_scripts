@@ -12,6 +12,7 @@ printHelp <- function() {
       "  -out_file <filename for output>: The file to be output containing correlations among ROIs.",
       "",
       "Optional arguments are:",
+      "  -help: this message",
       "  -pcorr_method <pearson|spearman|kendall|adalasso.net|lasso.net|pls.net|ridge.net|pcor.shrink|spcor|semi:*>: Method to compute partial correlation",
       "      pearson, spearman, and kendall compute the corresponding partial correlations (pcor function in ppcor package). BEWARE: Uses pseudoinverse for rank-deficient matrices.",
       "      adalasso.net uses adaptive LASSO regression with cross-validation to compute partial correlations (adalasso.net function in parcor package)",
@@ -47,6 +48,7 @@ printHelp <- function() {
       "  -no_badmsg: dont warn for all badvoxes",
       "  -ts_out_file <filename for time series output>: Output a file containing the average time series for each region before computing correlations.",
       "  -ts_only: stop before running correlations. useful with -ts_out_file",
+      "  -ts+: additional time series files to append together. alternative to 3dTcat-ing multile files into one for -ts. can use more than one -ts+: -ts rest.nii.gz -ts+ rest2.nii.gz -ts+ task_background.nii.gz",
       "  -prewhiten_arima <p> <d> <q>: prewhiten all time series by fitting an ARIMA model of order p (autoregressive), d (integrated), q (moving average) before computing correlation.",
       "  -detrend_ts <0,1,2>: Demean (0), linear detrending (1) or quadratic detrending (2) is applied to ROI aggregated time series before correlations are computed. Default: 2",
       "  -nuisance_regressors <matrix.txt>: If passed in, the nuisance regressors (columns) of this white space-separated file will be regressed out of ROI aggregated time series prior to correlations.",
@@ -86,6 +88,13 @@ if (is.null(args) || length(args) == 0L) {
   quit(save="no", 1, FALSE)
 }
 
+# help doesn't need a failed exit status
+# but we shouldn't do anything else but show help
+if(any(c("-h","-help","--help") %in% args)){
+  printHelp()
+  quit(save="no", 0, FALSE)
+}
+
 #defaults
 njobs <- 4
 out_file <- "corr_rois.txt"
@@ -118,6 +127,7 @@ detrend_order <- 2 #deterministic detrending order (0, 1, or 2) to be projected 
 roi_arima_fits <- NULL #contains the fits for ARIMA models to each time series, if relevant
 white_lags <- 6 #hard code for now: the number of lags to test with Breusch-Godfrey whiteness test in ARIMA
 MASKVALS_ARG <- NULL # from  -roi_vals. as.numeric of csv input list
+fname_rsproc_add <- c() # combining timeseries
 #for testing
 #fname_rsproc <- "/gpfs/group/mnh5174/default/MMClock/MR_Proc/11336_20141204/mni_nosmooth_aroma_hp/rest1/Abrnawuktm_rest1.nii.gz" #name of preprocessed fMRI data
 #fname_rsproc <- "/gpfs/group/mnh5174/default/MMClock/MR_Proc/11336_20141204/mni_5mm_3ddespike/rest1/brnswudktm_rest1_5.nii.gz" #name of preprocessed fMRI data
@@ -144,6 +154,11 @@ while (argpos <= length(args)) {
   if (args[argpos] == "-ts") {
     fname_rsproc <- args[argpos + 1] #name of preprocessed fMRI data
     stopifnot(file.exists(fname_rsproc))
+    argpos <- argpos + 2
+  } else if (args[argpos] == "-ts+") {
+    fname_rsproc_new<- args[argpos + 1]
+    stopifnot(file.exists(fname_rsproc_new))
+    fname_rsproc_add <- c(fname_rsproc_add, fname_rsproc_new)
     argpos <- argpos + 2
   } else if (args[argpos] == "-rois") {
     fname_roimask <- args[argpos + 1] #name of integer-valued ROI mask file
@@ -522,8 +537,19 @@ if (grepl("^.*\\.(HEAD|BRIK|BRIK.gz)$", fname_rsproc, perl=TRUE)) {
   rsproc <- readNIfTI(fname_rsproc, reorient=FALSE)
 }
 
+if(length(fname_rsproc_add)>0L){
+   # TODO: error if brik/head?
+   # TODO: check dims for better error message
+   rsproc_plus <- lapply(fname_rsproc_add,readNIfTI, reorient=F)
+
+   rsproc <- do.call(abind::abind, c(list(rsproc),rsproc_plus))
+}
+
 if (!identical(dim(rsproc)[1:3], dim(roimask)[1:3])) {
+
+  if(length(fname_rsproc_add)>0L) stop("time series and mask dims do not match! ROI_TempCorr wont resample -ts+; quitting instead")
   message("Resampling rs proc file from: ", paste(dim(rsproc)[1:3], collapse="x"), " to: ", paste(dim(roimask)[1:3], collapse="x"), " using nearest neighbor")
+
   message("This assumes that the files are in the same space and have the same grid size. Make sure this is what you want!!")
   
   runAFNICommand(paste0("3dresample -overwrite -inset ", fname_rsproc, " -rmode NN -master ", fname_roimask, " -prefix tmpResamp.nii.gz"))

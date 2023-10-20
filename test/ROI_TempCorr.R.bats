@@ -126,3 +126,17 @@ teardown() {
   last_rowcol corr_rois_pearson_semipartial.txt "33 102"
   last_rowcol corr_rois_pearson_partial.txt "33 102"
 }
+
+@test "tempcorr_help" {
+  run ROI_TempCorr.R -help
+  [[ $output =~ ROI_TempCorr ]]
+  [ $status -eq 0 ]
+}
+
+@test "tempcorr_ts+-" {
+  run ROI_TempCorr.R -ts $shortrestfile -ts+ $shortrestfile -rois $roi
+  # if just shortrestfile without ts+ would have 6 timeponts:
+  # ...      4D timeseries size:64,76,64,6
+  [[ $output =~ timeseries\ size:64,76,64,12 ]]
+  [ $status -eq 0 ]
+}
