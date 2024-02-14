@@ -22,8 +22,8 @@ function parse_args {
     dicomPattern=
     DISTORTION_DIR= # alterntaive to preprocessing fieldmaps within preprocessFunctional (more like preprocessMprage). dir most likely named "warp"
     dte=
-    dwelltime=     #effective echo spacing. set by -epi_echospacing or by fmcfg file
-    epiTE=
+    dwelltime=     #effective echo spacing. set by -epi_echospacing or by fmcfg file or read from sepos .json (BIDS)
+    epiTE= # seconds, in -fmcfg or read from BIDS
     flip_topup_pedir=0
     fmap_struct_dof="bbr"
     fm_phase=
@@ -900,15 +900,27 @@ check_dep_list(){
 
 load_func_bids(){
  # try to use BIDS json sidecar for sliceacquisition and tr
- local bids_json="$1"
+ local bids_json bids_tr bids_echo
+ bids_json="$1"
  [ ! -r "$bids_json" ] && rel "No bids sidecar '$bids_json' (pwd: '$(pwd)')" c && return
  rel "Using BIDS json sidecar $bids_json!" c
- local bids_tr=$(jq .RepetitionTime < $bids_json)
+ local bids_tr=$(jq .RepetitionTime < "$bids_json")
  if [ -n "$bids_json" ]; then
     [ -n "$tr" -a "$tr" != "$bids_tr" ] &&
        rel "Overwriting '-tr $tr' to '$bids_tr'" c ||
        rel "setting TR to '$bids_tr' usig bids sidecar '$(pwd)/$bids_json':.RepetitionTime" c
     tr="$bids_tr"
+ fi
+
+ # epiTE used for spin echo or gre fieldmap
+ # but gre fieldmap probably pulls from config
+ # 
+ if [ -z "${epiTE:-}" ] ; then
+    #global epiTE
+    bids_echo="$(jq .EchoTime < "$bids_json")"
+    [ -n "$bids_echo" ] &&
+       epiTE="$bids_echo" &&
+       rel "setting epiTE from bids '$bids_json' => $epiTE seconds" c 
  fi
 
  # slice timing

@@ -19,6 +19,20 @@ done
 #   FM_UD_fmap
 # 
 prepare_se_fieldmap() {
+    if [ -z "$dwelltime" ]; then
+       # try to read from json
+       local se_json="${se_phasepos/.nii.gz/.json}"
+       rel "looking for $se_json" c
+       test -r "$se_json" &&
+          dwelltime=$(jq .EffectiveEchoSpacing < "$se_json") &&
+          rel "reading 'dwelltime' (EffectiveEchoSpacing)='$dwelltime' from $se_json" c
+    fi
+    if [ -z "$unwarpdir" ]; then
+       rel "checking $se_phasepos=~PA and $se_phasepos=AP" c
+       [[ "$se_phasepos" =~ PA && "$se_phaseneg" =~ AP ]] && 
+          unwarpdir="y-" &&
+          rel "setting se fmap unwarpdir='$unwarpdir' b/c pos is PA and neg is AP. CONFIRM THIS LOOKS GOOD in unwrap/" c
+    fi
     if [ -z "$dwelltime" -o -z "$unwarpdir" ]; then
       rel "Error: Cannot prepare spin echo distorion correction! Missing dwelltime '$dwelltime' and/or unwarpdir '$unwarpdir'. Do you need to include/edit fm_cfg '$fm_cfg' "  c
       return 1
@@ -68,7 +82,7 @@ prepare_se_fieldmap() {
 
     rel "fslmaths ../topup_undistort/SE_Magnitude       FM_UD_fmap_mag"
     rel "fslmaths ../topup_undistort/SE_TopupField      FM_UD_fmap"
-        
+    rel "bet FM_UD_fmap_mag          FM_UD_fmap_mag_brain -R"
     #explicit return code needed to avoid implicit status of prior command
     return 0
     

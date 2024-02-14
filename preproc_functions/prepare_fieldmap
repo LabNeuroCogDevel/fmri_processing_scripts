@@ -309,7 +309,7 @@ prepare_distortion_dir() {
 
 #this function is responsible for running TOPUP on the phase+ and phase- images
 #then exporting the rad/s TopupField to the unwarp directory for preprocessing using the typical steps (preproc_fieldmap)
-function prepare_se_fieldmap {
+function prepare_se_fieldmap_old {
     if [ -z "$dwelltime" -o -z "$unwarpdir" ]; then
       rel "Error: Cannot prepare spin echo distorion correction! Missing dwelltime '$dwelltime' and/or unwarpdir '$unwarpdir'. Do you need to include/edit fm_cfg '$fm_cfg' "  c
       return 1
@@ -809,7 +809,7 @@ function preproc_fieldmap {
 
     # get a sigloss estimate and make (-s) a siglossed estimate for forward warp
     # to be Distorted (ref (after *mag) and refweight in EF_2_FM warp) and warped to epi (sigloss+*png)
-    rel "sigloss -i FM_UD_fmap --te=$epiTE -m FM_UD_fmap_mag_brain_mask -s FM_UD_fmap_sigloss"
+    rel "sigloss -i FM_UD_fmap --te='$epiTE' -m FM_UD_fmap_mag_brain_mask -s FM_UD_fmap_sigloss"
 
     # make siglossed magnitude image for EPI -> fieldmap warp
     rel "fslmaths FM_UD_fmap_sigloss -mul FM_UD_fmap_mag_brain FM_UD_fmap_mag_brain_siglossed -odt float"
