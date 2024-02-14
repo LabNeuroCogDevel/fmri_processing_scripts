@@ -28,7 +28,19 @@ teardown() {
   ! [[ $output =~ 'had bad time series' ]]
 }
 
-@test "-roi_vals subsets" {
+@test "-write_header" {
+  run ROI_TempCorr.R -ts $shortrestfile -rois $roi -njobs 1 -roi_vals 4,3 -write_header 1
+  [ $status -eq 0 ] 
+  [ -r ./corr_rois_pearson.txt ]
+  head -n1  ./corr_rois_pearson.txt | grep roi3
+
+  run ROI_TempCorr.R -ts $shortrestfile -rois $roi -njobs 1 -roi_vals 4,3 
+  [ $status -eq 0 ] 
+  [ -r ./corr_rois_pearson.txt ]
+  head -n1  ./corr_rois_pearson.txt | grep -v roi3
+}
+
+@test "-roi_vals subsets write_header" {
   run ROI_TempCorr.R -ts $shortrestfile -rois $roi -njobs 1 -roi_vals 4,3 -write_header 1
   [ $status -eq 0 ] 
   [ -r ./corr_rois_pearson.txt ]

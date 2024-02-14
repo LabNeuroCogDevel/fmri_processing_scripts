@@ -43,6 +43,7 @@ printHelp <- function() {
       "  -dropvols <integer=0>: The number of initial volumes to drop from all voxel time series prior to computing correlations (e.g., for steady state problems)",
       "  -censor <1D file>: An AFNI-style 1D censor file containing a single column of 0/1 values where 0 represents volumes to be censored (e.g., for motion scrubbing)",
       "  -fisherz: Apply Fisher's z transformation (arctanh) to normalize correlation coefficients. Not applied by default.",
+      "  -keep_constant_values: default is to discard ROIs with constant values with warning (see -no_badmsg). This NAs instead. PROBABLY A BAD IDEA",
       "  -njobs <n>: Number of parallel jobs to run when computing correlations. Default: 4.",
       "  -na_string: Character string indicating how to represent missing correlations in output file. Default NA.",
       "  -no_badmsg: dont warn for all badvoxes",
@@ -69,9 +70,23 @@ printHelp <- function() {
 }
 
 #read in command line arguments.
-args <- commandArgs(trailingOnly = FALSE)
+# 20240214: hack to use ARGS in interactive mode for debugging
+if (sys.nframe() == 0) { # is run from command line
+  args <- commandArgs(trailingOnly = FALSE)
+  scriptpath <- dirname(sub("--file=", "", grep("--file=", args, fixed=TRUE, value=TRUE), fixed=TRUE))
+  quitfn <- function(...) quit(...)
+} else { # is sourced
+   args <- ARGS
+   scriptpath <- dirname(parent.frame(2)$ofile) #scriptpath <- this.path::here()
+   cat("scriptpath:",scriptpath)
+   cat("ARGS:",ARGS, "\n")
+   cat("args:",args, "\n")
+   quitfn <- function(...) stop("interactive use! want to quit but stoping instead")
+   # ARGS <- c("--args", unlist(stringr::str_split("-njobs 1 -ts /tmp/short_amartest.nii.gz -rois /Volumes/Hera/preproc/7TBrainMech_rest/MHRest_nost_nowarp_nosmooth/10129_20180917/warps/2024/feb2024_mask_amyghpc_epires.nii.gz -out_file /Volumes/Hera/Amar/amyg_7T/output/roitempcorr/background/jan2024/10129_20180917_frontoamyg_mean_gsr_pearson_adj_wf.txt.gz -ts_out_file /Volumes/Hera/Amar/amyg_7T/output/roitempcorr/background/jan2024/10129_20180917_frontoamyg_mean_gsr_ts.txt -roi_reduce mean -corr_method pearson -fisherz -censor /tmp/short_censor.1D -write_header 1")))
+   # source(system('which ROI_TempCorr.R',intern=T), .GlobalEnv)
 
-scriptpath <- dirname(sub("--file=", "", grep("--file=", args, fixed=TRUE, value=TRUE), fixed=TRUE))
+}
+
 argpos <- grep("--args", args, fixed=TRUE)
 if (length(argpos) > 0L) {
   args <- args[(argpos+1):length(args)]
@@ -85,14 +100,14 @@ source(file.path(scriptpath, "R_helper_functions.R"))
 if (is.null(args) || length(args) == 0L) {
   message("ROI_TempCorr expects at least -ts <4D file> -rois <3D file> -out_file <filename for output>.\n")
   printHelp()
-  quit(save="no", 1, FALSE)
+  quitfn(save="no", 1, FALSE)
 }
 
 # help doesn't need a failed exit status
 # but we shouldn't do anything else but show help
 if(any(c("-h","-help","--help") %in% args)){
   printHelp()
-  quit(save="no", 0, FALSE)
+  quitfn(save="no", 0, FALSE)
 }
 
 #defaults
@@ -100,6 +115,7 @@ njobs <- 4
 out_file <- "corr_rois.txt"
 ts_out_file <- ""
 no_badmsg <- FALSE
+keep_constant_vals <- FALSE
 fname_censor1D <- NULL
 fname_brainmask <- NULL
 cm <- "pearson"
@@ -222,6 +238,9 @@ while (argpos <= length(args)) {
     argpos <- argpos + 2
   } else if (args[argpos] == "-no_badmsg") {
     no_badmsg <- TRUE
+    argpos <- argpos + 1
+  } else if (args[argpos] == "-keep_constant_values") { # 20240208 for Amar
+    keep_constant_vals <- TRUE
     argpos <- argpos + 1
   } else if (args[argpos] == "-dropvols") {
     drop_vols <- as.numeric(args[argpos + 1]) #number of vols to drop
@@ -657,11 +676,19 @@ roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, 
     #NB TODO BUG!! colnames using maskvals will fail (w/-write_header). will get "V1" instead of "roi1"
   } else {
     if (sum(badvox) > 0) {
-      ##cat("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox), " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.\n", file=".roilog", append=TRUE)
-       if(!no_badmsg)
-         message("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox),
-                 " voxels had bad time series (e.g., constant) and were removed prior to ROI averaging.")
-      roivox <- roivox[,!badvox] #remove bad voxels (columns)
+       msg <- c("  ROI ", attr(roivox, "maskval"), ": ", sum(badvox),
+                " voxels had bad time series (e.g., constant) ")
+
+       # 20240208 - AO needs ncol of matrix output to be same
+       # but the problem was actually in the input mask!
+       if(keep_constant_vals) {
+          roivox[,badvox] <- NA_real_
+          msg <- c(msg, "and were NA'ed")
+       } else {
+          roivox <- roivox[,!badvox] #remove bad voxels (columns)
+          msg <- c(msg, "and were removed prior to ROI averaging.")
+       }
+       if(!no_badmsg) message(msg)
     }
     
     if (roi_reduce == "pca") {
@@ -873,7 +900,7 @@ if (nchar(ts_out_file) > 0L) {
 #If we only want the timeseries, quit before computing correlations
 if (ts_only) {
   if (njobs > 1) { try(stopCluster(clusterobj)) }
-  quit(save="no", 0, FALSE)
+  quitfn(save="no", 0, FALSE)
 }
 
 pp <- ifelse(partial==TRUE, "_partial", "") #insert 'partial' into message and file name if relevant
@@ -886,6 +913,14 @@ for (m in 1:length(corr_method)) {
     next
   }
   cormat <- genCorrMat(as.data.frame(roiavgmat_censored), method=corr_method[m], fisherz=fisherz, partial=partial[m], roi_arima_fits=roi_arima_fits, semi=semi[m])
+
+  # make names match roivalue instead of just V1...Vn
+  # TODO: problem if dropped roi?
+  if(write_header){
+     cormat <- as.data.frame(cormat)
+     names(cormat) <- paste0("roi", maskvals) #sapply(roimats,attr,'maskval')
+  }
+
   this_out_file <- paste0(tools::file_path_sans_ext(out_file, compression = TRUE), "_", corr_method[m], pp[m], pw, file_ext(out_file)) #add method-specific suffix to file
   message("Writing correlations to: ", this_out_file)
   if (grepl(".*\\.gz$", this_out_file, perl=TRUE)) {
@@ -899,4 +934,4 @@ for (m in 1:length(corr_method)) {
 }
 
 if (njobs > 1) { try(stopCluster(clusterobj)) }
-quit(save="no", 0, FALSE)
+quitfn(save="no", 0, FALSE)
