@@ -36,6 +36,7 @@ function parse_args {
     gsr_in_prefix=0
     hpFilter=120s #default to 120s hp filter
     ica_aroma=0 #whether to run smoothed data through ICA-AROMA
+    local ignore_bids=0 # should we look a the bids sidecar?
     logFile="preprocessFunctional.log"
     MATLAB_RAM_limit=3 #3GB wavelet despike RAM limit by default (more is faster, but can be a hog when processing in parallel).
     MATLAB_single_thread=    
@@ -342,6 +343,9 @@ function parse_args {
 	elif [ $1 = -ica_aroma ]; then
 	    ica_aroma=1
 	    shift 1
+	elif [ "$1" = -ignore_bids ]; then
+	    ignore_bids=1
+	    shift 1
 	elif [ $1 = -log ]; then
 	    logFile="${2}"
 	    shift 2
@@ -610,9 +614,12 @@ function parse_args {
 	fi
 
        # tr and slicetiming defined by sidecar if it exists
-       [ -z "$bids_sidecar" ] &&
-         load_func_bids "$funcFile.json" ||
-         load_func_bids "$bids_sidecar"
+       # and we want to use it (default)
+       if [ "$ignore_bids" -eq 0 ]; then
+          [ -z "$bids_sidecar" ] &&
+            load_func_bids "$funcFile.json" ||
+            load_func_bids "$bids_sidecar"
+       fi
     fi
 
     #Not legal to pass in requests for MC versus ST order when using 4d slice + motion.
@@ -924,16 +931,22 @@ load_func_bids(){
  fi
 
  # slice timing
- local bids_slice=$(jq -r '.SliceTiming|@csv'< $bids_json)
- [ -z "$no_st" ] && no_st=0 # should be set by parse_args, but just in case
- if [  "$no_st" -eq 0 -a -n "$bids_slice" ]; then
-    local bids_cst="$(pwd)/.bids_custom_slice.txt"
-    echo "$bids_slice" > $bids_cst
+ local bids_slice
+ bids_slice=$(jq -r '.SliceTiming|@csv'< "$bids_json")
+ if [ -z "$bids_slice" ]; then
+    rel "ERROR: '$bids_json' does not have SliceTiming?!" c
+ fi
+ # we do want slice time correction and have bids desc of it
+ if [ "${no_st:-0}" -eq 0 ] && [ -n "$bids_slice" ]; then
+    local bids_cst="$PWD/.bids_custom_slice.txt"
+    echo "$bids_slice" > "$bids_cst"
     echo "$bids_cst" >&2
     cat "$bids_cst" >&2
-    [ -n "$sliceTimesFile" -o -n "$sliceAcquisition" ] &&
-       rel "Overwriting slicetime: file '$custom_slice_times' or order '$sliceAcquisition' to $bids_cst. using 4dmotion" c ||
+    if [ -n "$sliceTimesFile" ] || [ -n "$sliceAcquisition" ]; then
+       rel "Overwriting slicetime b/c '$bids_json' exists. rm to ignore. File '$sliceTimesFile' or order '$sliceAcquisition' ignored. Now using $bids_cst and 4dmotion!" c
+    else
        rel "Setting slice timing to $bids_cst" c
+    fi
     sliceTimesFile="$bids_cst"
     sliceMotion4D=1
  fi

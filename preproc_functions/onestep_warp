@@ -10,7 +10,7 @@ unable_warp_msg(){
 }
 
 # GLOBALS:
-ONESTEPWARP_GLOBALS=(templateBrain subjMask se_phasepos fm_phase mc_first prefix funcFile createBBRFmapWarp no_st st_first sliceMotion4D preMC despike postDespike postSS no_warp funcWarpInterp warpCoef use_fm topup_direct)
+ONESTEPWARP_GLOBALS=(funcFile templateBrain subjMask se_phasepos fm_phase mc_first prefix funcFile createBBRFmapWarp no_st st_first sliceMotion4D preMC despike postDespike postSS no_warp funcWarpInterp warpCoef use_fm topup_direct despike)
 
 # uses helper_functions: rel, imtestln
 function onestep_warp {
@@ -96,9 +96,9 @@ function onestep_warp {
     [ "$despike" -eq 1 ] && warp_target_list+=("postDespike")
     # rel "onestep warp requiring: ${warp_target_list[@]}" c
     # do they all exist
-    for warpnii in  mask ref ${warp_target_list[@]}; do
+    for warpnii in  mask ref "${warp_target_list[@]}"; do
       if ! imtestln "${!warpnii}"; then
-          rel "$FUNCNAME: missing $warpnii file '$(pwd)/${!warpnii}' (imtestln failed)" c
+          rel "$FUNCNAME: missing warp target '$warpnii' file '${!warpnii}' in $(pwd) (imtestln failed)" c
           return 1
       fi
     done
