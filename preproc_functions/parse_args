@@ -943,7 +943,7 @@ load_func_bids(){
     echo "$bids_cst" >&2
     cat "$bids_cst" >&2
     if [ -n "$sliceTimesFile" ] || [ -n "$sliceAcquisition" ]; then
-       rel "Overwriting slicetime b/c '$bids_json' exists. rm to ignore. File '$sliceTimesFile' or order '$sliceAcquisition' ignored. Now using $bids_cst and 4dmotion!" c
+       rel "Overwriting slicetime b/c '$bids_json' exists. use '-ignore_bids' to ignore. File '$sliceTimesFile' or order '$sliceAcquisition' ignored. Now using $bids_cst and 4dmotion!" c
     else
        rel "Setting slice timing to $bids_cst" c
     fi

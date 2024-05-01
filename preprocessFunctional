@@ -94,6 +94,7 @@ Command line options:
         It is preferable to specify this in seconds using suffix "s", such as -hp_filter 100s.
         This allows the script to compute the FWHM of the filter, which = filter_cutoff[seconds]/(sqrt(8*log(2))*TR[seconds]).
   -ica_aroma: automatically remove motion artifacts using ICA-AROMA method of Pruim 2015 NeuroImage. Applied after smoothing
+  -ignore_bids: do not read TR or SliceTiming from BIDS .json sidecar.
   -log: Name for log file that documents each command that is run. Default: preprocessFunctional.log
   -mc_first: run motion correction before slice timing correction, regardless of slice acquisition order.
   -mc_movie: create .mpg movies of head movement before and after motion correction (depends on create4DMovie).
