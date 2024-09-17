@@ -35,13 +35,37 @@ teardown() {
  run parse_args -4d fake.nii.gz -bids_sidecar DNE.json
  [ $status -eq 1 ]
 }
+
 @test "bids_json_vals" {
+ local tr sliceMotion4D
  echo '{"RepetitionTime": 2, "SliceTiming": [.5, 1, 1.5] }' > fake.json
- echo '{"RepetitionTime": 3, "SliceTiming": [.5, 1, 1.5] }' > other_fake.json
+ echo '{"RepetitionTime": 3, "SliceTiming": [0, 2, 1] }' > other_fake.json
+ parse_args -tr 1 -4d fake.nii.gz
+ [ "$tr" -eq 2 ]
+ [ "$sliceMotion4D" -eq 1 ]
+ [[ $sliceTimesFile == "$PWD/.bids_custom_slice.txt" ]]
+ [[ $(cat "$PWD"/.bids_custom_slice.txt) =~ .5,1,1.5 ]]
+
+ parse_args -tr 1 -4d fake.nii.gz  -bids_sidecar other_fake.json
+ [ "$tr" -eq 3 ]
+ [[ $(cat "$PWD"/.bids_custom_slice.txt) =~ 0,2,1 ]]
+}
+@test "bids_json_vals_ignore" {
+ local tr sliceMotion4D
+ echo '{"RepetitionTime": 2, "SliceTiming": [.5, 1, 1.5] }' > fake.json
+ parse_args -tr 1 -4d fake.nii.gz -ignore_bids
+ [ "$tr" -eq 1 ]
+ [ "$sliceMotion4D" -eq 0 ]
+}
+
+@test "bids_json_badvals" {
+ local tr sliceMotion4D
+ echo '{"RepetitionTime": 2}' > fake.json
+ run parse_args -4d fake.nii.gz
+ [[ $output =~ ERROR:.*does.not.have.SliceTiming ]]
  parse_args -4d fake.nii.gz
- [ $tr -eq 2 ]
- parse_args -4d fake.nii.gz  -bids_sidecar other_fake.json
- [ $tr -eq 3 ]
+ [ "$tr" -eq 2 ]
+ [ "$sliceMotion4D" -eq 0 ]
 }
 
 @test "cite" {
