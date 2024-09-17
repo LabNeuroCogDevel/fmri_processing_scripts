@@ -52,6 +52,7 @@ printHelp <- function() {
       "  -ts+: additional time series files to append together. alternative to 3dTcat-ing multile files into one for -ts. can use more than one -ts+: -ts rest.nii.gz -ts+ rest2.nii.gz -ts+ task_background.nii.gz",
       "  -prewhiten_arima <p> <d> <q>: prewhiten all time series by fitting an ARIMA model of order p (autoregressive), d (integrated), q (moving average) before computing correlation.",
       "  -detrend_ts <0,1,2>: Demean (0), linear detrending (1) or quadratic detrending (2) is applied to ROI aggregated time series before correlations are computed. Default: 2",
+      "  -min_vox 5: min number of non-constant voxels in timeseries to include roi. default ROI w/less than 5 good voxel timeseries is excluded",
       "  -nuisance_regressors <matrix.txt>: If passed in, the nuisance regressors (columns) of this white space-separated file will be regressed out of ROI aggregated time series prior to correlations.",
       "  -bandpass_filter dt freq_low freq_high: apply a FIR1 bandpass filter to ROI averaged data and nuisance regressors (if specified).",
       "      dt is the repetition time in seconds, freq_low is the lowest frequency to pass in Hz, freq_high is the highest frequency to pass in Hz",
@@ -144,6 +145,7 @@ roi_arima_fits <- NULL #contains the fits for ARIMA models to each time series, 
 white_lags <- 6 #hard code for now: the number of lags to test with Breusch-Godfrey whiteness test in ARIMA
 MASKVALS_ARG <- NULL # from  -roi_vals. as.numeric of csv input list
 fname_rsproc_add <- c() # combining timeseries
+min_vox_varts <- 5 # 20240214. minimum number of non-constant voxels within ROI in oder to not discard whole ROI
 #for testing
 #fname_rsproc <- "/gpfs/group/mnh5174/default/MMClock/MR_Proc/11336_20141204/mni_nosmooth_aroma_hp/rest1/Abrnawuktm_rest1.nii.gz" #name of preprocessed fMRI data
 #fname_rsproc <- "/gpfs/group/mnh5174/default/MMClock/MR_Proc/11336_20141204/mni_5mm_3ddespike/rest1/brnswudktm_rest1_5.nii.gz" #name of preprocessed fMRI data
@@ -277,6 +279,10 @@ while (argpos <= length(args)) {
     argpos <- argpos + 2
     if (is.na(write_header) || (!write_header %in% c(0,1))) { stop("-write_header must be 1 or 0")
     } else { write_header <- as.logical(write_header) }
+  } else if (args[argpos] == "-min_vox") {
+     min_vox_varts <- as.integer(args[argpos + 1]) # 2024-09-16: finish change on 20240214 for AO.
+     argpos <- argpos+2
+     stopifnot(min_vox_varts>0)
   } else {
     stop("Not sure what to do with argument: ", args[argpos])
   }
@@ -642,9 +648,9 @@ if (!is.null(roi_diagnostics_fname)) {
 
 # check roi size. need at least 4 good voxels in badvox check
 roi_sizes <- sapply(roimats,dim)[2,]
-roi_too_small <- roi_sizes < 5
+roi_too_small <- roi_sizes < min_vox_varts
 if(any(roi_too_small) )
-   message("WARNING: have ROIs that are too small (<5vox); will always be removed from correlation (NA) b/c TS has < 5 good voxels",
+   message("WARNING: have ROIs that are too small (<",min_vox_varts,"vox); will always be removed from correlation (NA) b/c TS has < 5 good voxels",
            paste(collapse=" ", sprintf("#%d (%d voxs)",
                  sapply(roimats,attr,'maskval')[roi_too_small],
                  roi_sizes[roi_too_small])))
@@ -664,13 +670,13 @@ roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, 
   
   if (!is.null(roi_diagnostics_fname)) { nvox_good_per_roi[attr(roivox, "maskindex")] <- sum(!badvox) }
   
-  if (sum(!badvox) < 5) {
-    ##only reduce if there are at least 5 voxels to average over after reduction above
+  if (sum(!badvox) < min_vox_varts) {
+    ##only reduce if there are at least 5 (defaul of min_vox_varts) voxels to average over after reduction above
     ##otherwise return NA time series
     
     ##cat("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels had acceptable time series. Removing this ROI from correlations.\n", file=".roilog", append=TRUE)
     if(!no_badmsg)
-       message("  ROI ", attr(roivox, "maskval"), ": fewer than 5 voxels of ", dim(roivox)[2],
+       message("  ROI ", attr(roivox, "maskval"), ": fewer than ", min_vox_varts, " voxels of ", dim(roivox)[2],
                " had acceptable time series. Removing this ROI from correlations.")
     ts <- rep(NA_real_, nrow(roivox))
     #NB TODO BUG!! colnames using maskvals will fail (w/-write_header). will get "V1" instead of "roi1"
@@ -686,7 +692,12 @@ roiavgmat <- foreach(roivox=iter(roimats), .packages=c("MASS"), .combine=cbind, 
           msg <- c(msg, "and were NA'ed")
        } else {
           roivox <- roivox[,!badvox] #remove bad voxels (columns)
-          msg <- c(msg, "and were removed prior to ROI averaging.")
+
+          # 20240917: if only have 1 good voxel (w/ '-min_vox 1'), roivox becomes vector instead of matrix
+          # to avoid error "dim(X) must have a positive length", make matrix again
+          if(sum(!badvox) == 1) roivox <- as.matrix(roivox,ncol=1)
+
+          msg <- c(msg, "and were removed prior to ROI averaging. (n=", paste(collapse="x",dim(roivox)),")")
        }
        if(!no_badmsg) message(msg)
     }
@@ -734,6 +745,10 @@ if (drop_vols > 0) {
 #then apply those regressors at the stage of ARIMA or OLS removal. But then we start
 if (!is.null(detrend_order)) {
   message("Applying detrending of order: ", detrend_order, " to ROI aggregated time series.")
+  if(is.null(dim(roiavgmat))){
+     warning("only one surviving roi!? forcing roi ts vector back to matrix")
+     roiavgmat <- as.matrix(roiavgmat,ncol=1)
+  }
   roiavgmat <- apply(roiavgmat, 2, function(ts) { detrendts(ts, order=detrend_order) })
   
   if (!is.null(nuisance_regressors)) {

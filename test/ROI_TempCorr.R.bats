@@ -152,3 +152,25 @@ teardown() {
   [[ $output =~ timeseries\ size:64,76,64,12 ]]
   [ $status -eq 0 ]
 }
+
+@test "tempcorr_minvox" {
+  # does not check there's no error
+  run ROI_TempCorr.R -ts $shortrestfile -min_vox 3 -rois $roi
+  [[ $output =~ timeseries\ size:64,76,64,6 ]]
+  [ $status -eq 0 ]
+}
+
+@test "tempcorr_minvox_fail" {
+  # fail when too many
+  run ROI_TempCorr.R -ts $shortrestfile -min_vox 10000 -rois $roi
+  [[ $output =~ "fewer than 10000 voxels" ]]
+}
+@test "single_voxel" {
+  # fail when too many
+  3dcalc -f $roi -expr '2*iszero(i-32)*amongst(j,32,33)*iszero(k-32)' -overwrite -prefix single_vox_roi.nii.gz
+  3dcalc -f $shortrestfile -expr 'f*iszero(iszero(i-32)*iszero(j-32)*iszero(k-32))' -overwrite -prefix hole.nii.gz
+
+  run ROI_TempCorr.R -ts hole.nii.gz -min_vox 1 -rois single_vox_roi.nii.gz
+  [[ $output =~ n=6x1 ]]
+  [[ $status -eq 0 ]]
+}
