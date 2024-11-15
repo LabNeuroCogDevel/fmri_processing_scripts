@@ -179,11 +179,16 @@ abspath() {
 
 function deleteFile() {
     #echo "to del: $1"
+    # no file, nothing to remove. skip
+    [ ! -f "$1" ] && return 0
 
-    #delete a file, if it exists
-    if [ -f "$1" ]; then
-	rel "rm -f \"$1\""
+    # 20240324: add dryrun
+    if [ -n "${DRYRUN:-}" ]; then
+       echo "rm '$1' # not run"
+       return 0
     fi
+
+    rel "rm -f \"$1\""
 }
 
 #rel is shorthand for "run, echo, log"
