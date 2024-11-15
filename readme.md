@@ -11,7 +11,7 @@
 
 
 ## Depends
-see [citations](./citations.txt) and `preprocessFunctional -check_dependencies`
+see [bibtex](./preproc.bib) or plain text [citations](./citations.txt) and `preprocessFunctional -check_dependencies`
 
  * [ROBEX](https://sites.google.com/site/jeiglesias/ROBEX)
  * [ANTs](http://stnava.github.io/ANTs/)
