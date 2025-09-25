@@ -41,6 +41,7 @@ teardown() {
 # only run if we dont have matlab and do have octave
 @test "py2 and py3 have same results" {
  [ ! -r ../../sliceMotion4d_py2 ] && skip
+ [[ "$(python --version 2>&1)" =~ Python\ 2 ]] || skip "python is not py2"
  ../../sliceMotion4d -i example.nii.gz --siemens --slice_times interleaved --prefix mt_ -t 1.5
  ../../sliceMotion4d_py2 -i example.nii.gz --siemens --slice_times interleaved --prefix mt2_ -t 1.5
  results=$(3dBrickStat -non-zero -mean -slow "3dcalc( -a mt_example.nii.gz -b mt2_example.nii.gz -expr a-b )")
