@@ -52,7 +52,7 @@ Command line options:
         Example: -custom_slice_times "../SPECCMBSliceTimes.csv"
   -custom_regression_prefix
         Use a specified letter or letters instead of 'r' for regression. Also see -gsr
-        Approprate for tracking eg '-custom_regression_prefix M -nuisance_regression motion6' seperatly from default
+        Approprate for tracking eg '-custom_regression_prefix M -nuisance_regression motion6 -nuisance_file motion_reg.txt' seperatly from default
   -delete_dicom: if converting dicom to nifti, whether delete or archive DICOM files. If not
         passed, user will be prompted for action. Options are:
         -delete_dicom no. (leaves DICOM untouched)

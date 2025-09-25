@@ -122,7 +122,7 @@ function run_3dremlfit(){
 
 function compute_nuisance_regressors {
     # 20170421WF: skipping might be a problem if we change what regressors we want
-    if [ -r .nuisance_compute_complete ]; then
+    if [ -r .nuisance_compute_complete${custom_regprefix:-} ]; then
        rel "already computed nuisance regression" c
        return 0
     fi
@@ -522,9 +522,9 @@ function compute_nuisance_regressors {
     fi    
     
     # TODO: do multiple passes to build nuisancecols so we can check that would should be redoing?
-    rel "echo '${nuisancecols[*]}' > .regressors_in_use"
+    rel "echo '${nuisancecols[*]}' > .regressors_in_use${custom_regprefix:-}"
 
-    rel "date > .nuisance_compute_complete"
+    rel "date > .nuisance_compute_complete${custom_regprefix:-}"
 
     return 0
 }
@@ -540,15 +540,16 @@ function regression_todo {
     echo "$todo"
 }
 function reg_already_done {
-    local todo="${1:?regression operations by prefix}"
+    local todo="${1:?$FUNC_NAME needs regression operations by prefix, eg Abr}"
     local reg_prefix=${custom_regprefix:-r}
+    local complete_file=.nuisance_regression${custom_regprefix:-}_complete # default .nuisance_regression_complete
 
-    [[ -f .nuisance_regression_complete && $todo=$reg_prefix ]] && return 0
+    [[ -f $complete_file && $todo=$reg_prefix ]] && return 0
     [[ -f .bandpass_filter_complete && $todo=b ]] && return 0
     [[ -f .bandpass_filter_complete && .remove_autocorr_complete && $todo=Ab ]] && return 0
-    [[ -f .nuisance_regression_complete && -f .bandpass_filter_complete && $todo=b$reg_prefix ]] && return 0
-    [[ -f .nuisance_regression_complete && -f .remove_autocorr_complete && $todo=A$reg_prefix ]] && return 0
-    [[ -f .nuisance_regression_complete && -f .bandpass_filter_complete && -f .remove_autocorr_complete && $todo=Ab$reg_prefix ]] && return 0
+    [[ -f $complete_file && -f .bandpass_filter_complete && $todo=b$reg_prefix ]] && return 0
+    [[ -f $complete_file && -f .remove_autocorr_complete && $todo=A$reg_prefix ]] && return 0
+    [[ -f $complete_file && -f .bandpass_filter_complete && -f .remove_autocorr_complete && $todo=Ab$reg_prefix ]] && return 0
 
     # not already done
     return 1
@@ -629,7 +630,7 @@ function nuisance_regression {
               #use 3dREMLfit for regression (default)
               run_3dremlfit $preNRBP $postNRBP ${subjMask}${ext}	    
           fi
-          rel "date > .nuisance_regression_complete"
+          rel "date > .nuisance_regression${custom_regprefix:-}_complete"
           ;;
        bandpass+regress) 
 	   if [ $arma_nuisance_regression -eq 0 ]; then
@@ -644,7 +645,7 @@ function nuisance_regression {
 	       run_3dremlfit $preNRBP $postNRBP ${subjMask}${ext}
 	   fi
 	   rel "date > .bandpass_filter_complete"
-	   rel "date > .nuisance_regression_complete"
+	   rel "date > .nuisance_regression${custom_regprefix:-}_complete"
           ;;
        none) rel "(Regressors computed but no bandpass or nuisance regression applied)" c ;;
        *)

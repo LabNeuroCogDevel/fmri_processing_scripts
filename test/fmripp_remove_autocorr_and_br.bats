@@ -156,7 +156,7 @@ teardown() {
  [[ $(reg_todo_to_desc $todo) == bandpass+regress ]]
 }
 @test "regression todo: bp+reg (custom)" {
- parse_args -4d fake.nii.gz -custom_regression_prefix R  -4d test.nii.gz -rmautocorr -bandpass_filter 0.009 .08 -log ""  -nuisance_regression 6motion
+ parse_args -4d fake.nii.gz -custom_regression_prefix R  -4d test.nii.gz -rmautocorr -bandpass_filter 0.009 .08 -log ""  -nuisance_regression 6motion -nuisance_file reg_motion.txt
  todo=$(regression_todo)
  echo "$todo" >&2
  [[ $todo = AbR ]]
@@ -177,4 +177,19 @@ teardown() {
  echo "$todo" >&2
  [[ $todo = "" ]]
  [[ $(reg_todo_to_desc $todo) == none ]]
+}
+
+@test "regression test complete" {
+ parse_args -4d fake.nii.gz  -4d test.nii.gz -bandpass_filter 0.009 .08 -log ""  -nuisance_regression 6motion -nuisance_file reg_motion.txt
+ touch .nuisance_regression_complete .bandpass_filter_complete
+ reg_already_done $(regression_todo)
+}
+
+@test "regression test complete (custom)" {
+ parse_args -4d fake.nii.gz -custom_regression_prefix R  -4d test.nii.gz -bandpass_filter 0.009 .08 -log ""  -nuisance_regression 6motion -nuisance_file reg_motion.txt
+ touch .nuisance_regression_complete .bandpass_filter_complete
+ # not done b/c missing 'R' version of complete
+ ! reg_already_done $todo
+ touch .nuisance_regressionR_complete
+ reg_already_done $todo
 }

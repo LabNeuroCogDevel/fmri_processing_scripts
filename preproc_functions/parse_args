@@ -658,6 +658,10 @@ function parse_args {
        echo "Cannot request -custom_regression_prefix without also specifying -nuisance_regression"
        exit 1
     fi
+    if [[ -n $custom_regprefix && "$nuisance_file" == .nuisance_regressors ]]; then
+       echo "Cannot request -custom_regression_prefix without also changing default -nuisance_file"
+       exit 1
+    fi
 
     # Not legal to use -rm_completefiles without warping
     if [[ -n "$rmgroup_component_1d" && $no_warp -ge 1 ]]; then
