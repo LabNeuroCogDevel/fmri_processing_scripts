@@ -129,10 +129,13 @@ teardown() {
 
 ## Semi
 @test "semi cor" {
+
+  Rscript -e "installed.packages()['ppcor','Version']" || skip "R missing ppcor"
   ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 1 -pcorr_method semi:pearson
   last_rowcol corr_rois_pearson_semipartial.txt "33 102"
 }
 @test "semi+partial+full cor" {
+  Rscript -e "installed.packages()['ppcor','Version']" || skip "R missing ppcor"
   ROI_TempCorr.R -ts $shortrestfile -brainmask  $mask -rois $roi -njobs 1 -pcorr_method semi:pearson,pearson -corr_method pearson
   last_rowcol corr_rois_pearson.txt "33 33"
   last_rowcol corr_rois_pearson_semipartial.txt "33 102"
