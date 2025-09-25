@@ -177,8 +177,17 @@ teardown() {
  parse_args -4d fake.nii.gz -gsr -nuisance_regression dwm,gs,wm
  [ $gsr_in_prefix -eq 1 ]
  [ $nuisance_regressors = "dwm,gs,wm" ]
+
 }
 
+@test "custom reg" {
+ run parse_args -4d fake.nii.gz -custom_regression_prefix R 
+ [ $status -eq 1 ]
+ [[ $output =~ Cannot.*without ]]
+
+ parse_args -4d fake.nii.gz -custom_regression_prefix Mr  -nuisance_regression 6motion
+ [[ $custom_regprefix = "Mr" ]]
+}
 
 @test "-rmgroup_component" {
  parse_args -4d fake.nii.gz -rmgroup_component test.1d -tr 1

@@ -4,7 +4,6 @@
 # test remove_autocorr_and_br #
 ###############################
 
-testdir=batsautocorr
 
 mknii() {
  name=$1; shift
@@ -13,13 +12,13 @@ mknii() {
 
 # go into a special temp dir
 setup() {
- cd $BATS_TEST_DIRNAME
- source ../preproc_functions/helper_functions
- source ../preproc_functions/parse_args
- source ../preproc_functions/nuisance_regression
+ THISTESTDIR=$(mktemp -d $BATS_TMPDIR/autocor-XXX)
+ cd ${THISTESTDIR}
+ MRI_STDDIR=$THISTESTDIR # to stop helper_functions from complaining about missing MNI
+ source $BATS_TEST_DIRNAME/../preproc_functions/helper_functions
+ source $BATS_TEST_DIRNAME/../preproc_functions/parse_args
+ source $BATS_TEST_DIRNAME/../preproc_functions/nuisance_regression # regression_todo reg_todo_to_desc nuisance_regression
 
- mkdir $testdir
- cd $testdir
  # for where to save log file
  funcdir=$(pwd) 
 
@@ -34,14 +33,12 @@ setup() {
 
  # COMPUTE_NUISANCE_REGRESSORS_GLOBALS=(nuisance_file nuisance_regressors no_warp postWarp postDespike postSS templateName mprageBet_base ext tr prefix)
  # compute_nuisance_regressors 
- 
-
 }
 
 # remove tempdir and contents
 teardown() {
  cd ..
- rm -r $testdir
+ test -d "${THISTESTDIR}" && rm -r ${THISTESTDIR} || echo "WARNING: no tempdir $THISTESTDIR ?" >&2
  return 0
 }
 
@@ -149,4 +146,35 @@ teardown() {
 
   #cp -r . ../batsautocorr_sav
 
+}
+
+@test "regression todo: bp+reg" {
+ parse_args -4d fake.nii.gz -4d test.nii.gz -rmautocorr -bandpass_filter 0.009 .08 -log "" -nuisance_regression 6motion,csf,wm,dcsf,dwm
+ todo=$(regression_todo)
+ echo "$todo" >&2
+ [[ $todo = Abr ]]
+ [[ $(reg_todo_to_desc $todo) == bandpass+regress ]]
+}
+@test "regression todo: bp+reg (custom)" {
+ parse_args -4d fake.nii.gz -custom_regression_prefix R  -4d test.nii.gz -rmautocorr -bandpass_filter 0.009 .08 -log ""  -nuisance_regression 6motion
+ todo=$(regression_todo)
+ echo "$todo" >&2
+ [[ $todo = AbR ]]
+ [[ $(reg_todo_to_desc $todo) == bandpass+regress ]]
+}
+
+@test "regression todo: bp" {
+ parse_args -4d fake.nii.gz -4d test.nii.gz -bandpass_filter 0.009 .08 -log ""
+ todo=$(regression_todo)
+ echo "$todo" >&2
+ [[ $todo = b ]]
+ [[ $(reg_todo_to_desc $todo) == bandpass ]]
+}
+
+@test "regression todo: none" {
+ parse_args -4d fake.nii.gz -4d test.nii.gz -log ""
+ todo=$(regression_todo)
+ echo "$todo" >&2
+ [[ $todo = "" ]]
+ [[ $(reg_todo_to_desc $todo) == none ]]
 }

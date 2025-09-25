@@ -14,6 +14,7 @@ function parse_args {
     cleanup_only=0
     compute_warp=0 #used for -compute_warp_only. Specifies to compute warp to template without applying it to preprocessed data.
     constrainToTemplate="y"
+    custom_regprefix="" # added 20250925 - used instead of 'r' for regression prefix
     deoblique_all=0
     despike=0
     despikeThresh="2.5 4.0"
@@ -250,6 +251,9 @@ function parse_args {
 	elif [ $1 = -custom_slice_times ]; then
 	    sliceTimesFile="$2"
 	    sliceMotion4D=1 #for now, this option is only relevant for sliceMotion4d correction
+	    shift 2
+	elif [ $1 = -custom_regression_prefix ]; then
+	    custom_regprefix="$2"
 	    shift 2
 	elif [ $1 = -constrain_to_template ]; then
 	    if [[ $2 = [NnYy] ]]; then
@@ -650,6 +654,11 @@ function parse_args {
        exit 1
     fi
 
+    if [[ "$nuisance_regression" -eq 0 && -n $custom_regprefix ]]; then
+       echo "Cannot request -custom_regression_prefix without also specifying -nuisance_regression"
+       exit 1
+    fi
+
     # Not legal to use -rm_completefiles without warping
     if [[ -n "$rmgroup_component_1d" && $no_warp -ge 1 ]]; then
        echo "Cannot request -rmgroup_component and not preform a warp!"
@@ -693,7 +702,7 @@ function parse_args {
     #if we have v6.0+, then incorporate fieldmap unwarping into BBR func2struct
     #and use resulting unwarping information for EPI -> unwarp -> struct -> MNI transform.
     #for older versions, need to use EPI-registered fieldmap for unwarping
-    flirtVersion=$( flirt | head -1 | perl -pe 's/^FLIRT version ([0-9\\.]+)$/\1/' )
+    command -v flirt && flirtVersion=$( flirt | head -1 | perl -pe 's/^FLIRT version ([0-9\\.]+)$/\1/' ) || flirtVersion=0
     bbrCapable=$( echo "${flirtVersion} >= 6" | bc )
 
     #The smoothing kernel parameter is expected to be the full width at half
