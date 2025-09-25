@@ -50,6 +50,9 @@ Command line options:
   -custom_slice_times: For use with 4d slice timing + motion correction. 
         A csv file containing the times (in seconds summing to TR) of each slice (bottom to top).
         Example: -custom_slice_times "../SPECCMBSliceTimes.csv"
+  -custom_regression_prefix
+        Use a specified letter or letters instead of 'r' for regression. Also see -gsr
+        Approprate for tracking eg '-custom_regression_prefix M -nuisance_regression motion6 -nuisance_file motion_reg.txt' seperatly from default
   -delete_dicom: if converting dicom to nifti, whether delete or archive DICOM files. If not
         passed, user will be prompted for action. Options are:
         -delete_dicom no. (leaves DICOM untouched)
@@ -204,7 +207,7 @@ The major steps in the processing pipeline are, in order:
   10)   ICA-AROMA (optional) - a
   11)   High-pass filtering - f
   12)   Intensity normalization - n
-  13)   Nuisance regression (optional) - r
+  13)   Nuisance regression (optional) - r (also see -custom_regression_prefix)
   13.5) Global signal regression (optional, label optional) - g
   14)   Bandpass filtering (optional) - b
   15)  Auto Correlation removal (optional) - A
@@ -235,6 +238,8 @@ EndOfHelp
 #
 #Changelog:
 #
+# 09/25/2025 (WF)
+#  - add '-custom_regression_prefix' (refactor preproc_functions/nuisance_regression)
 #04/30/2024 (WF)
 #  - added '-ignore_bids' option and handle slicetiming missing errors
 #08/26/2022 (WF)
