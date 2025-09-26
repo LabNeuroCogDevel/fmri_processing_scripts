@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 setup() {
+ [ -n "$TEST_SKIP_R" ] && skip "TEST_SKIP_R set, not running test"
  export PATH="$(readlink -f $BATS_TEST_DIRNAME/..):$PATH"
  exampledata=$BATS_TEST_DIRNAME/exampledata/short_func.nii.gz
  source $BATS_TEST_DIRNAME/test_help.sh # setup_TMPD, teardown_TMPD, ncol, checkrange

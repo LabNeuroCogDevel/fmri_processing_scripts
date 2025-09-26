@@ -2,6 +2,10 @@
 
 
 setup() {
+
+  Rscript -e "installed.packages()['oro.nifti','Version']" || skip "R missing oro.nifti. not installing missing packages"
+  [ -n "$TEST_SKIP_R" ] && skip "TEST_SKIP_R set, not running test"
+
   shortrestfile="$BATS_TEST_DIRNAME/inputs/functest.nii.gz"  # 6 time points from a fully preproc'ed WM run1
   mask="$BATS_TEST_DIRNAME/inputs/gm_50mask.nii.gz"
   roi="$BATS_TEST_DIRNAME/inputs/wm_spheres.nii.gz"
