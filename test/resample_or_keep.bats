@@ -2,12 +2,13 @@
 
 # create a motion.par file
 setup() {
+ export MPRAGE="$BATS_TEST_DIRNAME/exampledata/func+fm+ref/nii/mprage_bet.nii.gz"
+ test -r $MPRAGE || skip "mprage example missing '$MPRAGE'"
  export TESTDIR=$(mktemp -d $BATS_TMPDIR/resample_XXX)
  cd $TESTDIR
  source $BATS_TEST_DIRNAME/../preproc_functions/helper_functions
  source $BATS_TEST_DIRNAME/../preproc_functions/nuisance_regression
 
-  export MPRAGE="$BATS_TEST_DIRNAME/exampledata/func+fm+ref/nii/mprage_bet.nii.gz"
 }
 
 # remove cor text file a the end
