@@ -422,7 +422,9 @@ find_fm() {
    mag) mag_or_phase=".*magnitude1?.nii.gz";;
    phase) mag_or_phase=".*phase.nii.gz";;
   esac
-  local file="$(find -L "$BIDSROOT/sub-$id/fmap/" -name "$FMPATT" -regex "$mag_or_phase"| sed -n '$p')"
+  # 20250925: test wants magnitude1.nii.gz before magintude.nii.gz. use 'sort -r'
+  #           sort for consistnacy. not sure about best order
+  local file="$(find -L "$BIDSROOT/sub-$id/fmap/" -name "$FMPATT" -regex "$mag_or_phase"|sort -r| sed -n '$p')"
   [ -z "$file" ] &&
 	  echo "MISSING FMAP: '$BIDSROOT/sub-$id/fmap/$mag_or_phase' (using FMPATT '$FMPATT')" >&2 &&
 	  return 1

@@ -7,7 +7,7 @@ mknii() {
 setup() {
   # INPUTDIR="$BATS_TEST_DIRNAME/exampledata/ncanda_fm/"
   # [ ! -d $INPUTDIR ] && skip
-  source $BATS_TEST_DIRNAME/../lncdprep
+  source $BATS_TEST_DIRNAME/../lncdprep # find_fm
   set +u # need this to see errors
   export PATH="$BATS_TEST_DIRNAME:$PATH"
   THISTESTDIR=$(mktemp -d $BATS_TMPDIR/XXX)
@@ -36,14 +36,14 @@ teardown() {
   export BIDSROOT="noses"
 
 
-  out=$(find_fm 1 mag)
-  echo "1: $out"
-  [ "$out" == "noses/sub-1/fmap/magnitude1.nii.gz" ]
-
+  run find_fm 1 mag
+  echo "1: $output"
+  [ "$output" == "noses/sub-1/fmap/magnitude1.nii.gz" ]
   rm noses/sub-1/fmap/magnitude1.nii.gz
+
   run find_fm 1 mag 
   echo "2: $output"
-  [ $output == "noses/sub-1/fmap/magnitude.nii.gz" ]
+  [ "$output" == "noses/sub-1/fmap/magnitude.nii.gz" ]
 }
 
 @test "find phase" {
