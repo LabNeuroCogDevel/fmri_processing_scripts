@@ -121,12 +121,14 @@ setup() {
  rel "echo \"hello world\" > foobar"
  [ -r foobar ]
  [ "$(cat foobar)" = "hello world" ]
- [ "$(tail -n1 $logFile)" == 'echo "hello world" > foobar' ]
+ run tail -n1 $logFile
+ [[ "$output" =~ echo\ \"hello\ world\"\ \>\ foobar\ *#\ 2 ]]
  rm foobar
 
  out=$(rel "echo a > foobar" c)
  [ ! -r foobar ]
- [ "$(tail -n1 $logFile)" == "## echo a > foobar" ]
+ run tail -n1 $logFile
+ [ "$output" == "## echo a > foobar" ]
 }
 
 @test "rel timeit" {
