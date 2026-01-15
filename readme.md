@@ -1,6 +1,7 @@
 # MRI Preprocessing
 
-[![DOI](https://zenodo.org/badge/5274327.svg)](https://zenodo.org/badge/latestdoi/5274327)
+[![DOI 10.5281/zenodo.8320244](https://zenodo.org/badge/5274327.svg)](https://doi.org/10.5281/zenodo.8320244)
+
 
 ## Tools
 
