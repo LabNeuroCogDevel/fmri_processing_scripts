@@ -929,6 +929,15 @@ load_func_bids(){
        epiTE="$bids_echo" &&
        rel "setting epiTE from bids '$bids_json' => $epiTE seconds" c 
  fi
+ # 20260522 - pull unwarpdir from json sidecar if we can
+ if [ -z "${unwarpdir:-}" ]; then
+    # j- => y-
+    bids_pe="$(jq .PhaseEncodingDirection < "$bids_json" | sed 's/j/y/;s/i/x/')"
+    if [ -n "$bids_pe" ]; then
+       unwarpdir=$bids_pe
+       rel "setting unwarpdir (epi_pedir) from bids '$bids_json' => $unwarpdir" c 
+    fi
+ fi
 
  # slice timing
  local bids_slice
