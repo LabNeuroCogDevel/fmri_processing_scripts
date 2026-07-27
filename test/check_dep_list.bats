@@ -51,3 +51,15 @@ setup() {
  [ $status -eq 1 ]
 }
 
+# MIA
+@test "check montage" {
+ #perl
+ run check_dep_list montage
+ [ $status -eq 0 ]
+
+ PATH="" run check_dep_list montage
+ [ $status -eq 1 ]
+ [[ $output =~ imagemagick ]]
+}
+
+
