@@ -46,7 +46,7 @@ motionderiv() {
 COMPUTE_NUISANCE_REGRESSORS_GLOBALS=(nuisance_file nuisance_regressors no_warp \
    postWarp postDespike postSS \
    templateName mprageBet_base ext tr prefix bpLow bpHigh \
-   gsr_in_prefix)
+   gsr_in_prefix custom_regprefix)
 
 # give
 # - a nifti get basis functions to remove autocorrelation
@@ -122,7 +122,7 @@ function run_3dremlfit(){
 
 function compute_nuisance_regressors {
     # 20170421WF: skipping might be a problem if we change what regressors we want
-    if [ -r .nuisance_compute_complete ]; then
+    if [ -r .nuisance_compute_complete${custom_regprefix:-} ]; then
        rel "already computed nuisance regression" c
        return 0
     fi
@@ -522,11 +522,56 @@ function compute_nuisance_regressors {
     fi    
     
     # TODO: do multiple passes to build nuisancecols so we can check that would should be redoing?
-    rel "echo '${nuisancecols[*]}' > .regressors_in_use"
+    rel "echo '${nuisancecols[*]}' > .regressors_in_use${custom_regprefix:-}"
 
-    rel "date > .nuisance_compute_complete"
+    rel "date > .nuisance_compute_complete${custom_regprefix:-}"
 
     return 0
+}
+
+# look into regression options and build todo string
+# A b g (r || custom_prefix)
+function regression_todo {
+    local todo=""
+    [ $rmautocorr -eq 1 ] && todo="A"
+    [ $bandpass_filter -eq 1 ] && todo="${todo}b"
+    [ $gsr_in_prefix       -eq 1 ] && todo="${todo}g"
+    [ $nuisance_regression -eq 1 ] && todo="${todo}${custom_regprefix:-r}"
+    echo "$todo"
+}
+function reg_already_done {
+    local todo="${1:?$FUNC_NAME needs regression operations by prefix, eg Abr}"
+    local reg_prefix=${custom_regprefix:-r}
+    local complete_file=.nuisance_regression${custom_regprefix:-}_complete # default .nuisance_regression_complete
+
+    [[ -f $complete_file && $todo=$reg_prefix ]] && return 0
+    [[ -f .bandpass_filter_complete && $todo=b ]] && return 0
+    [[ -f .bandpass_filter_complete && .remove_autocorr_complete && $todo=Ab ]] && return 0
+    [[ -f $complete_file && -f .bandpass_filter_complete && $todo=b$reg_prefix ]] && return 0
+    [[ -f $complete_file && -f .remove_autocorr_complete && $todo=A$reg_prefix ]] && return 0
+    [[ -f $complete_file && -f .bandpass_filter_complete && -f .remove_autocorr_complete && $todo=Ab$reg_prefix ]] && return 0
+
+    # not already done
+    return 1
+}
+function reg_todo_to_desc {
+    [[ $# -eq 0 || -z $1 ]] && echo "none" && return
+
+    local todo="${1:?$FUNC_NAME first arg is regression operations by prefix/todo. eg. Abgr }"
+    #bandpass + prewhitening only
+    if [ "$todo" = "Ab" ]; then
+       echo "bandpass+prewhite"
+    #bandpass only
+    elif [[ "$todo" = "b" ]]; then
+       echo "bandpass"
+    # regress only (withour or without 'A'utocorrelation rm'ed (w/reml)
+    elif [[ $todo =~ "A?${custom_regprefix:-r}" ]]; then
+       echo "regressonly"
+    elif [[ "$todo" =~ A?bg?${custom_regprefix:-r} ]]; then
+       echo "bandpass+regress"
+    else
+       echo "none"
+    fi
 }
 
 function nuisance_regression {
@@ -547,77 +592,68 @@ function nuisance_regression {
 
     preNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
 
-    local todo=
-    [ $rmautocorr -eq 1 ] && todo="${todo}A"
-    [ $bandpass_filter -eq 1 ] && todo="${todo}b"
-    [ $gsr_in_prefix       -eq 1 ] && todo="${todo}g"
-    [ $nuisance_regression -eq 1 ] && todo="${todo}r"
-
+    todo=$(regression_todo)
     # todo is 
     #  only: A b r 
     #  combined: Ab Abr br
     #  'A' alone is not allowed, will throw error -- checked by parseargs or preprocessFunctional
     #  gsr_in_prefix (-gsr) must have gs in $nuisance_regressors, check by parseargs
     
+    #check whether requisite steps are complete
+    reg_already_done "$todo" && return 0
+    
     prefix="${todo}${prefix}"
     postNRBP="${prefix}${funcFile}${smoothing_suffix}${ext}"
-
-    #check whether requisite steps are complete
-    [[ -f .nuisance_regression_complete && $todo=r ]] && return 0
-    [[ -f .bandpass_filter_complete && $todo=b ]] && return 0
-    [[ -f .bandpass_filter_complete && .remove_autocorr_complete && $todo=Ab ]] && return 0
-    [[ -f .nuisance_regression_complete && -f .bandpass_filter_complete && $todo=br ]] && return 0
-    [[ -f .nuisance_regression_complete && -f .remove_autocorr_complete && $todo=Ar ]] && return 0
-    [[ -f .nuisance_regression_complete && -f .bandpass_filter_complete && -f .remove_autocorr_complete && $todo=Abr ]] && return 0
 
     if [[ ! -f "${nuisance_file}" && ( $nuisance_regression == 1 || $nuisance_compute == 1 ) ]]; then
 	compute_nuisance_regressors
     fi
 
     #bandpass + prewhitening only
-    if [ "$todo" = "Ab" ]; then
-	run_3dremlfit $preNRBP $postNRBP ${subjMask}${ext} #function should pick up this circumstance
-	rel "date > .bandpass_filter_complete"
-    #bandpass only
-    elif [[ "$todo" = "b" ]]; then
-	rel "3dBandpass -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
-		-prefix \"$postNRBP\" $bpLow $bpHigh"
+    case $(reg_todo_to_desc "$todo") in
+       bandpass+prewhite)
+          run_3dremlfit $preNRBP $postNRBP ${subjMask}${ext} #function should pick up this circumstance
+          rel "date > .bandpass_filter_complete"
+          ;;
+       bandpass)
+          rel "3dBandpass -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
+                 -prefix \"$postNRBP\" $bpLow $bpHigh"
+          rel "date > .bandpass_filter_complete"	
+          ;;
+       regressonly)
+          if [ $arma_nuisance_regression -eq 0 ]; then
+              rel "3dDetrend -overwrite -verb -polort 2 -vector ${nuisance_file} \
+                 -prefix \"$postNRBP\" \"$preNRBP\""
+              #need to mask detrend by brain mask as with 3dBandpass (3dDetrend doesn't support -mask)
+              rel "fslmaths \"$postNRBP\" -mas \"$subjMask\" \"$postNRBP\""
+          else
+              #use 3dREMLfit for regression (default)
+              run_3dremlfit $preNRBP $postNRBP ${subjMask}${ext}	    
+          fi
+          rel "date > .nuisance_regression${custom_regprefix:-}_complete"
+          ;;
+       bandpass+regress) 
+	   if [ $arma_nuisance_regression -eq 0 ]; then
+	       rel "3dTproject -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
+	       	-prefix \"$postNRBP\" -polort 2 -ort ${nuisance_file} -passband $bpLow $bpHigh"
 
-	rel "date > .bandpass_filter_complete"	
-    # regress only
-    elif [[ "$todo" = "r" || "$todo" = "Ar" ]]; then
-	#default to 3dREMLfit here
-	if [ $arma_nuisance_regression -eq 0 ]; then
-	    rel "3dDetrend -overwrite -verb -polort 2 -vector ${nuisance_file} \
-	    	-prefix \"$postNRBP\" \"$preNRBP\""
-	    #need to mask detrend by brain mask as with 3dBandpass (3dDetrend doesn't support -mask)
-	    rel "fslmaths \"$postNRBP\" -mas \"$subjMask\" \"$postNRBP\""
-	else
-	    #use 3dREMLfit for regression (default)
-	    run_3dremlfit $preNRBP $postNRBP ${subjMask}${ext}	    
-	fi
-	
-	rel "date > .nuisance_regression_complete"
-    # bandpass and regress
-    elif [[ "$todo" =~ A?bg?r ]]; then
-	if [ $arma_nuisance_regression -eq 0 ]; then
-	    rel "3dTproject -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
-	    	-prefix \"$postNRBP\" -polort 2 -ort ${nuisance_file} -passband $bpLow $bpHigh"
-
-	    #Deprecated -- 3dTproject performs true simultaneous approach, not filter all -> bandpass
-            #rel "3dBandpass -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
-	    #     	-prefix \"$postNRBP\" -ort ${nuisance_file} $bpLow $bpHigh"
-	else
-	    #use 3dREMLfit for bandpass + regression (default)
-	    run_3dremlfit $preNRBP $postNRBP ${subjMask}${ext}
-	fi
-
-	rel "date > .bandpass_filter_complete"
-	rel "date > .nuisance_regression_complete"
-    else
-	# we were only computing things
-       rel "(Regressors computed but no bandpass or nuisance regression applied)" c
-    fi
+	       #Deprecated -- 3dTproject performs true simultaneous approach, not filter all -> bandpass
+               #rel "3dBandpass -overwrite -input \"$preNRBP\" -mask \"${subjMask}${ext}\" -dt $tr \
+	       #     	-prefix \"$postNRBP\" -ort ${nuisance_file} $bpLow $bpHigh"
+	   else
+	       #use 3dREMLfit for bandpass + regression (default)
+	       run_3dremlfit $preNRBP $postNRBP ${subjMask}${ext}
+	   fi
+	   rel "date > .bandpass_filter_complete"
+	   rel "date > .nuisance_regression${custom_regprefix:-}_complete"
+          ;;
+       none) rel "(Regressors computed but no bandpass or nuisance regression applied)" c ;;
+       *)
+          rel "ERROR: don't know what to do with $todo = '$(reg_todo_to_desc "$todo")'" c
+          return 1
+        ;;
+    esac
+       
     
     #explicit return code needed to avoid implicit status of prior command
     return 0
