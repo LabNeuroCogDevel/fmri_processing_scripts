@@ -28,6 +28,7 @@
 |`s` | Smoothing |
 |`w` | Co-registration and *w*arping to standard space (spatial normalization, optional) |
 |`u` | Field map unwarping (optional; Susceptibility Distortion Correction) |
+|`c` | combined multiecho acquisitions with tedana (optional) |
 |`d` | Intensity/wavelet *d*espiking (optional) |
 |`k` | S*k*ull stripping and intensity thresholding |
 |`mt` | 4D slice-time motion correction ([sliceMotion4d](sliceMotion4d))|

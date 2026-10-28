@@ -451,7 +451,7 @@ if [[ -f "${dotfile}_complete" && "$@" != *-startover* && "$@" != *-cleanup_only
 fi
 
 #setup default values and process all command line inputs
-parse_args "$@"
+parse_args "$@" # 20260326: ME_INPUTS ME_ECHOTIMES
 
 # legacy check for old (bad, pre 201810) mni template
 old_template_check
@@ -481,124 +481,152 @@ dicom_to_nifti # preproc_functions/dicom_to_nifti
 #check for required files and settings
 check_requirements
 
-#reorient images to match LPI/RPI orientation, which is useful to prevent huge rotations/translations in warp
-prefix="_" #tracks file prefix indicating which processing steps have been performed
+# 20260326 - add support for multiecho
+#            TODO: physio also needs an array of files
+#                  check_partial will only run on single echo
+preproc_dir=$PWD
+n_echos=${#ME_INPUTS[@]}
+for echo_num in $(seq 0 $n_echos); do
+   # per echo directory if we have more than one echo
+   if [ $n_echos -gt 1 ]; then
+      # start with 00e- so we can find with a glob later
+      # will anyone ever have more than 10 echos? 02d is probably overkill
+      thisechodir=$preproc_dir/$(printf "%02d" ${echo_num})e-$(basename ${ME_INPUTS[$echo_num]} .nii.gz)
+      mkdir $thisechodir
+      ln -s "$(abspath ${ME_INPUTS[$echo_num]})" $thisechodir
+      cd $thisechodir
+      ME_INPUTS[$echo_num]=$(basename ${ME_INPUTS[$echo_num]})
+
+   fi
+   funcFile=${ME_INPUTS[$echo_num]}
+   #reorient images to match LPI/RPI orientation, which is useful to prevent huge rotations/translations in warp
+   prefix="_" #tracks file prefix indicating which processing steps have been performed
 
 
-if [[ ! -f .reorient2std_complete || $( imtest "${prefix}${funcFile}" ) -eq 0 ]]; then
-    rel "fslreorient2std ${funcFile} ${prefix}${funcFile}" #add underscore to $funcFile to make it easy later to prepend letters corresponding to each processing step
-    #rel "fslmaths ${funcFile} ${prefix}${funcFile}" #alternate to skip this step.
-    date > .reorient2std_complete
+   if [[ ! -f .reorient2std_complete || $( imtest "${prefix}${funcFile}" ) -eq 0 ]]; then
+       rel "fslreorient2std ${funcFile} ${prefix}${funcFile}" #add underscore to $funcFile to make it easy later to prepend letters corresponding to each processing step
+       #rel "fslmaths ${funcFile} ${prefix}${funcFile}" #alternate to skip this step.
+       date > .reorient2std_complete
+   fi
+
+   # truncate volumes
+   [ $n_rm_firstvols -gt 0 ] && remove_first_volumes
+
+
+   # TODO: remove middleVol calc. Not used anywhere?
+   imtestln $prefix${funcFile} || echo "ERROR: $prefix${funcFile} DNE, middleVol calulation will be off!"
+   numVols=$( fslhd $prefix${funcFile} | grep '^dim4' | perl -pe 's/dim4\s+(\d+)/\1/' )
+   middleVol=$( echo "$numVols/2" | bc )
+
+   ######
+   # motion correction
+   # slice timing correction
+   # fieldmap unwarping
+   # registration of functional to structural
+   #
+   # These steps can be combined in a number of ways depending on the user specification,
+   # and the code below determines the order.
+
+   # NOTE: Jesper Andersson <jesper@fmrib.ox.ac.uk> (FSL mailing list)
+   # In short: The correct thing is to do a 4D interpolation, but that is practically cumbersome. 
+   # When doing them sequentially you start with the one that introduces the biggest variance/error,
+   # and that is definitely movement.
+   # My suggestion is 1) Movement+fieldmap 2) Slice timing.
+
+   if [[ -z $st_first && -z $mc_first && $sliceMotion4D -eq 0 && $no_st -eq 0 ]]; then
+       #no specification of order for slice timing and motion correction
+       #Default:
+       #  if sequential: 1) motion, 2) slice timing
+       #  if interleaved: 1) slice timing, 2) motion
+       if [ $sliceAcquisition == interleaved ]; then
+          rel "Defaulting to slice timing correction first because of interleaved slice acquistion order." c
+          st_first=1
+          mc_first=0
+       else
+          rel "Defaulting to motion correction first because of sequential slice acquistion order." c
+          mc_first=1
+          st_first=0
+       fi
+   fi
+
+   # regress out physio (init: 20180620WF)
+   # afni_proc.py puts the 'ricor' before 'tshift' (and before 'volreg'), but after 'despike'.
+   reg_physio
+
+   # add fm config settings to gobal environment (incase we already ran prepare_fieldmap, but need it for register_func2struct
+   [ -n "$fm_cfg" ] && find_and_source_fmconfig $fm_cfg
+
+   if [ $no_mc -eq 1 ]; then
+      rel "WARNING: no motion correcton. assume you're just applying this pipeline ontop of another one. This is not well tested!" c
+       preMC="${prefix}${funcNifti}"
+       postMC="${prefix}${funcNifti}"   
+
+       # mc_target is used in a few places. easier to make it here
+       ! imtestln mc_target && rel "3dTstat -overwrite -mean -prefix mc_target.nii.gz $preMC"
+       ! imtestln mc_target_brain_restore && rel "bet  mc_target.nii.gz mc_target_brain_restore.nii.gz"
+       prepare_mc_target
+
+       [ $no_st -eq 0 ] && correct_slice_timing
+       prepare_fieldmap
+       func_struct_dof=6
+       register_func2struct
+   elif [ $sliceMotion4D -eq 1 ]; then
+       #Option 1: 4-D slice timing + motion correction
+       correct_slice_motion_4d
+       prepare_mc_target
+       prepare_fieldmap #prepare fieldmap must always come after motion correction so that mc_target exists (coregistration target)
+       register_func2struct
+   elif [ $no_st -eq 1 ]; then
+       #just motion and FM unwarp (skip slice timing)
+       correct_motion
+       prepare_mc_target
+       prepare_fieldmap
+       register_func2struct
+   elif [ $st_first -eq 1 ]; then	
+       correct_slice_timing
+       correct_motion
+       prepare_mc_target
+       prepare_fieldmap
+       register_func2struct
+   elif [ $mc_first -eq 1 ]; then
+       correct_motion
+       prepare_mc_target
+       prepare_fieldmap
+       register_func2struct
+       onestep_warp mc_target #apply MC + FM unwarping before slice timing correction
+       correct_slice_timing
+   fi
+
+
+
+   #make plots (and optional movie) of head motion
+   [ $no_mc -eq 0 ] && motion_plots
+
+   # exit in error if we want to stop after motion correction
+   check_partialproc "motion" "$partial_proc"
+
+   #Skull strip and intensity threshold EPI
+   skullstrip_threshold           # preproc_functions/skullstrip_threshold
+
+   #wavelet or time despiking after motion and slice timing correction, as well as intensity thresholding
+   #want to zero non-brain voxels prior to despiking so that small fluctuations in air voxels are not flagged
+   despike_timeseries
+
+   #compute motion/intensity outliers to be excluded from analysis
+   compute_motion_censor
+
+   check_partialproc "despike" "$partial_proc"
+done
+
+if [ $n_echos -gt 1 ]; then
+   preproc_echos=([0-9][0-9]e-*/$prefix*.nii.gz)
+   [ ${#preproc_echos[@]} -ne $n_echos ] && rel "ERROR: expect $n_echos files instead have ${preproc_echos[*]}" c && exit 1
+   skip-exist tedana/ \
+      niinote __SKIPFILE \
+      tedana -d "${prerpoc_echos[@]}" -e "${ME_ECHOTIMES[@]}" --out-dir tedana
+   ln -s tedana/ c$prefix${funcFile}.nii.gz
+   prefix=c$prefix
 fi
-
-# truncate volumes
-[ $n_rm_firstvols -gt 0 ] && remove_first_volumes
-
-
-# TODO: remove middleVol calc. Not used anywhere?
-imtestln $prefix${funcFile} || echo "ERROR: $prefix${funcFile} DNE, middleVol calulation will be off!"
-numVols=$( fslhd $prefix${funcFile} | grep '^dim4' | perl -pe 's/dim4\s+(\d+)/\1/' )
-middleVol=$( echo "$numVols/2" | bc )
-
-######
-# motion correction
-# slice timing correction
-# fieldmap unwarping
-# registration of functional to structural
-#
-# These steps can be combined in a number of ways depending on the user specification,
-# and the code below determines the order.
-
-# NOTE: Jesper Andersson <jesper@fmrib.ox.ac.uk> (FSL mailing list)
-# In short: The correct thing is to do a 4D interpolation, but that is practically cumbersome. 
-# When doing them sequentially you start with the one that introduces the biggest variance/error,
-# and that is definitely movement.
-# My suggestion is 1) Movement+fieldmap 2) Slice timing.
-
-if [[ -z $st_first && -z $mc_first && $sliceMotion4D -eq 0 && $no_st -eq 0 ]]; then
-    #no specification of order for slice timing and motion correction
-    #Default:
-    #  if sequential: 1) motion, 2) slice timing
-    #  if interleaved: 1) slice timing, 2) motion
-    if [ $sliceAcquisition == interleaved ]; then
-	rel "Defaulting to slice timing correction first because of interleaved slice acquistion order." c
-	st_first=1
-	mc_first=0
-    else
-	rel "Defaulting to motion correction first because of sequential slice acquistion order." c
-	mc_first=1
-	st_first=0
-    fi
-fi
-
-# regress out physio (init: 20180620WF)
-# afni_proc.py puts the 'ricor' before 'tshift' (and before 'volreg'), but after 'despike'.
-reg_physio
-
-# add fm config settings to gobal environment (incase we already ran prepare_fieldmap, but need it for register_func2struct
-[ -n "$fm_cfg" ] && find_and_source_fmconfig $fm_cfg
-
-if [ $no_mc -eq 1 ]; then
-   rel "WARNING: no motion correcton. assume you're just applying this pipeline ontop of another one. This is not well tested!" c
-    preMC="${prefix}${funcNifti}"
-    postMC="${prefix}${funcNifti}"   
-
-    # mc_target is used in a few places. easier to make it here
-    ! imtestln mc_target && rel "3dTstat -overwrite -mean -prefix mc_target.nii.gz $preMC"
-    ! imtestln mc_target_brain_restore && rel "bet  mc_target.nii.gz mc_target_brain_restore.nii.gz"
-    prepare_mc_target
-
-    [ $no_st -eq 0 ] && correct_slice_timing
-    prepare_fieldmap
-    func_struct_dof=6
-    register_func2struct
-elif [ $sliceMotion4D -eq 1 ]; then
-    #Option 1: 4-D slice timing + motion correction
-    correct_slice_motion_4d
-    prepare_mc_target
-    prepare_fieldmap #prepare fieldmap must always come after motion correction so that mc_target exists (coregistration target)
-    register_func2struct
-elif [ $no_st -eq 1 ]; then
-    #just motion and FM unwarp (skip slice timing)
-    correct_motion
-    prepare_mc_target
-    prepare_fieldmap
-    register_func2struct
-elif [ $st_first -eq 1 ]; then	
-    correct_slice_timing
-    correct_motion
-    prepare_mc_target
-    prepare_fieldmap
-    register_func2struct
-elif [ $mc_first -eq 1 ]; then
-    correct_motion
-    prepare_mc_target
-    prepare_fieldmap
-    register_func2struct
-    onestep_warp mc_target #apply MC + FM unwarping before slice timing correction
-    correct_slice_timing
-fi
-
-
-
-#make plots (and optional movie) of head motion
-[ $no_mc -eq 0 ] && motion_plots
-
-# exit in error if we want to stop after motion correction
-check_partialproc "motion" "$partial_proc"
-
-#Skull strip and intensity threshold EPI
-skullstrip_threshold           # preproc_functions/skullstrip_threshold
-
-#wavelet or time despiking after motion and slice timing correction, as well as intensity thresholding
-#want to zero non-brain voxels prior to despiking so that small fluctuations in air voxels are not flagged
-despike_timeseries
-
-#compute motion/intensity outliers to be excluded from analysis
-compute_motion_censor
-
-check_partialproc "despike" "$partial_proc"
-
 # Warp functional to template
 # NOTE: This step is skipped for -no_warp.
 # NOTE: When relevant, this step also incorporates motion correction and fieldmap correction.

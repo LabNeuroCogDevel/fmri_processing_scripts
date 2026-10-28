@@ -88,6 +88,8 @@ function parse_args {
     n_rm_firstvols=0
     USE_OLD_TEMPLATE=
     unifize_funcref=0
+    # 20260326 - array of inputs for multiecho processing
+    ME_INPUTS=() ME_ECHOTIMES=()
 
     #figure out file extension for FSL programs
     if [ -z $FSLOUTPUTTYPE ]; then
@@ -217,6 +219,7 @@ function parse_args {
 	if [[ $1 = -4d || $1 = -4D ]] ; then
 	    funcFile="${2}"
 	    funcNifti="${funcFile}" #retains file extension
+           ME_INPUTS+=($funcFile)
 	    shift 2
 	elif [ $1 = -4d_slice_motion ]; then
 	    sliceMotion4D=1
@@ -742,6 +745,24 @@ function parse_args {
 	MATLAB_single_thread="-singleCompThread"
     fi
 
+    # only need json sidecar if mulitple echos
+    [ ${#ME_INPUTS[@]} -gt 1 ] &&
+       ME_ECHOTIMES=($(find_nii_echos "${ME_INPUTS[@]}"))
+
+    return 0
+
+}
+
+find_nii_echos(){
+   # more rigerous version of
+   # jq .EchoTimes "${ME_INPUTS[@]/.nii.gz/.json"
+   for nii in "$@"; do
+      json=$(sed -E 's/.nii(.gz)?$/.json/' <<< "$nii")
+      [[ $json == $nii ]] && echo "# ERROR: input '$nii' is not .nii or .nii.gz" >&2 && exit 1
+      ! test -r "$json" && echo "# ERROR: no json sidecar like $json for $nii" >&2 && exit 1
+      e=$(jq -r .EchoTime "$json")
+      [ -z "$e" ] && echo "# ERROR: no .EchoTime in '$json'!" >&2 && exit 1
+   done
 }
 
 #process command line parameters for preprocessMprage
