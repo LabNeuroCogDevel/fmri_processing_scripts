@@ -1,0 +1,6 @@
+nipy
+nibabel
+future
+git+https://github.com/WillForan/ICA-AROMA.git@maartenmennes-setup.py
+templateflow
+seaborn

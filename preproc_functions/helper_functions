@@ -17,6 +17,7 @@ else
        /gpfs/group/mnh5174/default/lab_resources/standard \
        /opt/ni_tools/standard_templates \
        $HOME/standard \
+       ${TEMPLATEFLOW:-$HOME/.cache/templateflow/} # added 20261028
      )
 
     stddir=
@@ -25,7 +26,7 @@ else
     done
 
     if [ ! -d "$stddir" ]; then
-	echo "cannot find standard space templates '$stddir'! looked in ${standard_spaces[@]}" >&2
+	echo "cannot find standard space templates '$stddir'! looked in ${standard_spaces[@]}. set MRI_STDDIR manually." >&2
 	exit 1
     fi
 fi
@@ -949,6 +950,22 @@ preproc_git_ver(){
 # returns true of all same grid (no 0s)
 all_same_grid(){
    3dinfo -same_all_grid "$@" |grep -qv 0
+}
+
+# use dedicated python virtual environment when it exists
+# no error if doesn't exist
+maybe_use_venv(){
+   export PPF_VENV=${PPF_VENV:-$(cd "$(dirname "$0")"; pwd)/pyvenv}
+   test -r "$PPF_VENV/bin/activate" && source "$_" || :
+}
+# create pyvenv directory when missing
+# use 'uv' when we can find it. otherwise 'python3'
+create_venv(){
+   local pycmd=$(commmand -v uv || echo $(which python3) -m )
+   use_venv || :
+   echo "# USING '$PPF_VENV'. export PPF_VENV=... to change"
+   test -d "$PPF_VENV" || $pycmd venv "$PPF_VENV"
+   $pycmd pip install -r $(dirname "$0")/requirements.txt
 }
 
 # vim: set tabstop=7:

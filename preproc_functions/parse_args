@@ -148,6 +148,7 @@ function parse_args {
           check_dep_list 3dcalc fslmaths python antsRegistrationSyN.sh c3d_affine_tool \
 		  montage \
              python:nipy python:nibabel python:future R:oro.nifti R:orthopolynom python:seaborn \
+             python:templateflow \
              python:ica_aroma \
              perl:App::AFNI::SiemensPhysio \
 
@@ -491,24 +492,36 @@ function parse_args {
 	    shift 1
 	elif [ $1 = -template_brain ]; then
 	    templateName="${2}"
-	    case $2 in
-		Tal_3mm) templateBrain="${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_3mm_brain" ;;
-		MNI_FSL_3mm) templateBrain="${stddir}/fsl_mni152/MNI152_T1_3mm_brain" ;;
-		MNI_FSL_2.3mm) templateBrain="${stddir}/fsl_mni152/MNI152_T1_2.3mm_brain" ;;
-		MNI_FSL_2mm) templateBrain="${stddir}/fsl_mni152/MNI152_T1_2mm_brain" ;;		
-		MNI_3mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" ;;
-		MNI_2.3mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2.3mm" ;;
-		SPM_2mm) templateBrain="${stddir}/spm8_mni/T1_brain" ;;
-		MNI_2mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm" ;;
-		MNI_2mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm" ;;
+           # 20261028: use python library 'templateflow' to mange template.
+           # NOTE: only useful for MNI_2mm
+           if [[ $stddir =~ templateflow || -d "$stddir/tpl-MNI152NLin2009cAsym/" ]]; then
+              [[ $templateName =~ ^MNI_([12])mm$ ]] &&
+                 echo "only -template_brain MNI_2mm or MNI_1mm supported with templateflow. consider setting MRI_STDDIR to find '$templateName'" >&2 && exit 1
+              templateBrain_res=${BASH_REMATCH[1]}
+              #  uvx templateflow get  MNI152NLin2009cAsym --suffix T1w --resolution 2 --desc brain
+              templateBrain=$(python -c "import templateflow; print(templateflow.api.get('MNI152NLin2009cAsym', suffix=['T1w'], desc='brain', resolution='$templateBrain_res'))")
+              [ ! -s "$templateBrain" ] &&
+                 echo "ERROR: failed to get template brain for '$templateName' using templateflow. Check status of: python -c 'import templateflow'; or set MRI_STDDIR expliclty" >&2 && exit 1
+           else
+              case $templateName in
+                 Tal_3mm) templateBrain="${stddir}/talairach_fsl_mni152/TalFSL_MNI152_T1_3mm_brain" ;;
+                 MNI_FSL_3mm) templateBrain="${stddir}/fsl_mni152/MNI152_T1_3mm_brain" ;;
+                 MNI_FSL_2.3mm) templateBrain="${stddir}/fsl_mni152/MNI152_T1_2.3mm_brain" ;;
+                 MNI_FSL_2mm) templateBrain="${stddir}/fsl_mni152/MNI152_T1_2mm_brain" ;;
+                 MNI_3mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_3mm" ;;
+                 MNI_2.3mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2.3mm" ;;
+                 SPM_2mm) templateBrain="${stddir}/spm8_mni/T1_brain" ;;
+                 MNI_2mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm" ;;
+                 MNI_2mm) templateBrain="${stddir}/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_brain_2mm" ;;
 
-              # 20210426. added to preprocessMprage ealier
-              1YO_2mm)  templateBrain="${stddir}/UNCInfant/2mm/infant-1yr-brain";;
-              1YO_3mm)  templateBrain="${stddir}/UNCInfant/2mm/infant-1yr-brain-3mm";;
-              neo_2mm)  templateBrain="${stddir}/UNCInfant/2mm_neo/infant-neo-brain";;
-              neo_3mm)  templateBrain="${stddir}/UNCInfant/2mm_neo/infant-neo-brain-3mm";;
-		*) echo -e "Reference brain -template_brain ${2} not recognized. Options are MNI_3mm, MNI_FSL_3mm, SPM_2mm, Tal_3mm, 1YO_3mm, neo_3mm."; exit 1 ;;
-	    esac
+                 # 20210426. added to preprocessMprage ealier
+                 1YO_2mm)  templateBrain="${stddir}/UNCInfant/2mm/infant-1yr-brain";;
+                 1YO_3mm)  templateBrain="${stddir}/UNCInfant/2mm/infant-1yr-brain-3mm";;
+                 neo_2mm)  templateBrain="${stddir}/UNCInfant/2mm_neo/infant-neo-brain";;
+                 neo_3mm)  templateBrain="${stddir}/UNCInfant/2mm_neo/infant-neo-brain-3mm";;
+                 *) echo -e "Reference brain -template_brain ${templateName} not recognized. Options are MNI_3mm, MNI_FSL_3mm, SPM_2mm, Tal_3mm, 1YO_3mm, neo_3mm."; exit 1 ;;
+              esac
+           fi
 	    shift 2
 	elif [ $1 = -threshold ]; then
 	    if [[ $2 = "98_2" || $2 = "10" ]]; then
