@@ -139,12 +139,18 @@ function parse_args {
 	    exit 0
 	fi
     elif [ $# -eq 1 ]; then
-       if [ $1 = -check_dependencies ]; then 
+       if [ "$1" = -make_venv ]; then
+          shift
+          # uses $PPF_VENV
+          create_venv # from preproc_functions/helper_functions
+          exit $?
+       elif [ "$1" = -check_dependencies ]; then
           set +e
           trap - ERR
           if ! (command -v matlab >/dev/null || command -v octave >/dev/null); then
              echo "Optional: matlab or octave is required for wavelet despiking" >&2
           fi
+          maybe_use_venv
           check_dep_list 3dcalc fslmaths python antsRegistrationSyN.sh c3d_affine_tool \
 		  montage \
              python:nipy python:nibabel python:future R:oro.nifti R:orthopolynom python:seaborn \
@@ -919,7 +925,7 @@ check_dep_list(){
           # python3 aroma  (v4) is from rtrhd's fork Bristol University CRIC: git+https://github.com/rtrhd/ICA-AROMA
           # using original ica_aroma: git+https://github.com/WillForan/ICA-AROMA.git@maartenmennes-setup.py
           [[ $module == "ica_aroma" ]] && module='git+https://github.com/WillForan/ICA-AROMA.git@maartenmennes-setup.py'
-          echo "missing $cmd; consider 'python3 -m pip install --user $module'"  && let ++missing_deps
+          echo "missing $cmd; consider 'python3 -m pip install --user $module' or '$0 -make_venv'"  && let ++missing_deps
        elif [[ $cmd =~ ^perl: ]]; then
           perl -M$module -e "exit(0)" 2>/dev/null && continue
           echo "missing $cmd; consider 'cpanm $module'" && let ++missing_deps

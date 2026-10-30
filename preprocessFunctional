@@ -96,6 +96,7 @@ Command line options:
   -ica_aroma: automatically remove motion artifacts using ICA-AROMA method of Pruim 2015 NeuroImage. Applied after smoothing
   -ignore_bids: do not read TR or SliceTiming from BIDS .json sidecar.
   -log: Name for log file that documents each command that is run. Default: preprocessFunctional.log
+  -make_venv: create a python virtual environment in PPF_VENV or in same dir as this script
   -mc_first: run motion correction before slice timing correction, regardless of slice acquisition order.
   -mc_movie: create .mpg movies of head movement before and after motion correction (depends on create4DMovie).
   -mc_program: what program to use for motion correction. Options: mcflirt, 3dvolreg. Default: mcflirt.
@@ -464,6 +465,9 @@ if [ $cleanup_only -eq 1 ]; then
     cleanup_preprocessFunctional
     exit 0
 fi
+
+# check PPF_VENV (or this scrips dir pyvenv/)
+maybe_use_venv
 
 #setup output directories for transform matrices and qa images
 [ ! -d "${funcdir}/qa_images" ] && mkdir "${funcdir}/qa_images"

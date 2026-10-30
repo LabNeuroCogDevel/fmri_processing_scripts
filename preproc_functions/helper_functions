@@ -961,10 +961,11 @@ maybe_use_venv(){
 # create pyvenv directory when missing
 # use 'uv' when we can find it. otherwise 'python3'
 create_venv(){
-   local pycmd=$(commmand -v uv || echo $(which python3) -m )
-   use_venv || :
-   echo "# USING '$PPF_VENV'. export PPF_VENV=... to change"
+   local pycmd=$(command -v uv || echo $(which python3) -m )
+   maybe_use_venv || :
+   echo "# Createing venv: using directory '$PPF_VENV'. export PPF_VENV=... to change"
    test -d "$PPF_VENV" || $pycmd venv "$PPF_VENV"
+   maybe_use_venv
    $pycmd pip install -r $(dirname "$0")/requirements.txt
 }
 

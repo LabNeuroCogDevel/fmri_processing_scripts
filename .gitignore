@@ -1,11 +1,12 @@
 *.swp
-.DS_Store
+.*DS_Store*
 .preproc_cmd*
 .Rhistory
 
-#contains sensitive login info
-meson.expect
-
+pyvenv/
 *.pyc
 *.o
 *.mex
+
+# auto connect scripts might contain passwords
+*.expect
