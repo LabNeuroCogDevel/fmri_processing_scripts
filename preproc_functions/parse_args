@@ -234,7 +234,7 @@ function parse_args {
 	    shift 1
 	elif [ $1 = -bids_sidecar ]; then
           bids_sidecar="$2";
-          [ ! -r "$bids_sidecar" ] && echo "ERROR: no sidecar '$bids_sidecar'" && exit 1
+          [ ! -r "$bids_sidecar" ] && echo "ERROR: no sidecar '$bids_sidecar'" >&2 && exit 1
           shift 2
 	elif [ $1 = -bandpass_filter ]; then
 	    no_hp=1 #bandpass and high-pass are mutually exclusive
@@ -501,8 +501,8 @@ function parse_args {
            # 20261028: use python library 'templateflow' to mange template.
            # NOTE: only useful for MNI_2mm
            if [[ $stddir =~ templateflow || -d "$stddir/tpl-MNI152NLin2009cAsym/" ]]; then
-              [[ $templateName =~ ^MNI_([12])mm$ ]] &&
-                 echo "only -template_brain MNI_2mm or MNI_1mm supported with templateflow. consider setting MRI_STDDIR to find '$templateName'" >&2 && exit 1
+              ! [[ $templateName =~ ^MNI_([12])mm$ ]] &&
+                 echo "only -template_brain MNI_2mm or MNI_1mm supported with templateflow but given '$templateName'. Consider setting MRI_STDDIR to find '$templateName'" >&2 && exit 1
               templateBrain_res=${BASH_REMATCH[1]}
               #  uvx templateflow get  MNI152NLin2009cAsym --suffix T1w --resolution 2 --desc brain
               templateBrain=$(python -c "import templateflow; print(templateflow.api.get('MNI152NLin2009cAsym', suffix=['T1w'], desc='brain', resolution='$templateBrain_res'))")
@@ -716,7 +716,9 @@ function parse_args {
     #if we have v6.0+, then incorporate fieldmap unwarping into BBR func2struct
     #and use resulting unwarping information for EPI -> unwarp -> struct -> MNI transform.
     #for older versions, need to use EPI-registered fieldmap for unwarping
-    flirtVersion=$( flirt | head -1 | perl -pe 's/^FLIRT version ([0-9\\.]+)$/\1/' )
+    local flirt_cmd=flirt
+    command -v flirt  || flirt_cmd="echo 'no flirt'" # avoid crashing tests when FSL isn't installed
+    flirtVersion=$( $flirt_cmd | head -1 | perl -pe 's/^FLIRT version ([0-9\\.]+)$/\1/' )
     bbrCapable=$( echo "${flirtVersion} >= 6" | bc )
 
     #The smoothing kernel parameter is expected to be the full width at half

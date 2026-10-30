@@ -1,0 +1,2 @@
+exampledata/*/*.nii.gz filter=lfs diff=lfs merge=lfs -text
+exampledata/*.nii.gz filter=lfs diff=lfs merge=lfs -text

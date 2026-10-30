@@ -14,15 +14,14 @@ setup() {
  OLD=/opt/ni_tools/standard_templates_old
  NEW=/opt/ni_tools/standard_templates
  mfile09c="$BATS_TEST_DIRNAME/exampledata/mprage09c18/mprage_bet.nii.gz"
- mfilebad="exampledata/mprage_old09c/mprage_bet.nii.gz"
- [ ! -d $OLD/ ] && skip
- [ ! -d $NEW/ ] && skip
+ mfilebad="$BATS_TEST_DIRNAME/exampledata/mprage_old09c/mprage_bet.nii.gz"
  [ ! -r $mfile09c ] && skip "missing mprage 09c example : $mfile09c"
  [ ! -r $mfilebad ] && skip "missing mprage bad example: $mfilebad"
  return 0
 }
 
 @test "new is fine" {
+ [ ! -d $NEW/ ] && skip "no template dir like $NEW"
  stddir=$NEW
  run old_template_check
  echo $stderr
@@ -30,12 +29,27 @@ setup() {
 }
 
 @test "die with old std" {
+ [ ! -d $OLD ] && skip "no OLD template dir like $OLD"
  stddir=$OLD
  run old_template_check
  [[ $status -eq 1 ]]
 }
 
+@test "use templateflow" {
+   python3 -c 'import templateflow' || skip "no templateflow python package"
+   TEMPLATEFLOW_HOME=${TEMPLATEFLOW_HOME:-$HOME/.cache/templateflow}
+   [ -d "$TEMPLATEFLOW_HOME" ] || skip "no template flow templates installed '$TEMPLATEFLOW_HOME'"
+   stddir=$TEMPLATEFLOW_HOME
+   source ../preproc_functions/parse_args
+   parse_args -mprage_bet $mfile09c -warpcoef $mfile09c -4d $mfile09c -log "" -template_brain MNI_2mm
+   expect="$TEMPLATEFLOW_HOME/tpl-MNI152NLin2009cAsym/tpl-MNI152NLin2009cAsym_res-02_desc-brain_T1w.nii.gz"
+   echo -e "templateBrain: '$templateBrain' vs\nexpected:    '$expect'"
+   [[ "$templateBrain" ==  "$expect" ]]
+}
+
 @test "switch to old" {
+ [ ! -d $OLD/ ] && skip "no OLD template dir like $OLD"
+ [ ! -d $NEW/ ] && skip "no template dir like $NEW"
  stddir=$NEW
  USE_OLD_TEMPLATE="yes"
  old_template_check
@@ -43,6 +57,7 @@ setup() {
 }
 
 @test "die with bad mprage" {
+ [ ! -d $NEW ] && skip "no template dir like $NEW"
  source ../preproc_functions/parse_args
  parse_args -mprage_bet $mfilebad -warpcoef $mfilebad -4d $mfilebad -log ""
  run old_template_check
@@ -50,6 +65,7 @@ setup() {
 }
 
 @test "bad mprage okay with use old" {
+ [ ! -d $OLD/ ] && skip "no OLD template dir like $OLD"
  source ../preproc_functions/parse_args
  parse_args -mprage_bet $mfilebad -warpcoef $mfilebad -4d $mfilebad -use_old_mni -log ""
  old_template_check
@@ -67,6 +83,7 @@ setup() {
 }
 
 @test "new mprage trying to use old" {
+ [ ! -d $OLD/ ] && skip "no OLD template dir like $OLD"
  source $BATS_TEST_DIRNAME/../preproc_functions/parse_args
  parse_args -mprage_bet $mfile09c -warpcoef $mfile09c -4d $mfile09c -log "" -use_old_mni
  run old_template_check 
@@ -83,6 +100,8 @@ setup() {
 }
 
 @test "warp_template_check_success" {
+ #python3 -c 'import fsl.scripts.imtest' || skip "no FSL python for imtest"
+ imtest || skip "misinsg fsl's imtest"
  reference="my_fake_template"
  mprageBet=$BATS_RUN_TMPDIR/mprage_bet.nii.gz
  t_mprage=$BATS_RUN_TMPDIR/template_brain.nii.gz

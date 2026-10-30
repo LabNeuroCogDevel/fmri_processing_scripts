@@ -33,9 +33,10 @@ old_template_check(){
    [[ ! "$reference$templateBrain" =~ mni|MNI ]] && return 0
 
    local mni3mm=$stddir/mni_icbm152_nlin_asym_09c/mni_icbm152_t1_tal_nlin_asym_09c_3mm.nii
+   ! test -r "$mni3mm" && echo "WARNING: Assuming template is okay. Cannot load file to test '$mni3mm'." && return 0
    local Lext=$(3dinfo -Lextent $mni3mm)
    if [[  ! $Lext =~ ^96.0 && -z "$USE_OLD_TEMPLATE" ]]; then
-      echo "You are using a bad MNI template! left extent of 3mm template should be 96.0 not $Lext" >&2
+      echo "You are using a bad MNI template! left extent of 3mm template should be 96.0 not $Lext in '$mni3mm'" >&2
       echo "add -use_old_mni to continue" >&2
       exit 1
    fi
